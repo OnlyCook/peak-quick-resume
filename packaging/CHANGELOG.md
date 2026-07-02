@@ -1,0 +1,20 @@
+# Changelog
+
+## 0.2.0
+- **In-game save picker (F7):** browse all your checkpoints (newest first) and load any of them from anywhere. Arrow keys to select, F7/Enter to load, Del to delete (twice to confirm), Esc to close.
+- **Multiple saves per difficulty:** checkpoints are now archived instead of overwritten, so older campfires are kept and can be revisited (even mid-run, without losing the run's later saves). PEAK Checkpoint Save's own files are untouched.
+- **Custom-run support:** custom difficulty runs can now be resumed, not just the standard difficulties.
+- Pressing **F7 twice still loads your latest checkpoint**, exactly as before.
+- `requireDoublePress` / `doublePressWindow` config are deprecated (superseded by the picker's confirm step).
+
+## 0.1.1
+- Description and README updated.
+
+## 0.1.0
+Initial release.
+
+- Press **F7** (twice to confirm) to start a fresh run of your saved difficulty and automatically load your **PEAK Checkpoint Save** checkpoint.
+- Works after death, from the Airport, and mid-run.
+- Full co-op support (host-driven): all players are returned to the Airport, brought into the fresh run, and restored together.
+- On-screen prompts, configurable resume key, double-press confirmation, and advanced timing options.
+

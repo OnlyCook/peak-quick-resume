@@ -1,0 +1,20 @@
+<Project>
+
+  <!--
+    Machine-specific paths to the game assemblies and BepInEx core.
+    Defaults below match the developer's Linux + Steam + r2modman layout.
+    To override without editing this file, create "Directory.Build.props.local"
+    next to it (git-ignored) and set the properties there, OR pass them on the
+    command line:  dotnet build -p:GameManagedDir=/path -p:BepInExCoreDir=/path
+  -->
+  <PropertyGroup>
+    <GameManagedDir Condition="'$(GameManagedDir)' == ''">$(HOME)/.local/share/Steam/steamapps/common/PEAK/PEAK_Data/Managed</GameManagedDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == ''">$(HOME)/.config/r2modmanPlus-local/PEAK/profiles/Default/BepInEx/core</BepInExCoreDir>
+
+    <!-- Where "dotnet build -p:DeployToProfile=true" copies the built DLL for in-game testing. -->
+    <ProfilePluginsDir Condition="'$(ProfilePluginsDir)' == ''">$(HOME)/.config/r2modmanPlus-local/PEAK/profiles/Default/BepInEx/plugins</ProfilePluginsDir>
+  </PropertyGroup>
+
+  <Import Project="Directory.Build.props.local" Condition="Exists('Directory.Build.props.local')" />
+
+</Project>

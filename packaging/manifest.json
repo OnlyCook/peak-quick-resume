@@ -1,0 +1,10 @@
+{
+    "name": "PEAK_Quick_Resume",
+    "version_number": "0.2.0",
+    "website_url": "https://github.com/OnlyCook/peak-quick-resume",
+    "description": "[Beta] One key to browse and load any saved campfire from anywhere",
+    "dependencies": [
+        "BepInEx-BepInExPack_PEAK-5.4.2403",
+        "dominik0207-PEAK_Checkpoint_Save-0.4.7"
+    ]
+}

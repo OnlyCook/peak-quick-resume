@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>PEAKQuickResume</AssemblyName>
+    <Product>PEAKQuickResume</Product>
+    <Version>0.2.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <!-- BepInEx / Unity assemblies are not annotated; silence the resulting noise.
+         CS0649: JSON DTO fields are assigned by Newtonsoft via reflection, not in code -->
+    <NoWarn>$(NoWarn);CS0436;CS0618;CS0649</NoWarn>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DebugType>portable</DebugType>
+    <RestoreAdditionalProjectSources></RestoreAdditionalProjectSources>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <!-- Game assemblies: reference everything in Managed except the framework
+       facades that would clash with the netstandard2.1 reference assemblies -->
+  <ItemGroup>
+    <_GameAsm Include="$(GameManagedDir)/*.dll"
+              Exclude="$(GameManagedDir)/System*.dll;$(GameManagedDir)/mscorlib.dll;$(GameManagedDir)/netstandard.dll;$(GameManagedDir)/Microsoft.*.dll;$(GameManagedDir)/Mono.*.dll" />
+    <Reference Include="@(_GameAsm)">
+      <Private>false</Private>
+      <HintPath>%(_GameAsm.Identity)</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <!-- BepInEx + Harmony -->
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Optional: copy the built DLL straight into the r2modman profile for testing
+       Enable with:  dotnet build -p:DeployToProfile=true  -->
+  <Target Name="DeployToProfile" AfterTargets="Build" Condition="'$(DeployToProfile)' == 'true'">
+    <MakeDir Directories="$(ProfilePluginsDir)/OnlyCook-PEAKQuickResume" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll"
+          DestinationFolder="$(ProfilePluginsDir)/OnlyCook-PEAKQuickResume" />
+    <Message Importance="high" Text="Deployed $(AssemblyName).dll -> $(ProfilePluginsDir)/OnlyCook-PEAKQuickResume" />
+  </Target>
+
+</Project>

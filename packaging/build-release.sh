@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# Assemble a Thunderstore-ready release zip.
+#
+# Output: dist/PEAKQuickResume-<version>.zip with everything at the zip ROOT:
+#   manifest.json
+#   icon.png            (256x256)
+#   README.md
+#   CHANGELOG.md
+#   LICENSE             (if present)
+#   PEAKQuickResume.dll
+#
+# r2modman installs the whole package into BepInEx/plugins/<Team>-PEAKQuickResume/,
+# so a root-level DLL lands correctly and BepInEx loads it.
+#
+# Usage:  bash packaging/build-release.sh
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PKG="$REPO_ROOT/packaging"
+PROJ="$REPO_ROOT/src/PeakQuickResume"
+DIST="$REPO_ROOT/dist"
+
+# Version comes from manifest.json (single source of truth for the package).
+VERSION="$(grep -oE '"version_number"[[:space:]]*:[[:space:]]*"[^"]+"' "$PKG/manifest.json" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+if [[ -z "$VERSION" ]]; then echo "ERROR: could not read version_number from manifest.json" >&2; exit 1; fi
+echo "Packaging PEAKQuickResume v$VERSION"
+
+# 0. Keep the repo-root README.md in sync with the packaged README (single source).
+bash "$PKG/gen-readme.sh"
+
+# 1. Build the DLL (Release).
+echo "Building..."
+dotnet build "$PROJ/PeakQuickResume.csproj" -c Release >/dev/null
+DLL="$PROJ/bin/Release/PEAKQuickResume.dll"
+[[ -f "$DLL" ]] || { echo "ERROR: build output not found: $DLL" >&2; exit 1; }
+
+# 2. Validate the icon is exactly 256x256 (Thunderstore requirement).
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "$PKG/icon.png" <<'PY'
+import sys
+from PIL import Image
+w,h = Image.open(sys.argv[1]).size
+assert (w,h)==(256,256), f"icon.png must be 256x256, got {w}x{h}"
+PY
+fi
+
+# 3. Stage.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp "$PKG/manifest.json" "$PKG/icon.png" "$PKG/README.md" "$PKG/CHANGELOG.md" "$STAGE/"
+[[ -f "$REPO_ROOT/LICENSE" ]] && cp "$REPO_ROOT/LICENSE" "$STAGE/LICENSE" || echo "NOTE: no LICENSE file yet (pick one before publishing)."
+cp "$DLL" "$STAGE/PEAKQuickResume.dll"
+
+# 4. Zip (files at the root of the archive).
+mkdir -p "$DIST"
+OUT="$DIST/PEAKQuickResume-$VERSION.zip"
+rm -f "$OUT"
+( cd "$STAGE" && zip -r -q "$OUT" . )
+echo "Wrote $OUT"
+unzip -l "$OUT"
