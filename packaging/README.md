@@ -66,7 +66,7 @@ Found a bug or have a suggestion? Please **[open an issue on GitHub](https://git
 BepInEx rewrites this file every time you launch the game, so **reproduce the bug, then quit and grab the file** before playing again.
 
 #### r2modman / Thunderstore Manager:
-- Open the manager, pick PEAK, choose your profile, then go to **Settings** and search for the following setting: `Copy log file contents to clipboard`, click on that setting and paste it in your GitHub Issues.  
+- Open the manager, pick PEAK, choose your profile, then go to **Settings** and search for the following setting: `Copy log file contents to clipboard`, click on that setting and paste it in your GitHub Issue.  
 
 #### Manual install?
-- Find out where your `LogOutput.log` file is on your OS. You can for exmaple use [**Everything**](https://www.voidtools.com/downloads/) on Windows or use this command `find ~ -name "LogOutput.log"` on Linux/Mac.
+- Find out where your `LogOutput.log` file is on your OS. You can for example use [**Everything**](https://www.voidtools.com/downloads/) on Windows or use this command `find ~ -name "LogOutput.log"` on Linux/Mac.
