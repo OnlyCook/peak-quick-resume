@@ -4,7 +4,7 @@
 
 # PEAK Quick Resume
 
-> **Beta (v0.2.0).** Fully working in solo and co-op (tested with up to 2 players);
+> **Beta (v0.3.0).** Fully working in solo and co-op (tested with up to 2 players);
 > larger lobbies should work but aren't verified yet. Feedback welcome!
 
 **Press one key to browse your campfires and jump straight back to any of them.**
@@ -22,6 +22,8 @@ The newest save is preselected, so **pressing F7 twice still loads your latest c
 Works **after you die**, **from the Airport**, or **mid-run** (so no need to die first). Full **co-op** support: the host presses F7 and everyone is brought along and restored.
 
 Because it always spins up a fresh run instance before loading, you can resume as many times as you like without having the problem of loading twice (through F6) and breaking the game.
+
+> The mod also adds a few optional Quality of Life pause menu buttons (see more at the [bottom](#miscellaneous-pause-menu-buttons)).
 
 ---
 
@@ -46,8 +48,9 @@ Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`
 
 - **resumeKey**: the key to open the picker / load the highlighted save (default **F7**).
 - **allowMidGame**: allow resuming while still alive (default on).
+- Pause Menu: disable/re-enable any of the 3 added QoL pause menu buttons.
 - **Timing**: advanced settle/timeout values; raise `coopAirportSettle` if a client occasionally gets left behind on a slow connection.
-- *(requireDoublePress / doublePressWindow are deprecated. The picker now provides the confirmation step. Kept for compatibility reasons.)*
+- *(requireDoublePress / doublePressWindow are deprecated. The picker itself now provides the confirmation step. Kept for compatibility reasons.)*
 
 Your archived checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split into `Offline/` and `Coop/`). PEAK Checkpoint Save's own files are never modified.
 
@@ -57,6 +60,7 @@ Your archived checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split 
 - Loading a checkpoint can grant Steam achievements (a property of the underlying mod). Don't use it if you want to earn everything unassisted.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
 - If a client ever glitches after loading, that's the underlying teleport in PEAK Checkpoint Save. Try its `teleportJumpLogic` config (1 or 2) or its manual F9 teleport.
+- Translations were done by AI, so if something is off in your language, then you are free to open a GitHub Issue (see below).
 
 ## Feedback & bug reports
 
@@ -70,10 +74,16 @@ Found a bug or have a suggestion? Please **[open an issue on GitHub](https://git
 BepInEx rewrites this file every time you launch the game, so **reproduce the bug, then quit and grab the file** before playing again.
 
 #### r2modman / Thunderstore Manager:
-- Open the manager, pick PEAK, choose your profile, then go to **Settings** and search for the following setting: `Copy log file contents to clipboard`, click on that setting and paste it in your GitHub Issues.  
+- Open the manager, pick PEAK, choose your profile, then go to **Settings** and search for the following setting: `Copy log file contents to clipboard`, click on that setting and paste it in your GitHub Issue.  
 
 #### Manual install?
-- Find out where your `LogOutput.log` file is on your OS. You can for exmaple use [**Everything**](https://www.voidtools.com/downloads/) on Windows or use this command `find ~ -name "LogOutput.log"` on Linux/Mac.
+- Find out where your `LogOutput.log` file is on your OS. You can for example use [**Everything**](https://www.voidtools.com/downloads/) on Windows or use this command `find ~ -name "LogOutput.log"` on Linux/Mac.
+
+## Miscellaneous Pause Menu Buttons
+
+<img width="1920" height="1080" alt="new-pause-menu-btns" src="https://github.com/user-attachments/assets/f1cd4889-8291-45fb-b2c0-59eb92d1b4d0" />
+
+**Board Flight** (at the Airport, opens the gate kiosk directly without having to walk over), as well as **Restart** and **Return to Airport** (mid-run, host-only).
 
 ## Requirements
 

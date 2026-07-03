@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>PEAKQuickResume</AssemblyName>
     <Product>PEAKQuickResume</Product>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <!-- BepInEx / Unity assemblies are not annotated; silence the resulting noise.
@@ -14,6 +14,10 @@
     <DebugType>portable</DebugType>
     <RestoreAdditionalProjectSources></RestoreAdditionalProjectSources>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+
+    <!-- R2ModManCacheRoot comes from Directory.Build.props; append the version here
+         since $(Version) above isn't set yet when that file is imported -->
+    <R2ModManCacheDir Condition="'$(R2ModManCacheDir)' == ''">$(R2ModManCacheRoot)/$(Version)</R2ModManCacheDir>
   </PropertyGroup>
 
   <!-- Game assemblies: reference everything in Managed except the framework
@@ -40,12 +44,21 @@
   </ItemGroup>
 
   <!-- Optional: copy the built DLL straight into the r2modman profile for testing
-       Enable with:  dotnet build -p:DeployToProfile=true  -->
+       Enable with:  dotnet build -p:DeployToProfile=true
+
+       Also overwrites r2modman's own cache copy of this mod (see R2ModManCacheDir
+       in Directory.Build.props), because "Start modded" resyncs the profile from
+       that cache and would otherwise silently undo this deploy right before launch -->
   <Target Name="DeployToProfile" AfterTargets="Build" Condition="'$(DeployToProfile)' == 'true'">
     <MakeDir Directories="$(ProfilePluginsDir)/OnlyCook-PEAKQuickResume" />
     <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll"
           DestinationFolder="$(ProfilePluginsDir)/OnlyCook-PEAKQuickResume" />
     <Message Importance="high" Text="Deployed $(AssemblyName).dll -> $(ProfilePluginsDir)/OnlyCook-PEAKQuickResume" />
+
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll"
+          DestinationFolder="$(R2ModManCacheDir)"
+          Condition="Exists('$(R2ModManCacheDir)')" />
+    <Message Importance="high" Text="Also overwrote r2modman's cache copy -> $(R2ModManCacheDir)" Condition="Exists('$(R2ModManCacheDir)')" />
   </Target>
 
 </Project>
