@@ -41,15 +41,21 @@ namespace PEAKQuickResume
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - augment its F1 tutorial to mention F7 + show both versions,
             //  - archive every save it writes so the F7 picker can browse past checkpoints
+            //  - localize its "Loading savegame..." caption
             if (_checkpoint.CheckpointType != null)
             {
                 TutorialPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 SavePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
+                LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
             }
 
             // Miscellaneous QoL, no dependency on the checkpoint mod: injects Restart /
             // Return to Airport / Board Flight buttons into the vanilla pause menu
             PauseMenuPatch.Apply(harmony, _cfg, Logger);
+
+            // Stops Escape from bleeding through and opening the vanilla pause menu right
+            // behind the F7 save picker closing (see PauseSuppressPatch for why)
+            PauseSuppressPatch.Apply(harmony, Logger);
 
             var go = new GameObject("PEAKQuickResume.Orchestrator");
             DontDestroyOnLoad(go);
@@ -89,9 +95,12 @@ namespace PEAKQuickResume
         {
             // Picker already open → this second press loads the highlighted save
             // (Newest is preselected, so F7 then F7 still loads the latest checkpoint.)
+            // Unless disabled via config, in which case only Enter confirms a load and
+            // the resume key is a no-op while the picker is open (avoids accidental loads
+            // from players trying to close the picker with the same key that opened it)
             if (_picker != null && _picker.IsOpen)
             {
-                ConfirmLoad();
+                if (_cfg.ResumeKeyAlsoConfirmsLoad.Value) ConfirmLoad();
                 return;
             }
 
@@ -106,7 +115,7 @@ namespace PEAKQuickResume
             if (!RunLauncher.IsHost)
             {
                 Logger.LogInfo("Resume key ignored: only the host can resume.");
-                _checkpoint.TryShowMessage("Only the host can resume the save!",
+                _checkpoint.TryShowMessage(MessagesLocalization.Get(MsgKey.OnlyHostResume),
                     new Color(1f, 0.5f, 0.5f, 1f), 3f);
                 return;
             }
@@ -146,7 +155,7 @@ namespace PEAKQuickResume
             if (!_picker.Open(offline, preferred))
             {
                 _checkpoint.TryShowMessage(
-                    $"No {(offline ? "solo" : "co-op")} saves found yet.",
+                    MessagesLocalization.Get(offline ? MsgKey.NoSavesSolo : MsgKey.NoSavesCoop),
                     new Color(1f, 0.5f, 0.5f, 1f), 3f);
             }
         }

@@ -6,6 +6,7 @@ namespace PEAKQuickResume
     public class PluginConfig
     {
         public readonly ConfigEntry<KeyboardShortcut> ResumeKey;
+        public readonly ConfigEntry<bool> ResumeKeyAlsoConfirmsLoad;
         public readonly ConfigEntry<bool> RequireDoublePress;
         public readonly ConfigEntry<float> DoublePressWindow;
         public readonly ConfigEntry<bool> AllowMidGame;
@@ -32,6 +33,12 @@ namespace PEAKQuickResume
                 + "Use the arrow keys to choose, then press this key again (or Enter) to load. The newest "
                 + "save is preselected, so pressing it twice loads your latest checkpoint. Delete removes "
                 + "the highlighted save; Escape closes the menu.");
+
+            ResumeKeyAlsoConfirmsLoad = cfg.Bind("General", "resumeKeyAlsoConfirmsLoad", true,
+                "If enabled (default), pressing the resume key again while the save picker is open loads the "
+                + "highlighted save (so pressing it twice loads the latest checkpoint). If disabled, only Enter "
+                + "confirms a load while the picker is open, pressing the resume key does nothing, useful if "
+                + "you keep accidentally loading a save while trying to close the picker with it.");
 
             // Renamed (not just re-described): Configuration Manager / PEAKLib.ModConfig
             // both display the raw key string as the row header, the description is

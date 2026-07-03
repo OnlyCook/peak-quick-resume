@@ -69,14 +69,14 @@ namespace PEAKQuickResume
             if (!RunLauncher.IsHost)
             {
                 _log.LogWarning("Cannot resume: only the host / offline player can start and load a run.");
-                Msg("Only the host can resume the save!", MsgError);
+                Msg(MessagesLocalization.Get(MsgKey.OnlyHostResume), MsgError);
                 return;
             }
 
             if (RunLauncher.InTitle)
             {
                 _log.LogWarning("Cannot resume from the Title screen. Load into the game first.");
-                Msg("Load into the game first.", MsgError);
+                Msg(MessagesLocalization.Get(MsgKey.LoadIntoGameFirst), MsgError);
                 return;
             }
 
@@ -88,7 +88,7 @@ namespace PEAKQuickResume
             _running = true;
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo("=== Quick Resume: sequence START ===");
-            Msg("Quick Resume: starting...", MsgInfo);
+            Msg(MessagesLocalization.Get(MsgKey.QuickResumeStarting), MsgInfo);
 
             // --- 1. Decide which run to resume (ascent or custom) ---
             // If the player picked a specific save from the F7 menu, honour it; otherwise
@@ -145,11 +145,13 @@ namespace PEAKQuickResume
             if (!_checkpoint.TryPreStartSetSegment())
             {
                 Fail($"No checkpoint save found for {target} (PreStartSetSegment returned false)");
-                Msg($"No save found for this {(target.IsCustom ? "custom run" : $"difficulty (ascent {ascent})")}.", MsgError);
+                Msg(target.IsCustom
+                    ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
+                    : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
                 yield break;
             }
             _log.LogInfo("[stage] Save confirmed for this difficulty; starting fresh run.");
-            Msg("Starting a fresh run of your saved difficulty...", MsgInfo);
+            Msg(MessagesLocalization.Get(MsgKey.StartingFreshRun), MsgInfo);
 
             // Coop: give other players time to finish loading the Airport before we fire
             // the run-start. The run-start RPC lives on the kiosk (a scene object), so a
@@ -197,12 +199,12 @@ namespace PEAKQuickResume
             if (!PhotonNetwork.OfflineMode && _checkpoint.ReadyCheckEnabled())
             {
                 _log.LogInfo("[stage] Coop: waiting for all clients to report ready...");
-                Msg("Waiting for other players to load...", MsgInfo);
+                Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
                 yield return WaitFor(() => _checkpoint.AllClientsReady(), timeout, "all clients ready");
                 if (!_lastWaitOk)
                 {
                     Fail("Timed out waiting for all clients to be ready (some players may still be loading)");
-                    Msg("Some players didn't finish loading in time. Try again.", MsgError);
+                    Msg(MessagesLocalization.Get(MsgKey.PlayersTimedOut), MsgError);
                     yield break;
                 }
                 _log.LogInfo("[stage] Coop: all clients ready.");
@@ -220,7 +222,7 @@ namespace PEAKQuickResume
             if (!_checkpoint.TryLoadPlayer()) { Fail("Checkpoint load call failed"); yield break; }
 
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
-            Msg("Save loaded. Welcome back!", MsgSuccess);
+            Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);
             _chosen = null;
             _running = false;
         }
