@@ -19,6 +19,10 @@ namespace PEAKQuickResume
     /// </summary>
     public static class RunLauncher
     {
+        // MenuWindow.Open() is `internal`, not accessible across assemblies
+        private static readonly System.Reflection.MethodInfo _menuWindowOpen =
+            HarmonyLib.AccessTools.Method(typeof(MenuWindow), "Open");
+
         public const string AirportScene = "Airport";
         public const string TitleScene = "Title";
         public const string LevelScenePrefix = "Level";
@@ -194,6 +198,50 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 log.LogError($"StartRun failed: {e}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Miscellaneous QoL: open the gate-kiosk (boarding pass) UI directly, without
+        /// walking up to it and interacting. Mirrors exactly what
+        /// <c>AirportCheckInKiosk.Interact_CastFinished</c> does. Assumes we are at the Airport
+        /// </summary>
+        public static bool OpenGateKiosk(ManualLogSource log)
+        {
+            try
+            {
+                if (!InAirport)
+                {
+                    log.LogError($"OpenGateKiosk called while not in Airport (scene='{ActiveSceneName}').");
+                    return false;
+                }
+                if (IsLoading)
+                {
+                    log.LogError("OpenGateKiosk: a loading screen is still active. Aborting.");
+                    return false;
+                }
+
+                var kiosk = UnityEngine.Object.FindObjectOfType<AirportCheckInKiosk>();
+                if (kiosk == null)
+                {
+                    log.LogError("OpenGateKiosk: no AirportCheckInKiosk found in the Airport scene.");
+                    return false;
+                }
+                if (GUIManager.instance == null || GUIManager.instance.boardingPass == null)
+                {
+                    log.LogError("OpenGateKiosk: GUIManager.instance.boardingPass is null.");
+                    return false;
+                }
+
+                var boardingPass = GUIManager.instance.boardingPass;
+                _menuWindowOpen.Invoke(boardingPass, null);
+                boardingPass.kiosk = kiosk;
+                return true;
+            }
+            catch (Exception e)
+            {
+                log.LogError($"OpenGateKiosk failed: {e}");
                 return false;
             }
         }

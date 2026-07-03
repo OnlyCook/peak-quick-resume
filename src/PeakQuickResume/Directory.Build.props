@@ -13,6 +13,18 @@
 
     <!-- Where "dotnet build -p:DeployToProfile=true" copies the built DLL for in-game testing. -->
     <ProfilePluginsDir Condition="'$(ProfilePluginsDir)' == ''">$(HOME)/.config/r2modmanPlus-local/PEAK/profiles/Default/BepInEx/plugins</ProfilePluginsDir>
+
+    <!--
+      r2modman tracks this mod as an "installed" mod (it's also published normally),
+      so launching a profile via r2modman's "Start modded" button resyncs the
+      profile's plugins folder from this cache entry, silently clobbering whatever
+      was just copied into ProfilePluginsDir above. Deploying here too means that
+      resync picks up the dev build instead of fighting it.
+      NOTE: $(Version) isn't set yet this early (Directory.Build.props is imported
+      before the main .csproj body), so the version segment is appended in the
+      .csproj itself, right after <Version> is declared.
+    -->
+    <R2ModManCacheRoot Condition="'$(R2ModManCacheRoot)' == ''">$(HOME)/.config/r2modmanPlus-local/PEAK/cache/OnlyCook-PEAK_Quick_Resume</R2ModManCacheRoot>
   </PropertyGroup>
 
   <Import Project="Directory.Build.props.local" Condition="Exists('Directory.Build.props.local')" />

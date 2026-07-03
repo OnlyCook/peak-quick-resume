@@ -2,6 +2,11 @@
 #
 # Assemble a Thunderstore-ready release zip.
 #
+# manifest.json's version_number is the ONLY place to bump the version, this
+# script syncs it into PeakQuickResume.csproj, PluginInfo.cs, and the README's
+# "Beta (vX.Y.Z)" badge before building (CHANGELOG.md stays hand-maintained,
+# this only warns if the new version has no entry yet).
+#
 # Output: dist/PEAKQuickResume-<version>.zip with everything at the zip ROOT:
 #   manifest.json
 #   icon.png            (256x256)
@@ -22,11 +27,32 @@ PROJ="$REPO_ROOT/src/PeakQuickResume"
 DIST="$REPO_ROOT/dist"
 
 # Version comes from manifest.json (single source of truth for the package).
+# Bump it there ONLY, everything below mirrors it, nothing else should ever be
+# hand-edited to a new version number.
 VERSION="$(grep -oE '"version_number"[[:space:]]*:[[:space:]]*"[^"]+"' "$PKG/manifest.json" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 if [[ -z "$VERSION" ]]; then echo "ERROR: could not read version_number from manifest.json" >&2; exit 1; fi
 echo "Packaging PEAKQuickResume v$VERSION"
 
-# 0. Keep the repo-root README.md in sync with the packaged README (single source).
+# 0. Sync the version into every other place it's declared.
+echo "Syncing version $VERSION into csproj / PluginInfo.cs / README badge..."
+
+sed -i -E "s#(<Version>)[0-9]+\.[0-9]+\.[0-9]+(</Version>)#\1$VERSION\2#" \
+  "$PROJ/PeakQuickResume.csproj"
+
+sed -i -E "s#(public const string Version = \")[0-9]+\.[0-9]+\.[0-9]+(\";)#\1$VERSION\2#" \
+  "$PROJ/PluginInfo.cs"
+
+sed -i -E "s#(Beta \(v)[0-9]+\.[0-9]+\.[0-9]+(\)\.)#\1$VERSION\2#" \
+  "$PKG/README.md"
+
+# CHANGELOG.md is hand-maintained (one heading per release, old entries must
+# never be touched), so this is just a nudge, not an auto-edit.
+if ! grep -q "^## $VERSION" "$PKG/CHANGELOG.md"; then
+  echo "WARNING: packaging/CHANGELOG.md has no '## $VERSION' entry yet, add one before publishing." >&2
+fi
+
+# 0.5. Keep the repo-root README.md in sync with the packaged README (single source).
+#      Runs AFTER the version sync above so the badge is already up to date.
 bash "$PKG/gen-readme.sh"
 
 # 1. Build the DLL (Release).

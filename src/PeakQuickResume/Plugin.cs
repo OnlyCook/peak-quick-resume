@@ -22,6 +22,7 @@ namespace PEAKQuickResume
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
         private ResumeOrchestrator _orchestrator;
+        private RestartOrchestrator _restart;
         private SavePicker _picker;
 
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
@@ -35,21 +36,29 @@ namespace PEAKQuickResume
             _checkpoint = new CheckpointInterop(Logger);
             _checkpoint.Probe();
 
+            var harmony = new Harmony(PluginInfo.Guid);
+
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - augment its F1 tutorial to mention F7 + show both versions,
             //  - archive every save it writes so the F7 picker can browse past checkpoints
             if (_checkpoint.CheckpointType != null)
             {
-                var harmony = new Harmony(PluginInfo.Guid);
                 TutorialPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 SavePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
             }
+
+            // Miscellaneous QoL, no dependency on the checkpoint mod: injects Restart /
+            // Return to Airport / Board Flight buttons into the vanilla pause menu
+            PauseMenuPatch.Apply(harmony, _cfg, Logger);
 
             var go = new GameObject("PEAKQuickResume.Orchestrator");
             DontDestroyOnLoad(go);
             go.hideFlags = HideFlags.HideAndDontSave;
             _orchestrator = go.AddComponent<ResumeOrchestrator>();
             _orchestrator.Init(Logger, _cfg, _checkpoint);
+
+            _restart = go.AddComponent<RestartOrchestrator>();
+            _restart.Init(Logger, _cfg, _checkpoint);
 
             _picker = go.AddComponent<SavePicker>();
             _picker.Init(Logger, _cfg);
@@ -153,6 +162,25 @@ namespace PEAKQuickResume
             Logger.LogInfo($"Resume confirmed: loading {chosen.DifficultyLabel} save from {chosen.SortTime:u}.");
             _orchestrator.RequestResume(chosen);
         }
+
+        // --- Miscellaneous QoL entry points, called from PauseMenuPatch's injected buttons ---
+
+        /// <summary>Restart the current run: back to the Airport, then immediately start a fresh run of the same difficulty</summary>
+        internal void RequestRestart() => _restart?.RequestRestart();
+
+        /// <summary>Send everyone back to the Airport, no new run started</summary>
+        internal void RequestReturnToAirport()
+        {
+            if (!RunLauncher.IsHost)
+            {
+                Logger.LogWarning("Return to Airport ignored: only the host can do this.");
+                return;
+            }
+            RunLauncher.ReturnToAirport(Logger);
+        }
+
+        /// <summary>Open the gate-kiosk UI directly, without walking up to it</summary>
+        internal void RequestOpenGateKiosk() => RunLauncher.OpenGateKiosk(Logger);
 
         private static bool PlayerIsDead()
         {
