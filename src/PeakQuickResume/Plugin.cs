@@ -42,16 +42,22 @@ namespace PEAKQuickResume
             //  - augment its F1 tutorial to mention F7 + show both versions,
             //  - archive every save it writes so the F7 picker can browse past checkpoints
             //  - localize its "Loading savegame..." caption
+            //  - localize its "Save game loaded!" message
             if (_checkpoint.CheckpointType != null)
             {
                 TutorialPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 SavePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
+                SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
             }
 
             // Miscellaneous QoL, no dependency on the checkpoint mod: injects Restart /
             // Return to Airport / Board Flight buttons into the vanilla pause menu
             PauseMenuPatch.Apply(harmony, _cfg, Logger);
+
+            // Optional QoL, off by default: relocates the vanilla Rebind Controls button
+            // out of the pause menu (see RebindControlsRelocationPatch for why)
+            RebindControlsRelocationPatch.Apply(harmony, _cfg, Logger);
 
             // Stops Escape from bleeding through and opening the vanilla pause menu right
             // behind the F7 save picker closing (see PauseSuppressPatch for why)
@@ -87,7 +93,7 @@ namespace PEAKQuickResume
                 return;
             }
 
-            if (!_cfg.ResumeKey.Value.IsDown()) return;
+            if (!Input.GetKeyDown(_cfg.ResumeKey.Value)) return;
             OnResumeKey();
         }
 

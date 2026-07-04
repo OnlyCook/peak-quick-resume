@@ -26,6 +26,7 @@ namespace PEAKQuickResume
         Tenderfoot,
         CustomRun,
         AscentFormat, // {0} = ascent number
+        Loading,
     }
 
     internal static class SavePickerLocalization
@@ -112,6 +113,13 @@ namespace PEAKQuickResume
                 "Ascent {0}", "Ascension {0}", "Ascensione {0}", "Aufstieg {0}", "Ascenso {0}",
                 "Ascenso {0}", "Ascensão {0}", "Восхождение {0}", "Сходження {0}", "攀登 {0}", "",
                 "アセント {0}", "어센트 {0}", "Wspinaczka {0}", "Çıkış {0}",
+            },
+            [PickerText.Loading] = new[]
+            {
+                "Loading...", "Chargement...", "Caricamento...", "Wird geladen...",
+                "Cargando...", "Cargando...", "Carregando...",
+                "Загрузка...", "Завантаження...", "加载中...", "",
+                "読み込み中...", "로딩 중...", "Wczytywanie...", "Yükleniyor...",
             },
         };
 

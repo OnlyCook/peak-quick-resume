@@ -5,14 +5,16 @@ namespace PEAKQuickResume
     /// <summary>
     /// Translations for every on-screen message OUR code triggers via
     /// <see cref="CheckpointInterop.TryShowMessage"/> (from <see cref="Plugin"/>,
-    /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>), plus
-    /// <see cref="MsgKey.LoadingSavegame"/>, which overrides the checkpoint mod's own
-    /// "Loading savegame..." loading-screen text (see <see cref="LoadingScreenPatch"/>)
+    /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>), plus two
+    /// that override the checkpoint mod's own English-only strings at their point of
+    /// use: <see cref="MsgKey.LoadingSavegame"/> ("Loading savegame..." on its loading
+    /// screen, see <see cref="LoadingScreenPatch"/>) and <see cref="MsgKey.SavegameLoaded"/>
+    /// ("Save game loaded!" once a load finishes, see <see cref="SavegameLoadedMessagePatch"/>)
     ///
-    /// We localize that one because it fires as a direct result of our own load/resume
-    /// flow just as often as the checkpoint mod's own F6 key, so leaving it English-only
+    /// We localize those two because they fire as a direct result of our own load/resume
+    /// flow just as often as the checkpoint mod's own F6 key, so leaving them English-only
     /// would be a jarring language switch mid-flow. We do NOT localize anything else in
-    /// the checkpoint mod, only this single shared overlay
+    /// the checkpoint mod, only these two shared overlays
     ///
     /// Same indexing/fallback rule as <see cref="PauseMenuLocalization"/> and
     /// <see cref="SavePickerLocalization"/>
@@ -35,6 +37,7 @@ namespace PEAKQuickResume
         NoSavesSolo,
         NoSavesCoop,
         LoadingSavegame,
+        SavegameLoaded,
     }
 
     internal static class MessagesLocalization
@@ -331,6 +334,24 @@ namespace PEAKQuickResume
                 "저장 파일을 불러오는 중...",
                 "Wczytywanie zapisu...",
                 "Kayıt yükleniyor...",
+            },
+            [MsgKey.SavegameLoaded] = new[]
+            {
+                "Save game loaded!",
+                "Sauvegarde chargée !",
+                "Partita salvata caricata!",
+                "Spielstand geladen!",
+                "¡Partida guardada cargada!",
+                "¡Partida guardada cargada!",
+                "Save carregado!",
+                "Сохранение загружено!",
+                "Збереження завантажено!",
+                "存档加载完成!",
+                "",
+                "セーブデータを読み込みました!",
+                "저장 파일을 불러왔습니다!",
+                "Zapis wczytany!",
+                "Kayıt yüklendi!",
             },
         };
 

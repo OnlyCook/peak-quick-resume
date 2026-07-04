@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using BepInEx.Logging;
 using TMPro;
@@ -91,6 +92,54 @@ namespace PEAKQuickResume
 
             _scrollOffset = 0;
             ClearPendingDelete();
+            IsOpen = true;
+
+            // The very first time the picker is ever opened in a session, building the
+            // real menu (baking every procedural sprite/texture from scratch) is heavy
+            // enough to cause a visible hitch. Rather than the player pressing the key
+            // and staring at nothing for a beat, show a cheap "Loading..." indicator
+            // immediately and build the real menu a frame later; every subsequent open
+            // this session skips straight to the instant path below
+            if (!_uiWarmedUp)
+            {
+                EnsureLoadingUi();
+                _loadingRoot?.SetActive(true);
+                if (!_warmingUp)
+                {
+                    _warmingUp = true;
+                    StartCoroutine(WarmUpThenShow());
+                }
+            }
+            else
+            {
+                ShowRealMenu(skipDimFade: false);
+            }
+
+            _log?.LogInfo($"[picker] Opened with {_entries.Count} {(offline ? "offline" : "coop")} save(s); selected #{_selected}.");
+            return true;
+        }
+
+        // Builds the real menu (heavy, first time) and swaps the loading indicator out
+        // for it. Delayed by one frame so the loading text actually gets a chance to
+        // render before the heavy synchronous build work runs
+        private IEnumerator WarmUpThenShow()
+        {
+            yield return null;
+            // skipDimFade: the loading indicator's own dim is already at full DimColor,
+            // deactivating it and activating the real root happen in this same frame
+            // (no yield between them), so the real root's dim starts already-opaque
+            // too, same color, same alpha, nothing to visually distinguish the swap.
+            // Fading it in from 0 here (like a normal open) would instead cause the
+            // dim to flash away to nothing for a frame and then re-fade in, since
+            // deactivating the loading root removes the ONLY dim currently showing
+            ShowRealMenu(skipDimFade: true);
+            _loadingRoot?.SetActive(false);
+            _uiWarmedUp = true;
+            _warmingUp = false;
+        }
+
+        private void ShowRealMenu(bool skipDimFade)
+        {
             EnsureUi();
             ScrollToSelection();
             // Activate BEFORE rebuilding: the footer badges size themselves via
@@ -100,9 +149,17 @@ namespace PEAKQuickResume
             // next rebuild (e.g. the first arrow-key press)
             _root?.SetActive(true);
             RebuildUi();
-            IsOpen = true;
-            _log?.LogInfo($"[picker] Opened with {_entries.Count} {(offline ? "offline" : "coop")} save(s); selected #{_selected}.");
-            return true;
+            if (skipDimFade)
+            {
+                if (_dimImage != null) _dimImage.color = DimColor;
+                _dimFadeElapsed = DimFadeDuration;
+                return;
+            }
+            // Dim fades in from fully transparent each time the picker opens (rather
+            // than snapping straight to DimColor), easier on the eyes than an instant
+            // dark overlay slamming in
+            if (_dimImage != null) _dimImage.color = new Color(DimColor.r, DimColor.g, DimColor.b, 0f);
+            _dimFadeElapsed = 0f;
         }
 
         public void Close()
@@ -111,12 +168,20 @@ namespace PEAKQuickResume
             IsOpen = false;
             ClearPendingDelete();
             _root?.SetActive(false);
+            _loadingRoot?.SetActive(false);
             _log?.LogInfo("[picker] Closed.");
         }
 
         private void Update()
         {
             if (!IsOpen) return;
+
+            if (_dimImage != null && _dimFadeElapsed < DimFadeDuration)
+            {
+                _dimFadeElapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(_dimFadeElapsed / DimFadeDuration);
+                _dimImage.color = new Color(DimColor.r, DimColor.g, DimColor.b, DimColor.a * t);
+            }
 
             // Navigation (the resume key + Enter confirm live in Plugin). Holding an
             // arrow repeats it after an initial delay, like any normal menu list
@@ -286,10 +351,22 @@ namespace PEAKQuickResume
         private const float RowSelOverflow = 8f;
 
         private GameObject _root;
+        private Image _dimImage;
+        private float _dimFadeElapsed;
+        private const float DimFadeDuration = 0.25f;
+
+        // First-open loading indicator (item 2): shown instead of the real menu only
+        // once per session, while the (heavy, one-time) real menu is being built
+        private GameObject _loadingRoot;
+        private bool _uiWarmedUp;
+        private bool _warmingUp;
+
         private RectTransform _panelRect;
         private Image _panelFillImage;
+        private Image _grainImage;
         private RectTransform _rowsContainer;
         private RectTransform _footerRow;
+        private RectTransform _titleRow;
         private TextMeshProUGUI _titleText;
         private TextMeshProUGUI _warnText;
         private TextMeshProUGUI _scrollUpHint;
@@ -315,6 +392,41 @@ namespace PEAKQuickResume
         private static Sprite _rowCapSprite;
         private static Texture2D _grainTexturePanel;
 
+        // Deliberately minimal: a dim background + one line of TMP text, no procedural
+        // sprite baking at all, so this is essentially free to build/show on the very
+        // frame the key is pressed (unlike EnsureUi/RebuildUi, the actual expensive part)
+        private void EnsureLoadingUi()
+        {
+            if (_loadingRoot != null) return;
+            try
+            {
+                if (_font == null) _font = FindGameFont();
+
+                _loadingRoot = new GameObject("PEAKQuickResume_SavePicker_Loading", typeof(RectTransform));
+                _loadingRoot.transform.SetParent(transform, false);
+                var canvas = _loadingRoot.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                canvas.sortingOrder = 30000;
+
+                var dimGo = new GameObject("Dim", typeof(RectTransform));
+                dimGo.transform.SetParent(_loadingRoot.transform, false);
+                var dim = dimGo.AddComponent<Image>();
+                dim.color = DimColor;
+                StretchFull((RectTransform)dimGo.transform);
+
+                var text = MakeText(_loadingRoot.transform, "LoadingText", 30, FontStyles.Normal, TitleColor, TextAlignmentOptions.Center);
+                text.text = SavePickerLocalization.Get(PickerText.Loading);
+                var textRect = (RectTransform)text.transform;
+                StretchFull(textRect);
+
+                _loadingRoot.SetActive(false);
+            }
+            catch (Exception e)
+            {
+                _log?.LogError($"SavePicker.EnsureLoadingUi failed (non-fatal): {e}");
+            }
+        }
+
         private void EnsureUi()
         {
             if (_root != null) return;
@@ -330,8 +442,8 @@ namespace PEAKQuickResume
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_root.transform, false);
-                var dim = dimGo.AddComponent<Image>();
-                dim.color = DimColor;
+                _dimImage = dimGo.AddComponent<Image>();
+                _dimImage.color = new Color(DimColor.r, DimColor.g, DimColor.b, 0f);
                 StretchFull((RectTransform)dimGo.transform);
 
                 var panelGo = new GameObject("Panel", typeof(RectTransform));
@@ -404,17 +516,12 @@ namespace PEAKQuickResume
                 // resolution, no guessing about canvas/PPU scale required at all
                 grain.sprite = Sprite.Create(PanelGrainTexture(), new Rect(0, 0, GrainTextureSize, GrainTextureSize), new Vector2(0.5f, 0.5f), 100f);
                 grain.type = Image.Type.Simple;
-                grain.color = Color.white; // grain shade is baked into the texture itself
+                grain.color = Color.white; // grain shade is baked into the texture itself (alpha applied in RebuildUi)
                 grain.raycastTarget = false;
                 StretchFull((RectTransform)grainGo.transform);
+                _grainImage = grain;
 
-                _titleText = MakeText(panelGo.transform, "Title", 30, FontStyles.Normal, TitleColor, TextAlignmentOptions.Center);
-                var titleRect = (RectTransform)_titleText.transform;
-                titleRect.anchorMin = new Vector2(0f, 1f);
-                titleRect.anchorMax = new Vector2(1f, 1f);
-                titleRect.pivot = new Vector2(0.5f, 1f);
-                titleRect.sizeDelta = new Vector2(-2f * PanelPaddingHorizontal, TitleHeight);
-                titleRect.anchoredPosition = new Vector2(0f, -PanelPadding);
+                BuildTitleRow(panelGo.transform);
 
                 _scrollUpHint = MakeText(panelGo.transform, "ScrollUp", 15, FontStyles.Normal, ScrollHintColor, TextAlignmentOptions.Center);
                 _scrollUpHint.text = "▲";
@@ -477,6 +584,17 @@ namespace PEAKQuickResume
                 _panelRect.sizeDelta = new Vector2(w, h);
                 _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(w), Mathf.RoundToInt(h), _jagFrame);
 
+                // Panel opacity is user-configurable (see PluginConfig.PanelOpacity) so
+                // players can see through the menu's background if they want to. Read
+                // fresh every rebuild (not just on open) so a change via Configuration
+                // Manager while the picker happens to be open takes effect immediately.
+                // The grain overlay is faded the same amount as the fill/border it sits
+                // on top of (it's baked fully opaque, see PanelGrainTexture, so without
+                // this it would keep hiding whatever the fill's own transparency reveals)
+                float panelOpacity = _cfg != null ? Mathf.Clamp01(_cfg.PanelOpacity.Value) : 1f;
+                _panelFillImage.color = new Color(1f, 1f, 1f, panelOpacity);
+                if (_grainImage != null) _grainImage.color = new Color(1f, 1f, 1f, panelOpacity);
+
                 // Widened by RowSelOverflow on each side vs. PanelPadding: this is the
                 // clipping bound for the row list, and the selected row's bar is
                 // deliberately drawn out to fill it (see the per-row loop below), while
@@ -492,6 +610,17 @@ namespace PEAKQuickResume
 
                 _titleText.text = $"Quick Resume  {SavePickerLocalization.Get(PickerText.LoadSave)}  "
                     + $"({(_offline ? SavePickerLocalization.Get(PickerText.Solo) : SavePickerLocalization.Get(PickerText.Coop))})";
+
+                // Same fix as RefreshFooter's badge sizing: a freshly (re)built TMP
+                // text's preferred size is unreliable until its mesh has actually been
+                // generated at least once, which left the title icons visibly
+                // misplaced on first open until any input forced a later rebuild.
+                // Forcing the mesh + a layout pass here corrects it the same frame
+                if (_titleRow != null)
+                {
+                    Canvas.ForceUpdateCanvases();
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(_titleRow);
+                }
 
                 _scrollUpHint.gameObject.SetActive(_scrollOffset > 0);
                 _scrollDownHint.gameObject.SetActive(_scrollOffset + visibleRows < _entries.Count);
@@ -596,6 +725,81 @@ namespace PEAKQuickResume
         // Delete, Esc Cancel). A real rounded-rect Image behind each key, not a TMP
         // <mark> tag (no rounded corners, and its background doesn't vertically center
         // against the text the way a normal layout does)
+        private const float TitleIconSize = 30f;
+        private const float TitleIconSpacing = 10f;
+        private static Sprite _campfireIconSprite;
+
+        // Same "Quick Resume" title, now bracketed by the game's own campfire icon
+        // (the small flame the vanilla HUD shows on StaminaBar next to the stamina bar
+        // while the no-hunger buff is active) on both sides. A HorizontalLayoutGroup +
+        // ContentSizeFitter on the text (same technique BuildFooterEntry already uses)
+        // rather than fixed-position Images: that keeps icon+text+icon centered as one
+        // compact group regardless of how wide the localized title text ends up being
+        private void BuildTitleRow(Transform parent)
+        {
+            var rowGo = new GameObject("TitleRow", typeof(RectTransform));
+            rowGo.transform.SetParent(parent, false);
+            _titleRow = (RectTransform)rowGo.transform;
+            _titleRow.anchorMin = new Vector2(0f, 1f);
+            _titleRow.anchorMax = new Vector2(1f, 1f);
+            _titleRow.pivot = new Vector2(0.5f, 1f);
+            _titleRow.sizeDelta = new Vector2(-2f * PanelPaddingHorizontal, TitleHeight);
+            _titleRow.anchoredPosition = new Vector2(0f, -PanelPadding);
+
+            var rowLayout = rowGo.AddComponent<HorizontalLayoutGroup>();
+            rowLayout.childAlignment = TextAnchor.MiddleCenter;
+            rowLayout.spacing = TitleIconSpacing;
+            rowLayout.childControlWidth = false;
+            rowLayout.childControlHeight = false;
+            rowLayout.childForceExpandWidth = false;
+            rowLayout.childForceExpandHeight = false;
+
+            var iconSprite = FindCampfireIcon();
+            AddTitleIcon(rowGo.transform, iconSprite);
+
+            _titleText = MakeText(rowGo.transform, "Title", 30, FontStyles.Normal, TitleColor, TextAlignmentOptions.Center);
+            var titleFitter = _titleText.gameObject.AddComponent<ContentSizeFitter>();
+            titleFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            titleFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            AddTitleIcon(rowGo.transform, iconSprite);
+        }
+
+        private void AddTitleIcon(Transform parent, Sprite iconSprite)
+        {
+            if (iconSprite == null) return;
+            var iconGo = new GameObject("Icon", typeof(RectTransform));
+            iconGo.transform.SetParent(parent, false);
+            var iconImage = iconGo.AddComponent<Image>();
+            iconImage.sprite = iconSprite;
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+            ((RectTransform)iconGo.transform).sizeDelta = new Vector2(TitleIconSize, TitleIconSize);
+        }
+
+        // The campfire icon isn't a bundled asset, it's pulled from the game's own
+        // vanilla HUD (StaminaBar.campfire, the small icon shown while the no-hunger
+        // buff is active), same "reuse the game's own art" approach FindGameFont()
+        // uses for the title font. Cached once found (Sprite references stay valid for
+        // the rest of the session, same reasoning as the cached TMP font); if no
+        // StaminaBar exists yet (e.g. the very first open happens before any level's
+        // HUD has ever loaded), this just tries again next open instead of giving up
+        // permanently, the title row simply shows text-only until then
+        private static Sprite FindCampfireIcon()
+        {
+            if (_campfireIconSprite != null) return _campfireIconSprite;
+            try
+            {
+                var bar = UnityEngine.Object.FindObjectOfType<StaminaBar>();
+                var icon = bar != null && bar.campfire != null
+                    ? bar.campfire.GetComponentInChildren<Image>(true) ?? bar.campfire.GetComponent<Image>()
+                    : null;
+                if (icon != null && icon.sprite != null) _campfireIconSprite = icon.sprite;
+            }
+            catch { /* non-fatal: title just shows without the icon this open */ }
+            return _campfireIconSprite;
+        }
+
         private void BuildFooterRow(Transform parent)
         {
             var rowGo = new GameObject("Footer", typeof(RectTransform));
