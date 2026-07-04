@@ -111,13 +111,12 @@ namespace PEAKQuickResume
 
                 var b = new Buttons
                 {
-                    // Restart and Return to Airport are lobby-wide disruptive actions, so
-                    // give them their own colors instead of inheriting the Accolades
-                    // button's gold: a crimson (close kin to "Leave Game"'s red, since
-                    // Restart is the more severe of the two, it skips straight into a
-                    // fresh run) and a teal (a calmer "just travel, nothing is lost" cue
-                    // for Return to Airport). Board Flight is non-destructive, so it
-                    // keeps the cloned gold as-is
+                    // Restart, Return to Airport and Board Flight all get their own
+                    // colors instead of inheriting the Accolades button's gold: a
+                    // crimson for Restart (close kin to "Leave Game"'s red, since it's
+                    // the most severe of the three, skipping straight into a fresh
+                    // run), and the same teal for Return to Airport and Board Flight
+                    // (both are calmer "just travel, nothing is lost" actions)
                     Restart = MakeButton(template, parent, insertIndex++,
                         () => PauseMenuLocalization.Get(ButtonLabel.Restart),
                         () => OnRestartClicked(__instance), new Color(0.80f, 0.20f, 0.15f)),
@@ -131,9 +130,14 @@ namespace PEAKQuickResume
                     // gehen" / ...), but every other pause menu button is all-caps, so
                     // force it to match. ToUpperInvariant (not culture-sensitive ToUpper)
                     // to sidestep the Turkish dotted/dotless "i" casing quirk
+                    //
+                    // Same teal as Return to Airport (not the cloned Accolades gold):
+                    // both are "just travel, nothing lost" actions, so they read as one
+                    // color family rather than Board Flight looking like a leftover
+                    // Accolades-styled button
                     OpenKiosk = MakeButton(template, parent, insertIndex++,
                         () => LocalizedText.GetText("BOARDFLIGHT").ToUpperInvariant(),
-                        () => OnOpenKioskClicked(__instance)),
+                        () => OnOpenKioskClicked(__instance), new Color(0.12f, 0.55f, 0.58f)),
                 };
                 _built.Add(__instance, b);
 

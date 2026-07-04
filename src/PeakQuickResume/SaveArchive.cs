@@ -7,6 +7,7 @@ using BepInEx;
 using BepInEx.Logging;
 using Newtonsoft.Json;
 using Photon.Pun;
+using Zorro.Core;
 
 namespace PEAKQuickResume
 {
@@ -239,13 +240,37 @@ namespace PEAKQuickResume
         /// <summary>Human label for the boarding-pass difficulty an ascent maps to</summary>
         public static string DifficultyLabel(SaveTarget t)
         {
-            if (t.IsCustom) return "Custom Run";
+            string official = TryGetOfficialAscentTitle(t);
+            if (!string.IsNullOrEmpty(official)) return official;
+
+            // Fallback if the game's own AscentData couldn't be reached (e.g. a future
+            // update changes its shape); our own translations, better than nothing
+            if (t.IsCustom) return SavePickerLocalization.Get(PickerText.CustomRun);
             switch (t.Ascent)
             {
-                case -1: return "Tenderfoot";
+                case -1: return SavePickerLocalization.Get(PickerText.Tenderfoot);
                 case 0: return "PEAK";
-                default: return $"Ascent {t.Ascent}";
+                default: return string.Format(SavePickerLocalization.Get(PickerText.AscentFormat), t.Ascent);
             }
+        }
+
+        // Reuses the game's OWN localized difficulty names instead of re-translating them
+        // ourselves, exact wording in every language, no guesswork (our own German
+        // "Benutzerdefinierter Lauf" for a custom run, for instance, doesn't match the
+        // game's own "Eigener Aufstieg"). Same indexing AscentUI itself uses:
+        // ascents[0] = custom run, ascents[ascent + 2] = normal difficulty (so ascent -1 =
+        // index 1 "Tenderfoot", ascent 0 = index 2 "PEAK", ascent 1 = index 3, ...)
+        private static string TryGetOfficialAscentTitle(SaveTarget t)
+        {
+            try
+            {
+                var data = SingletonAsset<AscentData>.Instance;
+                if (data?.ascents == null) return null;
+                int index = t.IsCustom ? 0 : t.Ascent + 2;
+                if (index < 0 || index >= data.ascents.Count) return null;
+                return data.ascents[index].localizedTitle;
+            }
+            catch { return null; }
         }
 
         // Best-effort read of the display fields from the checkpoint mod's JSON schema

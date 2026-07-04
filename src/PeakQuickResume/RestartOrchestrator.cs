@@ -52,7 +52,7 @@ namespace PEAKQuickResume
             if (!RunLauncher.IsHost)
             {
                 _log.LogWarning("Cannot restart: only the host / offline player can start a new run.");
-                Msg("Only the host can restart the run!", MsgError);
+                Msg(MessagesLocalization.Get(MsgKey.OnlyHostRestart), MsgError);
                 return;
             }
 
@@ -76,7 +76,7 @@ namespace PEAKQuickResume
             _running = true;
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo($"=== Restart: sequence START (ascent={ascent}, custom={custom}) ===");
-            Msg("Restarting run...", MsgInfo);
+            Msg(MessagesLocalization.Get(MsgKey.RestartingRun), MsgInfo);
 
             if (!RunLauncher.IsLoading)
             {
@@ -114,7 +114,7 @@ namespace PEAKQuickResume
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
 
             _log.LogInfo("=== Restart: sequence COMPLETE (fresh run started) ===");
-            Msg("Run restarted!", MsgSuccess);
+            Msg(MessagesLocalization.Get(MsgKey.RunRestarted), MsgSuccess);
             _running = false;
         }
 
@@ -143,7 +143,7 @@ namespace PEAKQuickResume
         private void Fail(string reason)
         {
             _log.LogError($"Restart aborted: {reason}.");
-            Msg("Restart failed, see the log for details.", MsgError);
+            Msg(MessagesLocalization.Get(MsgKey.RestartFailed), MsgError);
             _running = false;
         }
     }
