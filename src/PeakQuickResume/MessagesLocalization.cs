@@ -38,6 +38,7 @@ namespace PEAKQuickResume
         NoSavesCoop,
         LoadingSavegame,
         SavegameLoaded,
+        TeleportBugHint,
     }
 
     internal static class MessagesLocalization
@@ -352,6 +353,24 @@ namespace PEAKQuickResume
                 "저장 파일을 불러왔습니다!",
                 "Zapis wczytany!",
                 "Kayıt yüklendi!",
+            },
+            [MsgKey.TeleportBugHint] = new[]
+            {
+                "Did something go wrong? If yes, press F1 to open the help screen.",
+                "Un problème est survenu ? Si oui, appuyez sur F1 pour ouvrir l'écran d'aide.",
+                "Qualcosa è andato storto? Se sì, premi F1 per aprire la schermata di aiuto.",
+                "Ist etwas schiefgelaufen? Falls ja, drücke F1, um den Hilfebildschirm zu öffnen.",
+                "¿Ha ido algo mal? Si es así, pulsa F1 para abrir la pantalla de ayuda.",
+                "¿Salió algo mal? Si es así, presiona F1 para abrir la pantalla de ayuda.",
+                "Algo deu errado? Se sim, pressione F1 para abrir a tela de ajuda.",
+                "Что-то пошло не так? Если да, нажмите F1, чтобы открыть экран помощи.",
+                "Щось пішло не так? Якщо так, натисніть F1, щоб відкрити екран довідки.",
+                "出了什么问题吗？如果是的话，按 F1 打开帮助界面。",
+                "",
+                "何か問題が起きましたか？もしそうなら、F1を押してヘルプ画面を開いてください。",
+                "무언가 잘못되었나요? 그렇다면 F1을 눌러 도움말 화면을 열어보세요.",
+                "Czy coś poszło nie tak? Jeśli tak, naciśnij F1, aby otworzyć ekran pomocy.",
+                "Bir şeyler mi ters gitti? Öyleyse, yardım ekranını açmak için F1 tuşuna basın.",
             },
         };
 

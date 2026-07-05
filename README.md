@@ -4,7 +4,7 @@
 
 # PEAK Quick Resume
 
-> Fully working in solo and co-op (tested with up to 2 players); larger lobbies should work but aren't verified yet. Feedback welcome!
+> **Full release** (v1.0.0): If you are updating from a beta release (v0.3.0 or older) be sure to check the CHANGELOG.
 
 **Press one key to browse your campfires and jump straight back to any of them.**
 
@@ -22,7 +22,7 @@ Works **after you die**, **from the Airport**, or **mid-run** (so no need to die
 
 Because it always spins up a fresh run instance before loading, you can resume as many times as you like without having the problem of loading twice (through F6) and breaking the game.
 
-> The mod also adds a few **optional** Quality of Life pause menu buttons (see more at the bottom of this README).
+> The mod also adds a few **optional** Quality of Life pause menu buttons (more details at the bottom of this README).
 
 ---
 
@@ -32,7 +32,7 @@ This mod does **not** save or load anything by itself, it automates **[PEAK Chec
 
 The campfire **saving** is still handled entirely by PEAK Checkpoint Save (light a campfire to save). Quick Resume archives each of those saves (now you can have multiple saves per difficulty), makes **loading** effortless from anywhere in-game, and lets you pick which one to load.
 
-> **Note:** If you want to play on the most recent maps, then just delete the save of the designated difficulty through the Gate Kiosk using F6 and start a new run. This will **not** delete it from the Quick Resume menu.
+> **Note:** As this mod does all the restoring, it's the one that causes issues regarding client teleport. The Quick Resume mod tries to mitigate these issues by applying a custom config and trying to steer it in the right direction.
 
 ## How to use
 
@@ -45,7 +45,7 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 
 ## Configuration
 
-Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below (including a proper click-to-rebind widget for the resume key) is also editable in-game under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
+Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below (including a proper click-to-rebind widget for the resume key) is also editable in the game's settings under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
 
 - **resume-key**: the key to open the picker / load the highlighted save (default **F7**). Rebindable directly in ModConfig's menu.
 - **resume-key-also-confirms-load**: if disabled, pressing the resume key while the picker is open does nothing, only Enter confirms a load (useful if you keep accidentally reloading while trying to close the picker).
@@ -53,7 +53,8 @@ Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib
 - **panel-opacity**: how see-through the picker's background panel is (0 = fully see-through; 1 = fully opaque, default).
 - **Pause-Menu**: disable/re-enable any of the 3 added QoL pause menu buttons, and optionally enable `move-rebind-controls-to-settings` to move the 'Rebind Controls' button away from the pause menu.
 - **Timing**: advanced settle/timeout values; raise `coop-airport-settle` if a client occasionally gets left behind on a slow connection.
-- *(`require-double-press_DEPRECATED` / `double-press-window_DEPRECATED` are deprecated. The picker itself now provides the confirmation step. Kept for compatibility reasons.)*
+- **Teleport-Override**: `enable-optimized-coop-loading` (on by default) makes a plain co-op load use PEAK Checkpoint Save's `teleportJumpLogic 1` instead of your own base setting, since extensive testing found this avoids nearly all of the teleport glitching described below. Hold **Shift** while loading to use your own base setting instead for just that one load, or **Alt** for `teleportJumpLogic 2`. Solo play is never affected. Press **F1** in-game for a live explanation using your actual current settings.
+- **Teleport-Mitigation**: detects and helps recover from the teleport glitching described below (see Notes). Everything here is on by default and rarely needs touching; thresholds and delays are all individually configurable if you want to tune them.
 
 Your archived checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split into `Offline/` and `Coop/`). PEAK Checkpoint Save's own files are never modified.
 
@@ -62,7 +63,7 @@ Your archived checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split 
 - **Host-only** in co-op (just like PEAK Checkpoint Save). Everyone should have PEAK Checkpoint Save installed.
 - Loading a checkpoint can grant Steam achievements (a property of the underlying mod). Don't use it if you want to earn everything unassisted.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
-- If a client ever glitches after loading, that's the underlying teleport in PEAK Checkpoint Save. Try its `teleportJumpLogic` config (1 or 2) or its manual F9 teleport.
+- **Client teleport glitches (co-op):** occasionally, PEAK Checkpoint Save's own teleport logic keeps re-correcting a client's position right after loading, causing brief up/down glitching (and sometimes fall damage from being repeatedly snapped back into the air). Quick Resume now automatically detects this, shows an on-screen hint (press **F1** for details), cancels the excess corrections once the load reports itself done, refunds any fall damage they caused, and forces you back to the right spot if you're still stuck. On top of that, a plain co-op load now defaults to the `teleportJumpLogic` value that extensive testing found to avoid many such issues almost entirely (see `enable-optimized-coop-loading` above).
 - Translations were done by AI, so if something is off in your language, then you are free to open a GitHub Issue (see below).
 
 ## Feedback & bug reports
@@ -91,7 +92,7 @@ BepInEx rewrites this file every time you launch the game, so **reproduce the bu
 
 You can disable/hide any of these buttons through 'Mod Settings' (on the `PEAK Quick Resume` tab and under `Pause Menu`)
 
-> If you have too many pause menu buttons because of this, you can enable the `move-rebind-controls-to-settings` setting (also under `Pause Menu`). This will move the 'Rebind Controls' button from the pause menu to the 'Settings' page, below the 'Mod Settings' button.
+> If you have too many pause menu buttons because of this, you can enable the `move-rebind-controls-to-settings` setting (also under `Pause Menu`). This will move the 'Rebind Controls' button from the pause menu to the 'Settings' page, below the 'Back' (or if applicable 'Mod Settings') button.
 
 ## Requirements
 

@@ -39,6 +39,18 @@ namespace PEAKQuickResume
         private MethodInfo _checkReadyStatus; // optional (coop readiness gate)
         private FieldInfo _readyCheckConfigField; // optional (ConfigEntry<bool>)
 
+        // Phase 6 step 2 (Shift/Alt temporary teleport-config override), all optional:
+        // ConfigEntry<int>, ConfigEntry<int>, ConfigEntry<float> respectively
+        private FieldInfo _teleportJumpLogicField;
+        private FieldInfo _teleportFramesToWaitField;
+        private FieldInfo _teleportWaitTimeField;
+
+        // Phase 6 step 3 (F1 help screen rewrite), all optional:
+        // ConfigEntry<KeyboardShortcut>, ConfigEntry<KeyboardShortcut>
+        private FieldInfo _loadKeyField;
+        private FieldInfo _tutorialKeyField;
+        private MethodInfo _showTutorialMessage; // optional (ShowTutorialMessage(bool, string))
+
         private bool _resolved;
 
         public CheckpointInterop(ManualLogSource log) => _log = log;
@@ -76,6 +88,15 @@ namespace PEAKQuickResume
                 _checkReadyStatus     = AccessTools.Method(_pluginType, "CheckReadyStatusForPlayers");
                 _readyCheckConfigField = AccessTools.Field(_pluginType, "configAdvancedEnableClientReadyStatusCheck");
 
+                _teleportJumpLogicField     = AccessTools.Field(_pluginType, "configTeleportJumpLogic");
+                _teleportFramesToWaitField  = AccessTools.Field(_pluginType, "configAdvancedTeleportFramesToWait");
+                _teleportWaitTimeField      = AccessTools.Field(_pluginType, "configAdvancedJumpLogicWaitTime");
+
+                _loadKeyField     = AccessTools.Field(_pluginType, "configLoadKey");
+                _tutorialKeyField = AccessTools.Field(_pluginType, "configTutorialKey");
+                _showTutorialMessage = AccessTools.Method(_pluginType, "ShowTutorialMessage",
+                    new[] { typeof(bool), typeof(string) });
+
                 _log.LogInfo("Checkpoint interop probe:");
                 _log.LogInfo($"  Instance field ....... {(_instanceField != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  selectedAscent ....... {(_selectedAscentField != null ? "OK" : "MISSING")}");
@@ -86,6 +107,11 @@ namespace PEAKQuickResume
                 _log.LogInfo($"  ShowMessage .......... {(_showMessage != null ? "OK" : "MISSING (non-fatal, on-screen text only)")}");
                 _log.LogInfo($"  CheckReadyStatus ..... {(_checkReadyStatus != null ? "OK" : "MISSING (non-fatal, coop readiness)")}");
                 _log.LogInfo($"  readyStatusConfig .... {(_readyCheckConfigField != null ? "OK" : "MISSING (non-fatal, coop readiness)")}");
+                _log.LogInfo($"  teleportJumpLogic .... {(_teleportJumpLogicField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
+                _log.LogInfo($"  teleportFramesToWait . {(_teleportFramesToWaitField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
+                _log.LogInfo($"  jumpLogicWaitTime .... {(_teleportWaitTimeField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
+                _log.LogInfo($"  loadKey/tutorialKey .. {(_loadKeyField != null && _tutorialKeyField != null ? "OK" : "MISSING (non-fatal, F1 screen falls back to defaults)")}");
+                _log.LogInfo($"  ShowTutorialMessage .. {(_showTutorialMessage != null ? "OK" : "MISSING (non-fatal, closing F1 with Escape may need a second F1 press to reopen)")}");
 
                 // currentlyLoading is only a nicety (prevents double loads); not required
                 _resolved = _instanceField != null
@@ -214,6 +240,128 @@ namespace PEAKQuickResume
                 _showMessage.Invoke(inst, new object[] { text, color, duration, false });
             }
             catch (Exception e) { _log.LogWarning($"TryShowMessage failed (non-fatal): {e.Message}"); }
+        }
+
+        /// <summary>
+        /// Reads the checkpoint mod's current teleport-config values (its own
+        /// `teleportJumpLogic` / `teleportFramesToWait` / `jumpLogicWaitTime` settings),
+        /// live off its ConfigEntry objects, not a cached copy - so this always reflects
+        /// whatever's ACTUALLY in effect right now, including a still-active override
+        /// from <see cref="TrySetTeleportConfig"/> or a change made via ModConfig.
+        /// Used both by the Shift/Alt override (Phase 6 step 2) and the save picker's
+        /// live footer indicator
+        /// </summary>
+        public bool TryGetTeleportConfig(out int jumpLogic, out int framesToWait, out float waitTime)
+        {
+            jumpLogic = 0; framesToWait = 0; waitTime = 0f;
+            try
+            {
+                if (_teleportJumpLogicField == null || _teleportFramesToWaitField == null || _teleportWaitTimeField == null)
+                    return false;
+                var inst = Instance;
+                if (inst == null) return false;
+
+                jumpLogic = GetConfigEntryValue<int>(_teleportJumpLogicField, inst);
+                framesToWait = GetConfigEntryValue<int>(_teleportFramesToWaitField, inst);
+                waitTime = GetConfigEntryValue<float>(_teleportWaitTimeField, inst);
+                return true;
+            }
+            catch (Exception e) { _log.LogWarning($"TryGetTeleportConfig failed (non-fatal): {e.Message}"); return false; }
+        }
+
+        /// <summary>Writes all three teleport-config values at once (see <see cref="TryGetTeleportConfig"/>)</summary>
+        public bool TrySetTeleportConfig(int jumpLogic, int framesToWait, float waitTime)
+        {
+            try
+            {
+                if (_teleportJumpLogicField == null || _teleportFramesToWaitField == null || _teleportWaitTimeField == null)
+                    return false;
+                var inst = Instance;
+                if (inst == null) return false;
+
+                SetConfigEntryValue(_teleportJumpLogicField, inst, jumpLogic);
+                SetConfigEntryValue(_teleportFramesToWaitField, inst, framesToWait);
+                SetConfigEntryValue(_teleportWaitTimeField, inst, waitTime);
+                return true;
+            }
+            catch (Exception e) { _log.LogWarning($"TrySetTeleportConfig failed (non-fatal): {e.Message}"); return false; }
+        }
+
+        /// <summary>The checkpoint mod's own native load key (default F6), as displayed text (e.g. "F6"), or null if unavailable</summary>
+        public string TryGetLoadKeyText() => TryGetKeyboardShortcutText(_loadKeyField);
+
+        /// <summary>The checkpoint mod's own F1-equivalent tutorial key, as displayed text, or null if unavailable</summary>
+        public string TryGetTutorialKeyText() => TryGetKeyboardShortcutText(_tutorialKeyField);
+
+        /// <summary>
+        /// Tells the checkpoint mod its own tutorial is now closed (`ShowTutorialMessage(false,
+        /// "")`), syncing its private `tutorialMessageEnabled` toggle without going through its
+        /// own tutorial-key handling. Needed because <see cref="HelpScreen"/> can also be closed
+        /// via Escape (see ROADMAP.md Phase 6 step 3) - without this, the checkpoint mod's own
+        /// toggle would still think its tutorial is open, and the next tutorial-key press would
+        /// just "close" it again (a no-op, since HelpScreen is already closed) instead of
+        /// reopening, effectively requiring two presses to reopen after an Escape-close
+        /// </summary>
+        public void TryCloseTutorial()
+        {
+            try
+            {
+                var inst = Instance;
+                if (inst == null || _showTutorialMessage == null) return;
+                _showTutorialMessage.Invoke(inst, new object[] { false, "" });
+            }
+            catch (Exception e) { _log.LogWarning($"TryCloseTutorial failed (non-fatal): {e.Message}"); }
+        }
+
+        private string TryGetKeyboardShortcutText(FieldInfo field)
+        {
+            try
+            {
+                if (field == null) return null;
+                var inst = Instance;
+                if (inst == null) return null;
+                object entry = field.GetValue(inst);
+                object value = entry?.GetType().GetProperty("Value")?.GetValue(entry);
+                return value?.ToString();
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// The checkpoint mod's own live description text for `teleportJumpLogic` (read
+        /// straight off its BepInEx ConfigDescription, not a copy we maintain), so the F1
+        /// screen quotes the real, currently-shipping wording instead of a paraphrase that
+        /// could drift out of date. Null if unavailable
+        /// </summary>
+        public string TryGetTeleportJumpLogicDescription() => TryGetConfigDescription(_teleportJumpLogicField);
+
+        private string TryGetConfigDescription(FieldInfo field)
+        {
+            try
+            {
+                if (field == null) return null;
+                var inst = Instance;
+                if (inst == null) return null;
+                object entry = field.GetValue(inst);
+                object desc = entry?.GetType().GetProperty("Description")?.GetValue(entry);
+                return desc?.GetType().GetProperty("Description")?.GetValue(desc) as string;
+            }
+            catch { return null; }
+        }
+
+        // BepInEx ConfigEntry<T> isn't a type we reference directly (it IS available via
+        // BepInEx.dll, but going through its untyped Value property by reflection here
+        // keeps this symmetric with the rest of this file's reflection-only approach)
+        private static T GetConfigEntryValue<T>(FieldInfo configEntryField, object instance)
+        {
+            object entry = configEntryField.GetValue(instance);
+            return (T)entry.GetType().GetProperty("Value").GetValue(entry);
+        }
+
+        private static void SetConfigEntryValue<T>(FieldInfo configEntryField, object instance, T value)
+        {
+            object entry = configEntryField.GetValue(instance);
+            entry.GetType().GetProperty("Value").SetValue(entry, value);
         }
     }
 }

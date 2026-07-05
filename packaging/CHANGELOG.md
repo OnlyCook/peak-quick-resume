@@ -1,6 +1,14 @@
 # Changelog
 
 ## 1.0.0
+
+Full release.
+
+> If you ever had issues as the client (not the host) in co-op while loading a save (such as falling through the world or seeing an empty map), then this update should fix a lot of such issues.  
+> **Note:** if you are updating from a **beta release** (v0.3.0 or older) then be sure to delete this `PEAK Quick Resume` mod and the underlying `PEAK Checkpoint Save` mod and then simply reinstall the `PEAK Quick Resume` mod (which will install the other automatically). This makes sure an outdated or changed config does not interfere with any functionality.
+
+- **Detects and mitigates PEAK Checkpoint Save's occasional bad-teleport bug**:
+  - **In co-op, a plain load now defaults to `teleportJumpLogic 1`** instead of PEAK Checkpoint Save's own base setting, since extensive testing found this avoids nearly every case of the bug above. New `enable-optimized-coop-loading` setting (on by default) controls this; hold **Shift** while loading to use your own base setting instead for just that one load, or **Alt** for `teleportJumpLogic 2`. Solo play is never affected.
 - **F7 save picker redesign:** rebuilt as a real UGUI Canvas matching the game's own visual style, with a smoothly fading-in dimming overlay, and a one-time loading indicator on the very first open each session so the initial build doesn't cause a seemingly freeze.
 - New `panel-opacity` config setting: lower it to see through the picker's background while it's open.
 - New `resume-key-also-confirms-load` setting, and the resume key is now a real rebindable `KeyCode`, so PEAKLib.ModConfig's in-game menu can rebind it directly (click, press a key) instead of only via the config file.
@@ -11,7 +19,9 @@
 - Localized "PEAK Checkpoint Save"'s own "Savegame loading..." and "Savegame loaded!" messages.
 - All config setting names now use hyphens as spaces, so they are actually readable (`ALLOW-MID-GAME` instead of `ALLOWMIDGAME`).
 - "Board Flight" pause menu button now matches "Return to Airport"'s teal.
+- F1 help screen rewritten into a real small menu matching the F7 picker's look.
 - New `move-rebind-controls-to-settings` setting (off by default): moves the vanilla "Rebind Controls" button out of the pause menu into the Settings page (below the `Mod Settings` button), freeing up a row for this mod's and other mods' own pause-menu buttons.
+- Removed the `require-double-press_DEPRECATED` / `double-press-window_DEPRECATED` settings (deprecated since 0.2.0, superseded by the picker's confirm step).
 
 ## 0.3.0
 - **Miscellaneous QoL: pause menu buttons.** Three extra buttons are injected into the vanilla pause menu:

@@ -8,8 +8,6 @@ namespace PEAKQuickResume
     {
         public readonly ConfigEntry<KeyCode> ResumeKey;
         public readonly ConfigEntry<bool> ResumeKeyAlsoConfirmsLoad;
-        public readonly ConfigEntry<bool> RequireDoublePress;
-        public readonly ConfigEntry<float> DoublePressWindow;
         public readonly ConfigEntry<bool> AllowMidGame;
         public readonly ConfigEntry<float> PanelOpacity;
         public readonly ConfigEntry<bool> EnableDebugLogging;
@@ -27,6 +25,58 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<float> SettleAfterLevel;
         public readonly ConfigEntry<float> StepTimeout;
         public readonly ConfigEntry<float> CoopAirportSettle;
+
+        // Phase 6: helps recover from the checkpoint mod's own intermittent teleport
+        // bug (up/down warp-loop glitching, occasionally falling through the world).
+        // We never touch its teleport logic, only detect + soften the aftermath
+        public readonly ConfigEntry<bool> EnableTeleportWatchdog;
+        public readonly ConfigEntry<float> WatchdogWindowSeconds;
+        public readonly ConfigEntry<float> FallDistanceThreshold;
+        public readonly ConfigEntry<int> GlitchOscillationCount;
+        public readonly ConfigEntry<float> NeverTeleportedDistanceThreshold;
+
+        // Phase 6 steps 4-5: auto-fixes that only ever act on a teleport the watchdog
+        // above already flagged as bad, never unconditionally on every teleport
+        public readonly ConfigEntry<bool> EnableFallDamageRevert;
+        public readonly ConfigEntry<float> DamageRevertDelaySeconds;
+        public readonly ConfigEntry<bool> EnablePositionRecovery;
+        public readonly ConfigEntry<float> PositionRecoveryDelaySeconds;
+        public readonly ConfigEntry<float> PositionRecoveryDistanceThreshold;
+        public readonly ConfigEntry<bool> EnableWarpSuppression;
+        public readonly ConfigEntry<float> WarpSuppressionExtraSeconds;
+
+        // Phase 6 step 2: temporary teleport-config override for the next load only
+        // (native F6 or ours). Every number here is exposed as its own setting
+        // specifically so it's easy to change without touching code
+        //
+        // Extensive maintainer testing (session 11, both directions of host/client,
+        // every campfire on 3 islands, mixed inventories) found teleportJumpLogic=1
+        // avoids nearly every case of the checkpoint mod's intermittent teleport bug in
+        // COOP specifically (it unfogs/loads every intervening island's segment on the
+        // way to the target, rather than jumping straight there). So coop's plain,
+        // no-modifier load now defaults to OptimizedCoopJumpLogic (see below) instead
+        // of the user's own base teleportJumpLogic - the exact opposite of the old
+        // "0 is safest, override only if asked" stance, now that testing backs a
+        // specific better default. Solo is never affected (no known solo-only benefit
+        // was found, and there's no coop desync mechanism for it to fix there).
+        // Holding Shift now means "use my own base config anyway" (no override applied
+        // at all) rather than a distinct configured value - the escape hatch for
+        // anyone who wants the old behavior for one load without changing settings
+        public readonly ConfigEntry<bool> EnableOptimizedCoopLoading;
+        public readonly ConfigEntry<int> OptimizedCoopJumpLogic;
+        public readonly ConfigEntry<int> AltTeleportJumpLogic;
+        public readonly ConfigEntry<int> OverrideFramesToWait;
+        public readonly ConfigEntry<float> OverrideJumpLogicWaitTime;
+        public readonly ConfigEntry<float> OverrideRestoreDelaySeconds;
+
+        // Internal bookkeeping, not meant to be hand-edited: persists the pre-override
+        // teleport config to disk for the ~35s window an override is active, so a
+        // crash/quit in that window doesn't leave it stuck. See
+        // TeleportConfigOverride.Apply/RestoreAfterDelay/ReconcileAfterRestart.
+        public readonly ConfigEntry<bool> PendingOverrideResetOwed;
+        public readonly ConfigEntry<int> PendingOverrideOriginalJumpLogic;
+        public readonly ConfigEntry<int> PendingOverrideOriginalFramesToWait;
+        public readonly ConfigEntry<float> PendingOverrideOriginalWaitTime;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -52,25 +102,6 @@ namespace PEAKQuickResume
                 + "highlighted save (so pressing it twice loads the latest checkpoint). If disabled, only Enter "
                 + "confirms a load while the picker is open, pressing the resume key does nothing, useful if "
                 + "you keep accidentally loading a save while trying to close the picker with it.");
-
-            // Renamed (not just re-described): Configuration Manager / PEAKLib.ModConfig
-            // both display the raw key string as the row header, the description is
-            // only a hover tooltip, easy to miss. Brackets/spaces in the KEY itself
-            // are a bad idea though, a "[DEPRECATED] " key prefix silently broke the
-            // whole plugin (PluginConfig's constructor threw, so Awake() never
-            // finished, no logging, no F7, no pause menu buttons, nothing), so the
-            // key stays a plain hyphenated identifier and only carries a harmless
-            // "_DEPRECATED" suffix (underscore, not another hyphen, so it visibly
-            // reads as a separate marker rather than part of the setting's own name).
-            // Old "requireDoublePress"/"doublePressWindow" (and, as of the hyphenation
-            // pass, the un-hyphenated versions of every key below too) entries in
-            // existing config files are simply left orphaned (harmless)
-            RequireDoublePress = cfg.Bind("General", "require-double-press_DEPRECATED", true,
-                "[DEPRECATED] No longer used: the F7 save picker now provides the confirmation step "
-                + "(open, then press again to load). Kept only so old config files don't error.");
-
-            DoublePressWindow = cfg.Bind("General", "double-press-window_DEPRECATED", 5f,
-                "[DEPRECATED] No longer used (superseded by the F7 save picker). Kept for config compatibility.");
 
             AllowMidGame = cfg.Bind("General", "allow-mid-game", true,
                 "If enabled, the resume key also works while you are alive in a level (returns to the Airport, "
@@ -120,6 +151,124 @@ namespace PEAKQuickResume
                 "COOP ONLY: extra seconds to wait at the Airport before starting the fresh run, so other "
                 + "players have finished loading the Airport and will receive the run-start (advanced). "
                 + "Raise this if a client occasionally gets left behind on a slow connection.");
+
+            EnableTeleportWatchdog = cfg.Bind("Teleport-Mitigation", "enable-teleport-watchdog", true,
+                "Watches every checkpoint-mod teleport (its own F6 load, or ours) for the known intermittent "
+                + "upstream bug: warp-loop glitching or falling through the world. When detected, shows an "
+                + "on-screen hint pointing at the F1 help screen. Disable to turn off all Phase 6 detection.");
+
+            WatchdogWindowSeconds = cfg.Bind("Teleport-Mitigation", "watchdog-window-seconds", 30f,
+                "How long after a teleport to keep watching for the bad-teleport symptoms below (advanced).");
+
+            FallDistanceThreshold = cfg.Bind("Teleport-Mitigation", "fall-distance-threshold", 150f,
+                "How far below the actual teleport target (in meters) counts as \"falling through the world\". "
+                + "Measured against the fixed teleport target, not a rolling peak, since the checkpoint mod's "
+                + "own re-teleport corrections would otherwise keep resetting a rolling peak upward (advanced).");
+
+            GlitchOscillationCount = cfg.Bind("Teleport-Mitigation", "glitch-oscillation-count", 4,
+                "How many times the checkpoint mod re-warps you within a few seconds AFTER a load already "
+                + "reported itself done counts as the up/down warp-loop glitch (advanced).");
+
+            NeverTeleportedDistanceThreshold = cfg.Bind("Teleport-Mitigation", "never-teleported-distance-threshold", 200f,
+                "Checked once right after a load finishes: if you're still this many meters (or more) from the "
+                + "save's teleport target, you were never actually moved there. The nearest campfire to spawn is "
+                + "~500m out and you can't light one (which is what creates a save) unless everyone is within 30m "
+                + "of it, so this threshold has a wide safety buffer under a real miss (advanced).");
+
+            EnableWarpSuppression = cfg.Bind("Teleport-Mitigation", "enable-warp-suppression", true,
+                "Once the checkpoint mod reports the load done (\"Save game loaded!\"), cancels every further "
+                + "WarpPlayerRPC it sends you for the rest of watchdog-window-seconds. Root-caused from real "
+                + "session logs: the checkpoint mod's own TeleportClientsToHost keeps re-warping a client whenever "
+                + "ITS view of your position looks too far off, but checks so infrequently (teleportFramesToWait "
+                + "frames apart) that ordinary gravity pulls you back out of tolerance between checks nearly every "
+                + "time - so it can loop 30+ times fighting its own retry cadence instead of converging, each snap "
+                + "briefly hoisting you back into the air and re-accumulating fall damage on the way back down. "
+                + "Cancelling everything after the load already reported itself done leaves you wherever the "
+                + "first, legitimate warp already put you; position-recovery (below) is the fallback if that "
+                + "wasn't actually close enough.");
+
+            WarpSuppressionExtraSeconds = cfg.Bind("Teleport-Mitigation", "warp-suppression-extra-seconds", 2f,
+                "Extra seconds added on top of watchdog-window-seconds before warp suppression above lifts. The "
+                + "checkpoint mod's own retry loop times out on its own ~30s clock, started at a slightly "
+                + "different moment than ours - this buffer avoids a straggler correction sneaking through right "
+                + "at the boundary right as suppression lifts (advanced).");
+
+            EnableFallDamageRevert = cfg.Bind("Teleport-Mitigation", "enable-fall-damage-revert", true,
+                "When the watchdog flags a bad teleport, snapshots your Injury status and, after "
+                + "damage-revert-delay-seconds, refunds any Injury gained since (once). Only ever engages after a "
+                + "teleport was already flagged as broken, never on ordinary damage. Note: any OTHER damage taken "
+                + "in that same short window (e.g. a mob hit) gets refunded too, since only the net change is "
+                + "visible - an accepted trade-off given how rarely a fight breaks out right after loading in.");
+
+            DamageRevertDelaySeconds = cfg.Bind("Teleport-Mitigation", "damage-revert-delay-seconds", 20f,
+                "Seconds to wait after a flagged bad teleport before comparing Injury status and refunding any "
+                + "increase (advanced).");
+
+            EnablePositionRecovery = cfg.Bind("Teleport-Mitigation", "enable-position-recovery", true,
+                "When the watchdog flags a bad teleport, checks again after position-recovery-delay-seconds and, "
+                + "if you're still more than position-recovery-distance-threshold meters from where the save "
+                + "actually intended to put you, forces you there directly - cuts a warp-loop glitch short instead "
+                + "of waiting for the checkpoint mod's own correction loop to eventually sort itself out.");
+
+            PositionRecoveryDelaySeconds = cfg.Bind("Teleport-Mitigation", "position-recovery-delay-seconds", 5f,
+                "Seconds after a flagged bad teleport before checking whether a forced position recovery is "
+                + "needed (advanced).");
+
+            PositionRecoveryDistanceThreshold = cfg.Bind("Teleport-Mitigation", "position-recovery-distance-threshold", 5f,
+                "How far (in meters) from the intended target still counts as \"not settled\" when the position "
+                + "recovery check above runs (advanced).");
+
+            EnableOptimizedCoopLoading = cfg.Bind("Teleport-Override", "enable-optimized-coop-loading", true,
+                "In COOP, a plain load (native F6, or this mod's F7/Enter with no modifier held) uses "
+                + "optimized-coop-jump-logic instead of your own base teleportJumpLogic, ONLY for that one load - "
+                + "extensive maintainer testing found this avoids nearly every case of the checkpoint mod's "
+                + "intermittent teleport bug. Solo is never affected by this setting (always uses your own base "
+                + "value). Hold Shift while loading to use your own base value anyway for just that load, even "
+                + "with this enabled. If you disable this, a plain load goes back to your own base value in coop "
+                + "too, same as solo - set your own teleportJumpLogic to 1 directly in PEAK Checkpoint Save's own "
+                + "config if you still want the optimized value as your default everywhere.");
+
+            OptimizedCoopJumpLogic = cfg.Bind("Teleport-Override", "optimized-coop-jump-logic", 1,
+                "Which of the checkpoint mod's own teleportJumpLogic values (0 = SetSegmentOnSpawn, "
+                + "1 = JumpToSegment, 2 = GoToSegment) enable-optimized-coop-loading above uses (advanced - the "
+                + "default of 1 is the one extensive testing actually validated, only change this if you're doing "
+                + "your own testing).");
+
+            AltTeleportJumpLogic = cfg.Bind("Teleport-Override", "alt-teleport-jump-logic", 2,
+                "Which of the checkpoint mod's own teleportJumpLogic values to use, ONLY for the next load, when "
+                + "holding Alt while loading (native F6, or this mod's F7/Enter) - in both solo and coop. Restored "
+                + "to whatever you actually have configured afterward. Host-only, has no effect for non-hosts "
+                + "(this setting only ever matters on whichever machine drives the actual teleport).");
+
+            OverrideFramesToWait = cfg.Bind("Teleport-Override", "override-frames-to-wait", 40,
+                "While a Shift/Alt override is active, the checkpoint mod's own teleportFramesToWait is raised to "
+                + "at least this value (never lowered below whatever you already had configured) (advanced).");
+
+            OverrideJumpLogicWaitTime = cfg.Bind("Teleport-Override", "override-jump-logic-wait-time", 2f,
+                "Same as override-frames-to-wait above, but for the checkpoint mod's jumpLogicWaitTime "
+                + "(advanced).");
+
+            OverrideRestoreDelaySeconds = cfg.Bind("Teleport-Override", "override-restore-delay-seconds", 35f,
+                "Seconds after a Shift/Alt-overridden load before the checkpoint mod's teleport settings are "
+                + "restored to whatever you actually have configured. Comfortably longer than the ~30s window "
+                + "its own teleport corrections can keep running in (advanced).");
+
+            PendingOverrideResetOwed = cfg.Bind("Teleport-Override-Recovery", "pending-reset-owed", false,
+                "Internal bookkeeping, do not edit by hand. True while a Shift/Alt override's restore is still "
+                + "pending; used to detect and fix a teleport config left stuck if the game closed before it "
+                + "could restore on its own.");
+
+            PendingOverrideOriginalJumpLogic = cfg.Bind("Teleport-Override-Recovery", "pending-original-jump-logic", 0,
+                "Internal bookkeeping, do not edit by hand. The teleportJumpLogic value to restore if "
+                + "pending-reset-owed is stuck true.");
+
+            PendingOverrideOriginalFramesToWait = cfg.Bind("Teleport-Override-Recovery", "pending-original-frames-to-wait", 0,
+                "Internal bookkeeping, do not edit by hand. Same as pending-original-jump-logic, for "
+                + "teleportFramesToWait.");
+
+            PendingOverrideOriginalWaitTime = cfg.Bind("Teleport-Override-Recovery", "pending-original-wait-time", 0f,
+                "Internal bookkeeping, do not edit by hand. Same as pending-original-jump-logic, for "
+                + "jumpLogicWaitTime.");
         }
     }
 }
