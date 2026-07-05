@@ -20,6 +20,7 @@ Full release.
 - All config setting names now use hyphens as spaces, so they are actually readable (`ALLOW-MID-GAME` instead of `ALLOWMIDGAME`).
 - "Board Flight" pause menu button now matches "Return to Airport"'s teal.
 - F1 help screen rewritten into a real small menu matching the F7 picker's look.
+- Added a bigger more noticeable version of the PEAK Checkpoint Save's island toggle button to the Boarding Pass.
 - New `move-rebind-controls-to-settings` setting (off by default): moves the vanilla "Rebind Controls" button out of the pause menu into the Settings page (below the `Mod Settings` button), freeing up a row for this mod's and other mods' own pause-menu buttons.
 - Removed the `require-double-press_DEPRECATED` / `double-press-window_DEPRECATED` settings (deprecated since 0.2.0, superseded by the picker's confirm step).
 
