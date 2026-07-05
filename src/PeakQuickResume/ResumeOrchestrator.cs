@@ -27,6 +27,7 @@ namespace PEAKQuickResume
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
         private TeleportConfigOverride _teleportOverride;
+        private TeleportWatchdog _watchdog;
         private bool _running;
         private bool _lastWaitOk;
 
@@ -41,12 +42,14 @@ namespace PEAKQuickResume
 
         public bool IsRunning => _running;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint, TeleportConfigOverride teleportOverride = null)
+        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint,
+            TeleportConfigOverride teleportOverride = null, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
             _teleportOverride = teleportOverride;
+            _watchdog = watchdog;
         }
 
         /// <summary>Kick off the resume sequence for the current run / latest save</summary>
@@ -97,6 +100,14 @@ namespace PEAKQuickResume
         private IEnumerator ResumeRoutine()
         {
             _running = true;
+
+            // Lift any watch window still running from a prior load right away: the
+            // Airport-return/fresh-run-start below is US legitimately moving the player,
+            // not the checkpoint mod's own teleport, and would otherwise look like a bad
+            // teleport to a watch window that's still active from that prior load (see
+            // TeleportWatchdog.LiftWatch)
+            _watchdog?.LiftWatch();
+
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo("=== Quick Resume: sequence START ===");
             Msg(MessagesLocalization.Get(MsgKey.QuickResumeStarting), MsgInfo);

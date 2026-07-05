@@ -23,17 +23,19 @@ namespace PEAKQuickResume
         private ManualLogSource _log;
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint; // only used for on-screen messages
+        private TeleportWatchdog _watchdog;
         private bool _running;
 
         private bool _lastWaitOk;
 
         public bool IsRunning => _running;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint)
+        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
+            _watchdog = watchdog;
         }
 
         /// <summary>
@@ -74,6 +76,13 @@ namespace PEAKQuickResume
         private IEnumerator RestartRoutine(int ascent, bool custom)
         {
             _running = true;
+
+            // See ResumeOrchestrator.ResumeRoutine's equivalent call: the Airport return
+            // below is us intentionally moving the player, not a checkpoint-mod teleport,
+            // and would otherwise false-positive a watch window still active from a
+            // prior load
+            _watchdog?.LiftWatch();
+
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo($"=== Restart: sequence START (ascent={ascent}, custom={custom}) ===");
             Msg(MessagesLocalization.Get(MsgKey.RestartingRun), MsgInfo);

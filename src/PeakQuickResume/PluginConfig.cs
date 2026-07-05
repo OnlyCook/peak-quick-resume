@@ -8,6 +8,7 @@ namespace PEAKQuickResume
     {
         public readonly ConfigEntry<KeyCode> ResumeKey;
         public readonly ConfigEntry<bool> ResumeKeyAlsoConfirmsLoad;
+        public readonly ConfigEntry<KeyCode> HelpKey;
         public readonly ConfigEntry<bool> AllowMidGame;
         public readonly ConfigEntry<float> PanelOpacity;
         public readonly ConfigEntry<bool> EnableDebugLogging;
@@ -109,6 +110,19 @@ namespace PEAKQuickResume
                 + "highlighted save (so pressing it twice loads the latest checkpoint). If disabled, only Enter "
                 + "confirms a load while the picker is open, pressing the resume key does nothing, useful if "
                 + "you keep accidentally loading a save while trying to close the picker with it.");
+
+            // Same plain-KeyCode reasoning as resume-key above (ModConfig only renders a
+            // rebind widget for KeyCode, not KeyboardShortcut). This isn't just OUR key:
+            // it's also pushed onto PEAK Checkpoint Save's own configTutorialKey (see
+            // CheckpointInterop.TrySetTutorialKey / Plugin.Awake), which is otherwise
+            // stuck as a KeyboardShortcut with no ModConfig rebind widget of its own.
+            // Overriding it keeps the checkpoint mod's own F1 detection (which
+            // HelpScreen/TutorialPatch ride on) and its footer prompt in sync with
+            // whatever key is actually configured here
+            HelpKey = cfg.Bind("General", "help-key", KeyCode.F1,
+                "Opens the help screen (Quick Resume controls + the teleport-bug workaround). Also overrides "
+                + "PEAK Checkpoint Save's own tutorial/help key to match, so its own F1 detection and footer "
+                + "prompt stay in sync with whatever you set here.");
 
             AllowMidGame = cfg.Bind("General", "allow-mid-game", true,
                 "If enabled, the resume key also works while you are alive in a level (returns to the Airport, "

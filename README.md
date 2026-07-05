@@ -68,7 +68,7 @@ Your archived checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split 
 
 ## Feedback & bug reports
 
-Found a bug or have a suggestion? Please **[open an issue on GitHub](https://github.com/OnlyCook/peak-quick-resume/issues/new)**. It helps a lot to include:
+Found a bug or have a suggestion? Please **[open an issue on GitHub](https://github.com/OnlyCook/peak-quick-resume/issues/new)** or send me an email at `theactualcooker@gmail.com`. It helps a lot to include:
 
 - what you did and what happened (solo or co-op; if co-op, whether you were the host),
 - your **`LogOutput.log`** (Quick Resume logs every step of a resume, this file is what makes bugs fixable).

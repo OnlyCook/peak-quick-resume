@@ -5,7 +5,8 @@
 Full release.
 
 > If you ever had issues as the client (not the host) in co-op while loading a save (such as falling through the world or seeing an empty map), then this update should fix a lot of such issues.  
-> **Note:** if you are updating from a **beta release** (v0.3.0 or older) then be sure to delete this `PEAK Quick Resume` mod and the underlying `PEAK Checkpoint Save` mod and then simply reinstall the `PEAK Quick Resume` mod (which will install the other automatically). This makes sure an outdated or changed config does not interfere with any functionality.
+> **Note:** if you are updating from a **beta release** (v0.3.0 or older) then be sure to delete this `PEAK Quick Resume` mod and the underlying `PEAK Checkpoint Save` mod and then simply reinstall the `PEAK Quick Resume` mod (which will install the other automatically). This makes sure an outdated or changed config does not interfere with any functionality.  
+> If this update made save game loading **worse** for you, then please either [open a GitHub Issue](https://github.com/OnlyCook/peak-quick-resume/issues/new) or send me an email at `theactualcooker@gmail.com`. This would help out a lot, so that we can try to improve the mod for everyone!
 
 - **Detects and mitigates PEAK Checkpoint Save's occasional bad-teleport bug**:
   - **In co-op, a plain load now defaults to `teleportJumpLogic 1`** instead of PEAK Checkpoint Save's own base setting, since extensive testing found this avoids nearly every case of the bug above. New `enable-optimized-coop-loading` setting (on by default) controls this; hold **Shift** while loading to use your own base setting instead for just that one load, or **Alt** for `teleportJumpLogic 2`. Solo play is never affected.
@@ -22,6 +23,7 @@ Full release.
 - F1 help screen rewritten into a real small menu matching the F7 picker's look.
 - Added a bigger more noticeable version of the PEAK Checkpoint Save's island toggle button to the Boarding Pass.
 - New `move-rebind-controls-to-settings` setting (off by default): moves the vanilla "Rebind Controls" button out of the pause menu into the Settings page (below the `Mod Settings` button), freeing up a row for this mod's and other mods' own pause-menu buttons.
+- New `help-key` setting: the F1 help screen key is now a real rebindable `KeyCode` (like the resume key), and rebinding it also overrides PEAK Checkpoint Save's own tutorial key to match, so its own F1 detection and footer prompt stay in sync instead of only being editable by hand in its config file.
 - Removed the `require-double-press_DEPRECATED` / `double-press-window_DEPRECATED` settings (deprecated since 0.2.0, superseded by the picker's confirm step).
 
 ## 0.3.0

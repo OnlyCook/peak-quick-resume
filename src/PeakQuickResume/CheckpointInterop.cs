@@ -305,6 +305,26 @@ namespace PEAKQuickResume
         public string TryGetTutorialKeyText() => TryGetKeyboardShortcutText(_tutorialKeyField);
 
         /// <summary>
+        /// Overrides the checkpoint mod's own configTutorialKey (a ConfigEntry&lt;KeyboardShortcut&gt;)
+        /// to a plain single key, no modifiers, keeping its own F1/tutorial-key detection
+        /// (which HelpScreen/TutorialPatch ride on, see TutorialPatch) and footer prompt
+        /// in sync with PluginConfig.HelpKey. Called once at startup and again whenever
+        /// HelpKey changes (see Plugin.Awake)
+        /// </summary>
+        public bool TrySetTutorialKey(UnityEngine.KeyCode key)
+        {
+            try
+            {
+                if (_tutorialKeyField == null) return false;
+                var inst = Instance;
+                if (inst == null) return false;
+                SetConfigEntryValue(_tutorialKeyField, inst, new BepInEx.Configuration.KeyboardShortcut(key));
+                return true;
+            }
+            catch (Exception e) { _log.LogWarning($"TrySetTutorialKey failed (non-fatal): {e.Message}"); return false; }
+        }
+
+        /// <summary>
         /// Tells the checkpoint mod its own tutorial is now closed (`ShowTutorialMessage(false,
         /// "")`), syncing its private `tutorialMessageEnabled` toggle without going through its
         /// own tutorial-key handling. Needed because <see cref="HelpScreen"/> can also be closed

@@ -40,6 +40,12 @@ namespace PEAKQuickResume
             _checkpoint = new CheckpointInterop(Logger);
             _checkpoint.Probe();
 
+            // Override PEAK Checkpoint Save's own tutorial/help key to match ours (see
+            // PluginConfig.HelpKey / CheckpointInterop.TrySetTutorialKey), applied now for
+            // the default and again live whenever it's changed via ModConfig
+            _checkpoint.TrySetTutorialKey(_cfg.HelpKey.Value);
+            _cfg.HelpKey.SettingChanged += (_, __) => _checkpoint.TrySetTutorialKey(_cfg.HelpKey.Value);
+
             var harmony = new Harmony(PluginInfo.Guid);
 
             var go = new GameObject("PEAKQuickResume.Orchestrator");
@@ -57,10 +63,10 @@ namespace PEAKQuickResume
             // our own F7 flow (below) and the native-F6 path (LoadingScreenPatch)
             _teleportOverride = new TeleportConfigOverride(Logger, _cfg, _checkpoint, _orchestrator);
 
-            _orchestrator.Init(Logger, _cfg, _checkpoint, _teleportOverride);
+            _orchestrator.Init(Logger, _cfg, _checkpoint, _teleportOverride, _watchdog);
 
             _restart = go.AddComponent<RestartOrchestrator>();
-            _restart.Init(Logger, _cfg, _checkpoint);
+            _restart.Init(Logger, _cfg, _checkpoint, _watchdog);
 
             _picker = go.AddComponent<SavePicker>();
             _picker.Init(Logger, _cfg, _checkpoint, _teleportOverride);
@@ -88,6 +94,7 @@ namespace PEAKQuickResume
                 SavePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride);
                 SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride);
+                MessageOverlayWrapPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
             }
 
             // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
@@ -230,6 +237,9 @@ namespace PEAKQuickResume
                 Logger.LogWarning("Return to Airport ignored: only the host can do this.");
                 return;
             }
+            // Us intentionally moving the player away, not a checkpoint-mod teleport -
+            // see TeleportWatchdog.LiftWatch
+            _watchdog?.LiftWatch();
             RunLauncher.ReturnToAirport(Logger);
         }
 

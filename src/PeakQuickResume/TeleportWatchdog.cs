@@ -202,6 +202,25 @@ namespace PEAKQuickResume
             _suppressionResetRoutine = null;
         }
 
+        /// <summary>
+        /// Stops any watch window in progress (or pending) without flagging anything.
+        /// Called right before OUR OWN code intentionally moves the player away from a
+        /// just-loaded position (e.g. RestartOrchestrator/ResumeOrchestrator returning to
+        /// the Airport, or Plugin.RequestReturnToAirport), since that legitimate move
+        /// looks identical to "never teleported"/"fall-through"/warp-loop symptoms to a
+        /// watch window still running from a PRIOR load - the checkpoint mod's own load
+        /// path already resets this via BeginLoadWindow/ArmPendingWatch, but a plain scene
+        /// return we drive ourselves never goes through that
+        /// </summary>
+        public void LiftWatch()
+        {
+            if (_running != null) { StopCoroutine(_running); _running = null; }
+            _watching = false;
+            _postLoadWarpTimes.Clear();
+            _pendingTargetPos = null;
+            _loadInProgress = false;
+        }
+
         /// <summary>Start (or restart) watching the local player after a teleport to <paramref name="targetPos"/></summary>
         public void BeginWatch(Vector3 targetPos)
         {
