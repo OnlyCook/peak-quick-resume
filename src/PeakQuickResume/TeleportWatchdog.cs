@@ -383,7 +383,7 @@ namespace PEAKQuickResume
 
         private IEnumerator ShowMessageResiliently()
         {
-            const string text = "Did something go wrong? If yes, press F1 to open the help screen.";
+            string text = MessagesLocalization.Get(MsgKey.TeleportBugHint);
             var color = new Color(1f, 0.7f, 0.2f, 1f);
 
             _checkpoint?.TryShowMessage(text, color, 6f);
