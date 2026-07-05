@@ -10,8 +10,44 @@ runs) & 2 (F7 save picker) working in-game (solo + 2-player coop). Mechanic 3
 (reset run) still TODO. **Phase 6 (teleport-bug mitigation) in progress on
 branch `feature/teleport-mitigation`: Steps 1–3 done and confirmed working
 in-game, Step 4 is next** — see "Handoff notes for the next session" at the
-bottom of this file for exactly where to pick up.
-**Last updated:** 2026-07-05 (session 9).
+bottom of this file for exactly where to pick up. **Phase 7 (boarding-pass
+island-toggle button) added on the same branch, session 10, NOT YET IN-GAME
+TESTED** — see below.
+**Last updated:** 2026-07-05 (session 10).
+
+## Phase 7 — boarding-pass island-toggle button (session 10, untested)
+
+The checkpoint mod's own boarding-pass overlay has a tiny, unlabeled checkbox
+(small blue square, smaller green inner square, top-left next to its
+`LEVEL: USING...` text) that toggles between loading your saved island (with
+its biomes) and a new/daily one. Easy to never notice it's clickable at all.
+
+Added `IslandToggleButton` (MonoBehaviour, polled every frame, no Harmony hook
+needed): a big labeled toggle switch, bottom-right of the boarding pass screen,
+that mirrors and drives the checkpoint mod's own hidden `Toggle` component
+(`CheckpointInterop.TryGetBoardingToggle()`, new reflection member). Visibility
+and on/off state are read from that real Toggle's own `gameObject.activeInHierarchy`
+/ `isOn` every frame rather than hooked via Harmony on the checkpoint mod's various
+`OnOpen`/`OnClose`/`HideIt`/`StartGame`/`UpdateAscent` call sites, several of which
+toggle the checkbox's visibility as a follow-up statement AFTER calling
+`ShowBoardingpassMessage` (e.g. hiding it when no savefile exists) — polling the
+real checkbox's own state sidesteps needing to replicate every one of those sites.
+Clicking sets the real `Toggle.isOn`, which fires the checkpoint mod's own
+listener exactly like a real click would (persists its config, refreshes its
+own overlay text) — we add no toggling logic of our own, just a bigger, obvious,
+self-explaining door to the same setting.
+
+New files: `IslandToggleButton.cs`, `UiShapes.cs` (runtime-generated rounded-rect/
+circle sprites, no bundled art), `IslandToggleLocalization.cs` (15-language table,
+same pattern as `PauseMenuLocalization`/`SavePickerLocalization`). Gated by new
+config `ShowIslandToggleButton` (`Boardingpass` section, default true).
+
+**Compiles cleanly but is UNTESTED in-game** (maintainer cannot run the game
+themselves, see "Handoff notes" below) — needs a real boarding-pass screen with
+a savefile present to confirm: the button appears bottom-right, position/size
+look right at actual game resolution, clicking it actually flips the island and
+the checkpoint mod's own text updates, and it correctly disappears in the
+"no savefile found" case.
 
 ---
 

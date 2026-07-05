@@ -27,6 +27,7 @@ namespace PEAKQuickResume
         private HelpScreen _helpScreen;
         private TeleportWatchdog _watchdog;
         private TeleportConfigOverride _teleportOverride;
+        private IslandToggleButton _islandToggle;
 
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
         internal string ResumeKeyText => _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
@@ -69,6 +70,11 @@ namespace PEAKQuickResume
             // below, which needs a reference to it
             _helpScreen = go.AddComponent<HelpScreen>();
             _helpScreen.Init(Logger, _cfg, _checkpoint, _teleportOverride);
+
+            // Phase 7: big, clearly-labeled boarding-pass island-toggle button (mirrors
+            // the checkpoint mod's own tiny, easy-to-miss checkbox, see IslandToggleButton)
+            _islandToggle = go.AddComponent<IslandToggleButton>();
+            _islandToggle.Init(Logger, _cfg, _checkpoint);
 
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)

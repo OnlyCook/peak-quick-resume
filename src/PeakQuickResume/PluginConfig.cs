@@ -19,6 +19,13 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> ShowBoardFlightButton;
         public readonly ConfigEntry<bool> MoveRebindControlsToSettings;
 
+        // Phase 7: a big, clearly-labeled toggle button on the boarding-pass screen,
+        // standing in for the checkpoint mod's own tiny, unlabeled "use saved island /
+        // new island" checkbox (easy to never notice it's even clickable)
+        public readonly ConfigEntry<bool> ShowIslandToggleButton;
+        public readonly ConfigEntry<float> IslandToggleOffsetX;
+        public readonly ConfigEntry<float> IslandToggleOffsetY;
+
         // Timing knobs, tuned blindly for now, exposed so we can iterate from
         // in-game reports without recompiling. Times are in seconds
         public readonly ConfigEntry<float> SettleAfterAirport;
@@ -135,6 +142,33 @@ namespace PEAKQuickResume
                 + "main pause menu. Useful in coop with several pause-menu buttons active (this mod's own plus "
                 + "other mods'), since only 9 fit on screen at once and a button you rarely use otherwise pushes "
                 + "one you actually need off the bottom. Disabled by default since it relocates a vanilla button.");
+
+            ShowIslandToggleButton = cfg.Bind("Boardingpass", "show-island-toggle-button", true,
+                "Show a big, clearly-labeled toggle button in the bottom-right of the boarding pass screen for "
+                + "switching between loading your saved island (with its biomes) and a new one, mirroring the "
+                + "checkpoint mod's own tiny \"use saved island / new island\" checkbox next to its boarding-pass "
+                + "text (top-left, easy to miss). Both control the exact same setting; this just makes it "
+                + "obvious and easy to click.");
+
+            // Explicit AcceptableValueRange on both (not just a bare default) so mod-config
+            // UIs (e.g. PEAKLib.ModConfig) render a slider that actually SPANS negative
+            // values instead of inferring some positive-only range from the default alone
+            // and silently clamping island-toggle-offset-y's negative default back to 0
+            IslandToggleOffsetX = cfg.Bind("Boardingpass", "island-toggle-offset-x", 400f,
+                new ConfigDescription(
+                    "Horizontal offset (pixels) of the island-toggle button from the checkpoint mod's own "
+                    + "boarding-pass message anchor point (the same coordinate system its own message text and "
+                    + "tiny checkbox use, so this scales/positions consistently with them at any resolution). "
+                    + "Positive = further right. Raise this if the button overlaps the message text (e.g. a long "
+                    + "campfire/level name makes a line wider than usual).",
+                    new AcceptableValueRange<float>(-200f, 900f)));
+
+            IslandToggleOffsetY = cfg.Bind("Boardingpass", "island-toggle-offset-y", -20f,
+                new ConfigDescription(
+                    "Vertical offset (pixels), added on top of the checkpoint mod's own checkbox height (so by "
+                    + "default the button lines up with the top line of the message). Positive = further up, "
+                    + "negative = further down.",
+                    new AcceptableValueRange<float>(-300f, 300f)));
 
             SettleAfterAirport = cfg.Bind("Timing", "settle-after-airport", 0.75f,
                 "Seconds to wait after the Airport scene loads before starting the new run (advanced).");

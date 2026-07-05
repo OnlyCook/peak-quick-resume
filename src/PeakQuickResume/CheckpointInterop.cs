@@ -51,6 +51,14 @@ namespace PEAKQuickResume
         private FieldInfo _tutorialKeyField;
         private MethodInfo _showTutorialMessage; // optional (ShowTutorialMessage(bool, string))
 
+        // Phase 7 (boarding-pass island-load toggle button), optional:
+        // private UnityEngine.UI.Toggle _boardingToggle - the checkpoint mod's own tiny
+        // "use saved island / new island" checkbox next to its boarding-pass overlay text.
+        // Toggle is a real UnityEngine.UI type (not something of the checkpoint mod's own
+        // assembly), so once we have the Component itself no further reflection is needed
+        // to read/flip it, see IslandToggleButton
+        private FieldInfo _boardingToggleField;
+
         private bool _resolved;
 
         public CheckpointInterop(ManualLogSource log) => _log = log;
@@ -97,6 +105,8 @@ namespace PEAKQuickResume
                 _showTutorialMessage = AccessTools.Method(_pluginType, "ShowTutorialMessage",
                     new[] { typeof(bool), typeof(string) });
 
+                _boardingToggleField = AccessTools.Field(_pluginType, "_boardingToggle");
+
                 _log.LogInfo("Checkpoint interop probe:");
                 _log.LogInfo($"  Instance field ....... {(_instanceField != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  selectedAscent ....... {(_selectedAscentField != null ? "OK" : "MISSING")}");
@@ -112,6 +122,7 @@ namespace PEAKQuickResume
                 _log.LogInfo($"  jumpLogicWaitTime .... {(_teleportWaitTimeField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
                 _log.LogInfo($"  loadKey/tutorialKey .. {(_loadKeyField != null && _tutorialKeyField != null ? "OK" : "MISSING (non-fatal, F1 screen falls back to defaults)")}");
                 _log.LogInfo($"  ShowTutorialMessage .. {(_showTutorialMessage != null ? "OK" : "MISSING (non-fatal, closing F1 with Escape may need a second F1 press to reopen)")}");
+                _log.LogInfo($"  _boardingToggle ...... {(_boardingToggleField != null ? "OK" : "MISSING (non-fatal, our own island-toggle button unavailable)")}");
 
                 // currentlyLoading is only a nicety (prevents double loads); not required
                 _resolved = _instanceField != null
@@ -311,6 +322,27 @@ namespace PEAKQuickResume
                 _showTutorialMessage.Invoke(inst, new object[] { false, "" });
             }
             catch (Exception e) { _log.LogWarning($"TryCloseTutorial failed (non-fatal): {e.Message}"); }
+        }
+
+        /// <summary>
+        /// The checkpoint mod's own private "use saved island / new island" checkbox
+        /// (a real Component, next to its boarding-pass overlay text), or null if it
+        /// hasn't been created yet (before the boarding pass has been opened once with
+        /// a savefile present) or the field wasn't found. Toggling its <c>isOn</c>
+        /// setter fires the checkpoint mod's own listener exactly like a real click on
+        /// it would (persists the config, refreshes its own overlay text), so this is
+        /// the only touch point <see cref="IslandToggleButton"/> needs
+        /// </summary>
+        public UnityEngine.UI.Toggle TryGetBoardingToggle()
+        {
+            try
+            {
+                if (_boardingToggleField == null) return null;
+                var inst = Instance;
+                if (inst == null) return null;
+                return _boardingToggleField.GetValue(inst) as UnityEngine.UI.Toggle;
+            }
+            catch (Exception e) { _log.LogWarning($"TryGetBoardingToggle failed (non-fatal): {e.Message}"); return null; }
         }
 
         private string TryGetKeyboardShortcutText(FieldInfo field)
