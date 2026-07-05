@@ -34,6 +34,8 @@ namespace PEAKQuickResume
     {
         private ManualLogSource _log;
         private PluginConfig _cfg;
+        private CheckpointInterop _checkpoint;
+        private TeleportConfigOverride _teleportOverride;
 
         private List<ArchivedSave> _entries = new List<ArchivedSave>();
         private int _selected;
@@ -49,15 +51,21 @@ namespace PEAKQuickResume
         private const float RepeatInitialDelay = 0.35f;
         private const float RepeatInterval = 0.08f;
 
+        // Live "Load (N)" footer indicator (Phase 6 step 2), see Update()/ComputeLoadLabel
+        private string _lastLoadLabel;
+
         public bool IsOpen { get; private set; }
 
         public ArchivedSave Selected =>
             (IsOpen && _selected >= 0 && _selected < _entries.Count) ? _entries[_selected] : null;
 
-        public void Init(ManualLogSource log, PluginConfig cfg)
+        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint = null,
+            TeleportConfigOverride teleportOverride = null)
         {
             _log = log;
             _cfg = cfg;
+            _checkpoint = checkpoint;
+            _teleportOverride = teleportOverride;
         }
 
         /// <summary>
@@ -68,6 +76,11 @@ namespace PEAKQuickResume
         /// </summary>
         public bool Open(bool offline, SaveTarget? preferred)
         {
+            // Phase 6 step 2 crash-safety net: catches a teleport config left stuck by
+            // an override whose restore never got to run (game closed too soon after a
+            // Shift/Alt-overridden load) - see TeleportConfigOverride.ReconcileAfterRestart
+            _teleportOverride?.ReconcileAfterRestart();
+
             _offline = offline;
             _entries = SaveArchive.List(offline, _log);
             if (_entries.Count == 0)
@@ -93,6 +106,10 @@ namespace PEAKQuickResume
             _scrollOffset = 0;
             ClearPendingDelete();
             IsOpen = true;
+            // Reset the "Load (N)" indicator to the plain no-modifier reading every time
+            // the picker (re)opens - never carries a stale reading over from a previous
+            // open, see RefreshFooter/ComputeLoadLabel (Phase 6 step 2)
+            _lastLoadLabel = null;
 
             // The very first time the picker is ever opened in a session, building the
             // real menu (baking every procedural sprite/texture from scratch) is heavy
@@ -206,6 +223,14 @@ namespace PEAKQuickResume
                 RefreshWarn();
             }
 
+            // Live "Load (N)" indicator (Phase 6 step 2): reflects whichever
+            // teleportJumpLogic value would actually be used on the NEXT load, updating
+            // the instant Shift/Alt is pressed or released. Cheap early-out: only touches
+            // the label (and forces the one layout pass that needs) when the computed
+            // text actually changed, not every single frame
+            string loadLabel = ComputeLoadLabel();
+            if (loadLabel != _lastLoadLabel) SetLoadLabel(loadLabel);
+
             // Jagged-edge animation: cycle through the 3 pre-built frames on a fixed
             // interval. Every frame is already a real, complete Sprite generated once
             // and cached (see PanelSprite/RowCapSelSprite), so ticking this is just
@@ -222,8 +247,11 @@ namespace PEAKQuickResume
 
         private void ApplyJagFrame()
         {
-            if (_panelFillImage != null)
-                _panelFillImage.sprite = PanelSprite(_panelSpriteFramesWidth, _panelSpriteFramesHeight, _jagFrame);
+            if (_panelFillImage != null && _panelRect != null)
+            {
+                var size = _panelRect.sizeDelta;
+                _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(size.x), Mathf.RoundToInt(size.y), _jagFrame);
+            }
             if (_selOverlayImage != null)
                 _selOverlayImage.sprite = RowCapSelSprite(_jagFrame);
         }
@@ -289,29 +317,32 @@ namespace PEAKQuickResume
 
         private const int MaxVisibleRows = 10;
         private const float RowHeight = 40f;
-        private const float PanelPadding = 20f; // vertical margin (title/footer/etc.)
+        // internal: reused by HelpScreen (the F1 screen) so it matches this panel's
+        // proportions exactly rather than approximating them
+        internal const float PanelPadding = 20f; // vertical margin (title/footer/etc.)
         // Wider than PanelPadding: with the border grown to 11px thick (see
         // PanelBorderThickness), the old horizontal margin left only ~1px between the
         // selected row's edge and the border, they read as touching. Only the
         // horizontal margin needs this, vertical spacing is untouched
-        private const float PanelPaddingHorizontal = 30f;
-        private const float TitleHeight = 42f;
+        internal const float PanelPaddingHorizontal = 30f;
+        internal const float TitleHeight = 42f;
         private const float ScrollHintHeight = 18f;
         private const float ScrollHintGap = 4f;
         private const float WarnHeight = 24f;
-        private const float FooterHeight = 34f;
-        private const float PanelWidth = 900f;
+        internal const float FooterHeight = 34f;
+        internal const float PanelWidth = 900f;
 
         // Palette pulled from the game's own UI (boarding pass / map rotation panels):
         // a vivid blue panel with a heavy near-black outline, rather than a dark navy
-        // debug-overlay look
-        private static readonly Color DimColor = new Color(0f, 0f, 0f, 0.78f);
-        private static readonly Color PanelFillColor = new Color(0x34 / 255f, 0x54 / 255f, 0xD1 / 255f); // #3454D1
-        private static readonly Color PanelBorderColor = new Color(0x21 / 255f, 0x31 / 255f, 0x7E / 255f); // #21317E
+        // debug-overlay look. internal: HelpScreen (the F1 screen) reuses this exact
+        // palette so it reads as the same menu system, not a different-looking one
+        internal static readonly Color DimColor = new Color(0f, 0f, 0f, 0.78f);
+        internal static readonly Color PanelFillColor = new Color(0x34 / 255f, 0x54 / 255f, 0xD1 / 255f); // #3454D1
+        internal static readonly Color PanelBorderColor = new Color(0x21 / 255f, 0x31 / 255f, 0x7E / 255f); // #21317E
         // Everything else that was using the panel's border color (the key badges)
         // keeps the ORIGINAL shade, only the main panel's own outline changes
-        private static readonly Color BadgeBorderColor = new Color(0x0A / 255f, 0x0D / 255f, 0x1A / 255f); // #0A0D1A
-        private static readonly Color TitleColor = new Color(0.98f, 0.99f, 1f);
+        internal static readonly Color BadgeBorderColor = new Color(0x0A / 255f, 0x0D / 255f, 0x1A / 255f); // #0A0D1A
+        internal static readonly Color TitleColor = new Color(0.98f, 0.99f, 1f);
         private static readonly Color RowColor = new Color(0.93f, 0.95f, 1f);
         // Every other row gets a subtle darkening tint over the panel blue (zebra
         // striping, like the game's own Map Rotation table)
@@ -321,13 +352,13 @@ namespace PEAKQuickResume
         // than just recoloring the row text
         private static readonly Color RowSelBarColor = new Color(1f, 0.82f, 0.22f, 0.97f);
         private static readonly Color RowSelTextColor = new Color(0.16f, 0.12f, 0.03f);
-        private static readonly Color FooterColor = new Color(0.85f, 0.9f, 1f);
+        internal static readonly Color FooterColor = new Color(0.85f, 0.9f, 1f);
         private static readonly Color WarnColor = new Color(1f, 0.6f, 0.55f);
         private static readonly Color ScrollHintColor = new Color(0.8f, 0.87f, 1f);
         // Chips sit a shade darker than the panel so they read as distinct controls,
         // with the same near-black border style as the panel itself
-        private static readonly Color KeyChipFillColor = new Color(0.10f, 0.16f, 0.44f);
-        private static readonly Color KeyTextColor = new Color(1f, 0.95f, 0.72f);
+        internal static readonly Color KeyChipFillColor = new Color(0.10f, 0.16f, 0.44f);
+        internal static readonly Color KeyTextColor = new Color(1f, 0.95f, 0.72f);
 
         // One badge per footer hint: a small rounded-rect background (real UGUI Image,
         // not a TMP <mark> tag, which can't do rounded corners and baseline-centers its
@@ -338,12 +369,12 @@ namespace PEAKQuickResume
             public TextMeshProUGUI LabelText;
         }
 
-        private const float PanelCornerRadius = 26f;
+        internal const float PanelCornerRadius = 26f;
         // Was 7f; the extra thickness grows OUTWARD (see PanelOuterMargin, added to the
         // overall panel size in RebuildUi) rather than eating into the fill/content, so
         // the row list and its padding don't get any tighter for a thicker border
-        private const float PanelBorderThickness = 11f;
-        private const float PanelOuterMargin = PanelBorderThickness - 7f;
+        internal const float PanelBorderThickness = 11f;
+        internal const float PanelOuterMargin = PanelBorderThickness - 7f;
         private const float RowCapRadius = 14f;
         // How far the SELECTED row's bar sticks out past the normal row width on each
         // side, since it's a solid (non-translucent) highlight, popping it out a little
@@ -698,7 +729,8 @@ namespace PEAKQuickResume
             string loadKeys = keyAlsoLoads ? $"{key} / Enter" : "Enter";
 
             SetFooterEntry(_footerEntries[0], "↑/↓", SavePickerLocalization.Get(PickerText.Select));
-            SetFooterEntry(_footerEntries[1], loadKeys, SavePickerLocalization.Get(PickerText.Load));
+            _lastLoadLabel = ComputeLoadLabel();
+            SetFooterEntry(_footerEntries[1], loadKeys, _lastLoadLabel);
             SetFooterEntry(_footerEntries[2], "Del", SavePickerLocalization.Get(PickerText.Delete));
             SetFooterEntry(_footerEntries[3], "Esc", SavePickerLocalization.Get(PickerText.Cancel));
 
@@ -713,6 +745,45 @@ namespace PEAKQuickResume
             // layout pass right after it sees correct sizes from frame one
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(_footerRow);
+        }
+
+        // Cheap per-frame path for JUST the "Load (N)" label (see Update()), without the
+        // rest of RefreshFooter's work (resume-key text, badge widths, etc. don't change
+        // frame to frame just from Shift/Alt being held)
+        private void SetLoadLabel(string label)
+        {
+            _lastLoadLabel = label;
+            if (_footerEntries.Count < 2) return;
+            _footerEntries[1].LabelText.text = label;
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_footerRow);
+        }
+
+        // Dynamically reflects whichever teleportJumpLogic value would actually be used
+        // if the load key were pressed right now (Phase 6 step 2): TeleportConfigOverride's
+        // ResolveOverride (Alt held, or a plain coop load with optimized-coop-loading on)
+        // when it resolves to something, otherwise the base value that would actually
+        // apply instead (Shift held, solo, or the coop optimization disabled) - read via
+        // TryGetBaseJumpLogic so this stays correct even while another override is
+        // currently mid-flight, falling back to the checkpoint mod's live current value
+        // if the override helper isn't available for some reason. Never shows more than
+        // one number at a time. Falls back to the plain label (no number) if nothing
+        // above could be read at all
+        private string ComputeLoadLabel()
+        {
+            string baseLabel = SavePickerLocalization.Get(PickerText.Load);
+            if (_cfg == null) return baseLabel;
+
+            int? value = _teleportOverride?.ResolveOverride();
+            if (!value.HasValue)
+            {
+                if (_teleportOverride != null && _teleportOverride.TryGetBaseJumpLogic(out int baseJump))
+                    value = baseJump;
+                else if (_checkpoint != null && _checkpoint.TryGetTeleportConfig(out int liveJumpLogic, out _, out _))
+                    value = liveJumpLogic;
+            }
+
+            return value.HasValue ? $"{baseLabel} ({value.Value})" : baseLabel;
         }
 
         private static void SetFooterEntry(FooterEntry entry, string key, string label)
@@ -866,13 +937,13 @@ namespace PEAKQuickResume
             return new FooterEntry { KeyText = keyText, LabelText = labelText };
         }
 
-        private static Sprite BadgeSprite() => _badgeSprite ??=
+        internal static Sprite BadgeSprite() => _badgeSprite ??=
             MakeRoundedSprite(size: 32, radius: 10f, borderThickness: 3f, fill: KeyChipFillColor, border: BadgeBorderColor);
 
         // Alpha-only shape matching the panel's FILL area (inset by the border
         // thickness, so its own corner radius is correspondingly smaller, nested just
         // inside the border ring), used as an invisible Mask host for the grain overlay
-        private static Sprite PanelInnerMaskSprite() => _panelInnerMaskSprite ??=
+        internal static Sprite PanelInnerMaskSprite() => _panelInnerMaskSprite ??=
             MakeCapSprite(Mathf.Max(1f, PanelCornerRadius - PanelBorderThickness));
 
         // Jag is on for the panel's own outline (both where it meets the fill AND
@@ -913,48 +984,54 @@ namespace PEAKQuickResume
         // same ratio as the panel instead of a wildly different one
         private const float RowJagAmplitudeMultiplier = 1.0f;
 
-        // The jagged edges gently animate while the picker is open: 3 pre-seeded
-        // variants of the same shape, cycled 1-2-3-1-2-3... on a fixed interval, rather
-        // than re-rolling the noise continuously (which would mean regenerating a full
+        // The jagged edges gently animate while a panel is open: 3 pre-seeded variants
+        // of the same shape, cycled 1-2-3-1-2-3... on a fixed interval, rather than
+        // re-rolling the noise continuously (which would mean regenerating a full
         // texture every frame, the whole reason this is baked ahead of time at all
         // instead of computed in a shader). Each variant is only ever generated once
         // and then just reused for the rest of the session, swapping Image.sprite
-        // between 3 already-built textures each interval is effectively free
-        private const int JagFrameCount = 3;
-        private const float JagFrameInterval = 0.5f;
+        // between 3 already-built textures each interval is effectively free.
+        // internal: HelpScreen (the F1 screen) reuses these same timing constants for
+        // its own independent jag animation
+        internal const int JagFrameCount = 3;
+        internal const float JagFrameInterval = 0.5f;
         private static readonly float[] JagFrameSeedOffsets = { 0f, 173.2f, 401.7f };
         private int _jagFrame;
         private float _jagFrameTimer;
 
-        private static readonly Sprite[] _panelSpriteFrames = new Sprite[JagFrameCount];
-        private static int _panelSpriteFramesWidth = -1, _panelSpriteFramesHeight = -1;
+        // Keyed by (width, height): SavePicker and HelpScreen are almost always
+        // different sizes from each other (and SavePicker's own size varies with row
+        // count), a single "most recently baked size" cache (the previous approach)
+        // meant switching between them invalidated and rebaked the OTHER one's frames
+        // every single time, a stutter every open instead of only the first ever open
+        // per size. Never evicted: at most a handful of distinct sizes ever occur in a
+        // session (this panel's few row-count buckets, HelpScreen's one content size),
+        // trivial memory for the lifetime of the process
+        private static readonly Dictionary<(int width, int height), Sprite[]> _panelSpriteCache = new();
 
         // Baking at the panel's EXACT current width/height (not a fixed guess) rather
         // matters here: with Type.Simple the WHOLE texture stretches as one piece, and
-        // the panel's height varies a lot more than its width (from ~2 rows to
-        // MaxVisibleRows). Baking at a fixed guessed height and letting a much shorter
-        // actual panel squeeze it non-uniformly turned the round corners into visibly
-        // flattened ellipses ("corners got skinnier"). Re-baking on demand (cheap to
-        // skip via the cache below whenever the size hasn't actually changed, e.g. on
-        // every arrow-key press) keeps the corner radius and the jag scale correct at
-        // whatever size the panel currently is. A SIZE change invalidates all 3 frames
-        // at once (there's only ever one size "live" at a time); each frame within
-        // that size is still only built the first time the animation actually reaches it
-        private static Sprite PanelSprite(int width, int height, int frame)
+        // the panel's height varies a lot (from ~2 rows to MaxVisibleRows, or whatever
+        // HelpScreen's content needs). Baking at a fixed guessed height and letting a
+        // much shorter actual panel squeeze it non-uniformly turned the round corners
+        // into visibly flattened ellipses ("corners got skinnier"). Re-baking on demand
+        // (cheap to skip via the cache above whenever this exact size was already seen)
+        // keeps the corner radius and the jag scale correct at whatever size is needed
+        internal static Sprite PanelSprite(int width, int height, int frame)
         {
-            if (_panelSpriteFramesWidth != width || _panelSpriteFramesHeight != height)
+            var key = (width, height);
+            if (!_panelSpriteCache.TryGetValue(key, out Sprite[] frames))
             {
-                for (int i = 0; i < JagFrameCount; i++) _panelSpriteFrames[i] = null;
-                _panelSpriteFramesWidth = width;
-                _panelSpriteFramesHeight = height;
+                frames = new Sprite[JagFrameCount];
+                _panelSpriteCache[key] = frames;
             }
 
-            if (_panelSpriteFrames[frame] == null)
+            if (frames[frame] == null)
             {
-                _panelSpriteFrames[frame] = MakeFullPanelSprite(width, height, PanelCornerRadius, PanelBorderThickness,
+                frames[frame] = MakeFullPanelSprite(width, height, PanelCornerRadius, PanelBorderThickness,
                     PanelFillColor, PanelBorderColor, EdgeJagAmplitude, EdgeJagFrequency, JagFrameSeedOffsets[frame]);
             }
-            return _panelSpriteFrames[frame];
+            return frames[frame];
         }
 
         // Same shape/jag math as MakeRoundedSprite, but bakes the WHOLE width x height
@@ -1199,7 +1276,7 @@ namespace PEAKQuickResume
         // Higher resolution than earlier attempts: stretched (Type.Simple) over an
         // ~860px-wide panel, this keeps the magnification low enough that the fine
         // grain stays crisp-ish rather than blurring into soft blobs
-        private const int GrainTextureSize = 368;
+        internal const int GrainTextureSize = 368;
 
         // Tuned interactively against a live HTML/JS port of this exact algorithm
         // (sliders for every constant below, side by side with the boarding pass
@@ -1217,7 +1294,7 @@ namespace PEAKQuickResume
         private const float GrainLightMul = 1.03f;
         private const float GrainDarkMul = 1.00f;
 
-        private static Texture2D PanelGrainTexture() =>
+        internal static Texture2D PanelGrainTexture() =>
             _grainTexturePanel != null ? _grainTexturePanel
                 : (_grainTexturePanel = GenerateGrainTexture(PanelFillColor, GrainTextureSize, GrainTextureSize));
 
@@ -1409,7 +1486,7 @@ namespace PEAKQuickResume
             return tmp;
         }
 
-        private static void StretchFull(RectTransform rt)
+        internal static void StretchFull(RectTransform rt)
         {
             rt.anchorMin = Vector2.zero;
             rt.anchorMax = Vector2.one;
@@ -1434,7 +1511,7 @@ namespace PEAKQuickResume
             "DarumaDropOne-Regular SDF", "Pangolin-Regular SDF", "Montserrat-Medium SDF", "LiberationSans SDF",
         };
 
-        private static TMP_FontAsset FindGameFont()
+        internal static TMP_FontAsset FindGameFont()
         {
             try
             {

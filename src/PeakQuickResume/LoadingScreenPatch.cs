@@ -15,16 +15,34 @@ namespace PEAKQuickResume
     /// <c>LoadingScreen(bool enableLoadingScreen, string msg = "Loading savegame...")</c>,
     /// swapping the message just before it's used, only when it's still that exact default
     /// (a caller-supplied custom message, if the mod ever adds one, is left alone)
+    ///
+    /// This is also, incidentally, the one call in the whole load chain that reliably
+    /// fires on EVERY machine (host directly, every client via its own RPC relay) right
+    /// as a checkpoint load begins, so it doubles as <see cref="TeleportWatchdog"/>'s
+    /// "a load just started" signal, see Phase 6 in ROADMAP.md
+    ///
+    /// It's also the synchronous "keypress moment" for a NATIVE F6 load (no delay
+    /// between the checkpoint mod's own key handling and this call), so it's also
+    /// where <see cref="TeleportConfigOverride"/> reads ambient Shift/Alt for that
+    /// path (Phase 6 step 2). Gated to the host/offline only, since the teleport
+    /// config only ever matters on whichever machine drives the actual teleport, and
+    /// skipped entirely while our OWN F7 flow is driving a load (it already applied
+    /// its own confirm-time-captured override, see TeleportConfigOverride)
     /// </summary>
     public static class LoadingScreenPatch
     {
         private const string DefaultMessage = "Loading savegame...";
 
         private static ManualLogSource _log;
+        private static TeleportWatchdog _watchdog;
+        private static TeleportConfigOverride _teleportOverride;
 
-        public static void Apply(Harmony harmony, Type checkpointType, ManualLogSource log)
+        public static void Apply(Harmony harmony, Type checkpointType, ManualLogSource log,
+            TeleportWatchdog watchdog = null, TeleportConfigOverride teleportOverride = null)
         {
             _log = log;
+            _watchdog = watchdog;
+            _teleportOverride = teleportOverride;
             try
             {
                 var target = AccessTools.Method(checkpointType, "LoadingScreen",
@@ -32,7 +50,8 @@ namespace PEAKQuickResume
                 if (target == null)
                 {
                     log.LogWarning("LoadingScreenPatch: LoadingScreen(bool, string) not found; "
-                        + "the loading-screen caption will stay English-only.");
+                        + "the loading-screen caption will stay English-only, and the teleport watchdog "
+                        + "will never arm.");
                     return;
                 }
 
@@ -49,6 +68,14 @@ namespace PEAKQuickResume
         {
             try
             {
+                if (enableLoadingScreen)
+                {
+                    _watchdog?.BeginLoadWindow();
+
+                    bool isHostOrOffline = Photon.Pun.PhotonNetwork.OfflineMode || Photon.Pun.PhotonNetwork.IsMasterClient;
+                    if (isHostOrOffline) _teleportOverride?.ApplyFromAmbientModifiers();
+                }
+
                 if (!enableLoadingScreen) return;
                 if (!string.Equals(msg, DefaultMessage, StringComparison.Ordinal)) return;
                 msg = MessagesLocalization.Get(MsgKey.LoadingSavegame);
