@@ -16,7 +16,7 @@ Full release.
 - Fixed `Escape` bleeding through to also open the vanilla pause menu.
 - Now the arrow keys can be held down to quickly traverse save entries on an interval.
 - Panel is now restricted to only showing 10 save entries at a time. It introduces a scrolling mechanic with an arrow indicator, if there are more entries instead.
-- Localized "PEAK Checkpoint Save"'s own "Savegame loading..." and "Savegame loaded!" messages.
+- Localized PEAK Checkpoint Save's own "Savegame loading..." and "Savegame loaded!" messages.
 - All config setting names now use hyphens as spaces, so they are actually readable (`ALLOW-MID-GAME` instead of `ALLOWMIDGAME`).
 - "Board Flight" pause menu button now matches "Return to Airport"'s teal.
 - F1 help screen rewritten into a real small menu matching the F7 picker's look.

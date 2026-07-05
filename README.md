@@ -60,10 +60,10 @@ Your archived checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split 
 
 ## Notes
 
-- **Host-only** in co-op (just like PEAK Checkpoint Save). Everyone should have PEAK Checkpoint Save installed.
+- **Host-only** in co-op. Although everyone should have PEAK Quick Resume installed for compatibility reasons.
 - Loading a checkpoint can grant Steam achievements (a property of the underlying mod). Don't use it if you want to earn everything unassisted.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
-- **Client teleport glitches (co-op):** occasionally, PEAK Checkpoint Save's own teleport logic keeps re-correcting a client's position right after loading, causing brief up/down glitching (and sometimes fall damage from being repeatedly snapped back into the air). Quick Resume now automatically detects this, shows an on-screen hint (press **F1** for details), cancels the excess corrections once the load reports itself done, refunds any fall damage they caused, and forces you back to the right spot if you're still stuck. On top of that, a plain co-op load now defaults to the `teleportJumpLogic` value that extensive testing found to avoid many such issues almost entirely (see `enable-optimized-coop-loading` above).
+- **Client teleport glitches (co-op):** occasionally, PEAK Checkpoint Save's own teleport logic may keep trying to re-correct a client's position right after loading, causing brief up/down glitching (and sometimes fall damage from being repeatedly snapped back into the air). Quick Resume now detects this, cancels the excess corrections, refunds any fall damage they caused, and forces you back to the right spot if you're still stuck.
 - Translations were done by AI, so if something is off in your language, then you are free to open a GitHub Issue (see below).
 
 ## Feedback & bug reports
@@ -88,11 +88,11 @@ BepInEx rewrites this file every time you launch the game, so **reproduce the bu
 <img width="1920" height="1080" alt="new-pause-menu-btns" src="https://raw.githubusercontent.com/OnlyCook/peak-quick-resume/refs/heads/main/packaging/new-pause-menu-btns.png" />
 
 - **Board Flight** (at the Airport): Opens the gate kiosk directly without having to walk over.
-- **Restart** and **Return to Airport** (mid-run, host-only).
+- **Restart** and **Return to Airport** (mid-run, host-only): Both buttons do the advertised action and apply it to all clients.
 
-You can disable/hide any of these buttons through 'Mod Settings' (on the `PEAK Quick Resume` tab and under `Pause Menu`)
+You can disable/hide any of these buttons through 'Mod Settings' (on the `PEAK Quick Resume` tab, under `Pause Menu`)
 
-> If you have too many pause menu buttons because of this, you can enable the `move-rebind-controls-to-settings` setting (also under `Pause Menu`). This will move the 'Rebind Controls' button from the pause menu to the 'Settings' page, below the 'Back' (or if applicable 'Mod Settings') button.
+> If you have too many pause menu buttons because of this, you can enable the `move-rebind-controls-to-settings` setting (also under `Pause-Menu`). This will move the 'Rebind Controls' button from the pause menu to the 'Settings' page, below the 'Back' (or if applicable 'Mod Settings') button.
 
 ## Requirements
 
