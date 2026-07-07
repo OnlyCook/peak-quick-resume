@@ -39,7 +39,8 @@ The campfire **saving** is still handled entirely by PEAK Checkpoint Save (light
 1. Play as normal. Light a campfire to save (that's PEAK Checkpoint Save doing its thing). Each save is added to your history (and is never overwritten/deleted automatically).
 2. Press **F7** to open the save picker.
 3. Use **↑/↓** to highlight a checkpoint, then press **F7** again (or Enter) to load it. Just want the latest? Press **F7** twice.
-4. Press **Del** to delete the highlighted save (press it twice to confirm), or **Esc** to close the menu.
+4. Press **B** to star/unstar the highlighted save. Starred saves are pinned to the top (newest first) and can't be deleted until unstarred again.
+5. Press **Del** to delete the highlighted save (press it twice to confirm), or **Esc** to close the menu.
 
 In co-op, only the **host** can use F7 and everyone is restored together.
 
@@ -49,6 +50,7 @@ Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib
 
 - **resume-key**: the key to open the picker / load the highlighted save (default **F7**). Rebindable directly in ModConfig's menu.
 - **resume-key-also-confirms-load**: if disabled, pressing the resume key while the picker is open does nothing, only Enter confirms a load (useful if you keep accidentally reloading while trying to close the picker).
+- **star-key**: stars/unstars the highlighted save in the picker (default **B**). Rebindable directly in ModConfig's menu.
 - **allow-mid-game**: allow resuming while still alive (default on).
 - **panel-opacity**: how see-through the picker's background panel is (0 = fully see-through; 1 = fully opaque, default).
 - **Pause-Menu**: disable/re-enable any of the 3 added QoL pause menu buttons, and optionally enable `move-rebind-controls-to-settings` to move the 'Rebind Controls' button away from the pause menu.

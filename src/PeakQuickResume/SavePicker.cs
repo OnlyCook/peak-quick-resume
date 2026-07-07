@@ -46,6 +46,13 @@ namespace PEAKQuickResume
         private int _pendingDeleteIndex = -1;
         private float _pendingDeleteDeadline;
 
+        // A one-off transient warning (e.g. "unstar to delete"), shown in the same
+        // warn-line slot as the delete-confirm prompt above. The two never compete for
+        // long: OnDeletePressed only ever sets one of them per press, and either one
+        // being freshly set replaces whatever the other was showing
+        private string _transientWarnText;
+        private float _transientWarnDeadline;
+
         // Arrow-key hold-to-repeat
         private float _nextRepeatTime;
         private const float RepeatInitialDelay = 0.35f;
@@ -216,10 +223,16 @@ namespace PEAKQuickResume
                 PauseSuppressPatch.SuppressNextOpen();
             }
             else if (Input.GetKeyDown(KeyCode.Delete)) OnDeletePressed();
+            else if (_cfg != null && Input.GetKeyDown(_cfg.StarKey.Value)) OnStarPressed();
 
             if (_pendingDeleteIndex >= 0 && Time.unscaledTime > _pendingDeleteDeadline)
             {
                 ClearPendingDelete();
+                RefreshWarn();
+            }
+            if (_transientWarnText != null && Time.unscaledTime > _transientWarnDeadline)
+            {
+                _transientWarnText = null;
                 RefreshWarn();
             }
 
@@ -281,6 +294,19 @@ namespace PEAKQuickResume
             var target = Selected;
             if (target == null) return;
 
+            // Starred saves can't be deleted at all, must be unstarred first (see
+            // OnStarPressed) - shown as a transient warning instead of arming the
+            // normal two-step delete confirm, which would otherwise silently no-op on
+            // the second press (SaveArchive.Delete refuses starred saves defensively)
+            if (target.Starred)
+            {
+                ClearPendingDelete();
+                _transientWarnText = SavePickerLocalization.Get(PickerText.CannotDeleteStarred);
+                _transientWarnDeadline = Time.unscaledTime + 3f;
+                RefreshWarn();
+                return;
+            }
+
             if (_pendingDeleteIndex == _selected && Time.unscaledTime <= _pendingDeleteDeadline)
             {
                 SaveArchive.Delete(target, _log);
@@ -299,10 +325,29 @@ namespace PEAKQuickResume
             }
         }
 
+        // Toggles the highlighted save's starred state (persisted immediately, see
+        // SaveArchive.SetStarred) and re-sorts in place: starred saves float to the top
+        // (newest first), same ordering SaveArchive.List() itself produces. Re-sorting
+        // the already-loaded list rather than re-calling List() avoids a redundant
+        // disk sync + re-parse of every archive file just to reflect one toggle
+        private void OnStarPressed()
+        {
+            var target = Selected;
+            if (target == null) return;
+
+            ClearPendingDelete();
+            SaveArchive.SetStarred(target, !target.Starred, _log);
+            _entries.Sort(SaveArchive.CompareForDisplay);
+            _selected = _entries.IndexOf(target);
+            ScrollToSelection();
+            RebuildUi();
+        }
+
         private void ClearPendingDelete()
         {
             _pendingDeleteIndex = -1;
             _pendingDeleteDeadline = 0f;
+            _transientWarnText = null;
         }
 
         private static string FormatPlaytime(float seconds)
@@ -359,6 +404,10 @@ namespace PEAKQuickResume
         // with the same near-black border style as the panel itself
         internal static readonly Color KeyChipFillColor = new Color(0.10f, 0.16f, 0.44f);
         internal static readonly Color KeyTextColor = new Color(1f, 0.95f, 0.72f);
+        // A richer amber than the selected-row bar's own pale gold (RowSelBarColor), so
+        // a starred AND selected row's icon still reads distinctly against that bar,
+        // helped along by the same heavy dark outline the badges use
+        private static readonly Color StarFillColor = new Color(0.97f, 0.62f, 0.10f);
 
         // One badge per footer hint: a small rounded-rect background (real UGUI Image,
         // not a TMP <mark> tag, which can't do rounded corners and baseline-centers its
@@ -376,6 +425,7 @@ namespace PEAKQuickResume
         internal const float PanelBorderThickness = 11f;
         internal const float PanelOuterMargin = PanelBorderThickness - 7f;
         private const float RowCapRadius = 14f;
+        private const float RowStarIconSize = 22f;
         // How far the SELECTED row's bar sticks out past the normal row width on each
         // side, since it's a solid (non-translucent) highlight, popping it out a little
         // reads as more emphasized than just a same-width color swap
@@ -405,6 +455,7 @@ namespace PEAKQuickResume
         private readonly List<FooterEntry> _footerEntries = new List<FooterEntry>();
         private readonly List<Image> _rowHighlightPool = new List<Image>();
         private readonly List<TextMeshProUGUI> _rowTextPool = new List<TextMeshProUGUI>();
+        private readonly List<Image> _rowStarPool = new List<Image>();
         // The selected row's gold/jagged/grained look is drawn by ONE dedicated overlay
         // (behind the row list, repositioned to whichever row is currently selected),
         // not by whichever pooled row Image happens to be selected, and its sprite
@@ -663,8 +714,9 @@ namespace PEAKQuickResume
                     int entryIndex = _scrollOffset + i;
                     bool visible = entryIndex < _entries.Count;
                     Image highlight = _rowHighlightPool[i];
+                    Image star = _rowStarPool[i];
                     highlight.gameObject.SetActive(visible);
-                    if (!visible) continue;
+                    if (!visible) { star.gameObject.SetActive(false); continue; }
 
                     var e = _entries[entryIndex];
                     bool sel = entryIndex == _selected;
@@ -679,6 +731,8 @@ namespace PEAKQuickResume
                     // Text stays on the pooled row (drawn on top of _selOverlay when
                     // selected, see BuildSelectionOverlay), only the background moved
                     _rowTextPool[i].color = sel ? RowSelTextColor : RowColor;
+
+                    star.gameObject.SetActive(e.Starred);
 
                     // Zebra striping by ABSOLUTE entry index (not pool slot), so the
                     // stripe pattern stays stable as the list scrolls instead of flipping
@@ -723,16 +777,19 @@ namespace PEAKQuickResume
         // never shows a key that no longer does what it says
         private void RefreshFooter()
         {
-            if (_footerRow == null || _footerEntries.Count < 4) return;
+            if (_footerRow == null || _footerEntries.Count < 5) return;
             string key = _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
             bool keyAlsoLoads = _cfg == null || _cfg.ResumeKeyAlsoConfirmsLoad.Value;
             string loadKeys = keyAlsoLoads ? $"{key} / Enter" : "Enter";
+            string starKey = _cfg != null ? _cfg.StarKey.Value.ToString() : "B";
+            bool starred = Selected != null && Selected.Starred;
 
             SetFooterEntry(_footerEntries[0], "↑/↓", SavePickerLocalization.Get(PickerText.Select));
             _lastLoadLabel = ComputeLoadLabel();
             SetFooterEntry(_footerEntries[1], loadKeys, _lastLoadLabel);
-            SetFooterEntry(_footerEntries[2], "Del", SavePickerLocalization.Get(PickerText.Delete));
-            SetFooterEntry(_footerEntries[3], "Esc", SavePickerLocalization.Get(PickerText.Cancel));
+            SetFooterEntry(_footerEntries[2], starKey, SavePickerLocalization.Get(starred ? PickerText.Unstar : PickerText.Star));
+            SetFooterEntry(_footerEntries[3], "Del", SavePickerLocalization.Get(PickerText.Delete));
+            SetFooterEntry(_footerEntries[4], "Esc", SavePickerLocalization.Get(PickerText.Cancel));
 
             // Badge widths are driven by ContentSizeFitter off the key text's own
             // preferred size, force an immediate layout pass so a changed key (e.g. the
@@ -891,7 +948,7 @@ namespace PEAKQuickResume
             rowLayout.childForceExpandHeight = false;
 
             _footerEntries.Clear();
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < 5; i++)
                 _footerEntries.Add(BuildFooterEntry(rowGo.transform));
         }
 
@@ -939,6 +996,71 @@ namespace PEAKQuickResume
 
         internal static Sprite BadgeSprite() => _badgeSprite ??=
             MakeRoundedSprite(size: 32, radius: 10f, borderThickness: 3f, fill: KeyChipFillColor, border: BadgeBorderColor);
+
+        private static Sprite _starSprite;
+
+        // The starred-row indicator. The game itself has no star/favorite icon
+        // anywhere to reuse (unlike FindCampfireIcon's HUD-icon trick), so this is
+        // baked the same procedural way as every other shape in this file: a plain
+        // analytic distance-field rasterization, cached once
+        internal static Sprite StarSprite() => _starSprite ??=
+            MakeStarSprite(size: 24, fill: StarFillColor, border: BadgeBorderColor, borderThickness: 1.6f);
+
+        // A filled 5-point star via an exact closed-form signed distance function
+        // (Inigo Quilez's sdStar5), not a rasterized polygon: at this icon's small size
+        // a polygon approach would need its own point-in-polygon + per-edge nearest-
+        // distance pass just to anti-alias the concave notches between points cleanly,
+        // the closed-form distance gives that for free
+        private static Sprite MakeStarSprite(int size, Color fill, Color border, float borderThickness)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+            };
+
+            float half = size / 2f;
+            float outerRadius = half - 2f; // margin for AA + the outline
+            const float innerRatio = 0.5f; // inner/outer vertex radius ratio
+
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // NOT flipping Y here (texture rows run top-down already): SdStar5's
+                    // single point faces the -Y direction of whatever space it's given,
+                    // so feeding it row-major Y directly (without the usual top-down ->
+                    // math-Y-up flip) is what actually points the star tip up on screen
+                    var p = new Vector2(x + 0.5f - half, y + 0.5f - half);
+                    float d = SdStar5(p, outerRadius, innerRatio);
+
+                    float alpha = Mathf.Clamp01(0.5f - d);
+                    Color c = d > -borderThickness ? border : fill;
+                    c.a = alpha;
+                    pixels[y * size + x] = c;
+                }
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        }
+
+        // Exact signed distance to a regular 5-pointed star: outer vertex radius r,
+        // rf = inner/outer vertex radius ratio. Positive outside, negative inside
+        private static float SdStar5(Vector2 p, float r, float rf)
+        {
+            var k1 = new Vector2(0.809016994375f, -0.587785252292f);
+            var k2 = new Vector2(-k1.x, k1.y);
+            p.x = Mathf.Abs(p.x);
+            p -= 2f * Mathf.Max(Vector2.Dot(k1, p), 0f) * k1;
+            p -= 2f * Mathf.Max(Vector2.Dot(k2, p), 0f) * k2;
+            p.x = Mathf.Abs(p.x);
+            p.y -= r;
+            var ba = rf * new Vector2(-k1.y, k1.x) - new Vector2(0f, 1f);
+            float h = Mathf.Clamp(Vector2.Dot(p, ba) / Vector2.Dot(ba, ba), 0f, r);
+            return (p - ba * h).magnitude * Mathf.Sign(p.y * ba.x - p.x * ba.y);
+        }
 
         // Alpha-only shape matching the panel's FILL area (inset by the border
         // thickness, so its own corner radius is correspondingly smaller, nested just
@@ -1394,13 +1516,18 @@ namespace PEAKQuickResume
             return t * t * (3f - 2f * t);
         }
 
-        // Cheap refresh for just the delete-warning line (armed/expired), no full rebuild
+        // Cheap refresh for just the warn line (delete-confirm armed/expired, or a
+        // transient message like "unstar to delete"), no full rebuild. Delete-confirm
+        // takes priority if somehow both are active at once (shouldn't happen, they're
+        // set by mutually-exclusive branches of OnDeletePressed)
         private void RefreshWarn()
         {
             if (_warnText == null) return;
-            bool show = _pendingDeleteIndex >= 0 && _pendingDeleteIndex == _selected;
-            _warnText.gameObject.SetActive(show);
-            if (show) _warnText.text = SavePickerLocalization.Get(PickerText.DeleteConfirm);
+            bool showDelete = _pendingDeleteIndex >= 0 && _pendingDeleteIndex == _selected;
+            bool showTransient = !showDelete && _transientWarnText != null;
+            _warnText.gameObject.SetActive(showDelete || showTransient);
+            if (showDelete) _warnText.text = SavePickerLocalization.Get(PickerText.DeleteConfirm);
+            else if (showTransient) _warnText.text = _transientWarnText;
         }
 
         // Built ONCE as the first child of rowsContainer (so it always renders behind
@@ -1465,8 +1592,21 @@ namespace PEAKQuickResume
                 textRect.offsetMin = new Vector2(10f, 0f);
                 textRect.offsetMax = new Vector2(-10f, 0f);
 
+                var starGo = new GameObject("Star", typeof(RectTransform));
+                starGo.transform.SetParent(rowGo.transform, false);
+                var starImage = starGo.AddComponent<Image>();
+                starImage.sprite = StarSprite();
+                starImage.raycastTarget = false;
+                var starRect = (RectTransform)starGo.transform;
+                starRect.anchorMin = starRect.anchorMax = new Vector2(1f, 0.5f);
+                starRect.pivot = new Vector2(1f, 0.5f);
+                starRect.sizeDelta = new Vector2(RowStarIconSize, RowStarIconSize);
+                starRect.anchoredPosition = new Vector2(-10f, 0f);
+                starGo.SetActive(false);
+
                 _rowHighlightPool.Add(hl);
                 _rowTextPool.Add(text);
+                _rowStarPool.Add(starImage);
             }
         }
 

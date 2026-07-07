@@ -22,6 +22,9 @@ namespace PEAKQuickResume
         Delete,
         Cancel,
         DeleteConfirm,
+        Star,
+        Unstar,
+        CannotDeleteStarred,
         Played,
         Tenderfoot,
         CustomRun,
@@ -90,6 +93,34 @@ namespace PEAKQuickResume
                 "Delete 키를 한 번 더 누르면 이 저장 파일이 영구적으로 삭제됩니다.",
                 "Naciśnij ponownie Delete, aby trwale usunąć ten zapis.",
                 "Bu kaydı kalıcı olarak silmek için tekrar Delete tuşuna basın.",
+            },
+            [PickerText.Star] = new[]
+            {
+                "Star", "Favori", "Preferito", "Markieren", "Marcar", "Marcar", "Marcar",
+                "Отметить", "Позначити", "收藏", "", "お気に入り", "즐겨찾기", "Oznacz", "Yıldızla",
+            },
+            [PickerText.Unstar] = new[]
+            {
+                "Unstar", "Retirer", "Rimuovi", "Entmarkieren", "Desmarcar", "Desmarcar", "Desmarcar",
+                "Убрать", "Прибрати", "取消收藏", "", "解除", "해제", "Odznacz", "Kaldır",
+            },
+            [PickerText.CannotDeleteStarred] = new[]
+            {
+                "Unstar this save first to delete it.",
+                "Retirez le favori de cette sauvegarde avant de la supprimer.",
+                "Rimuovi prima il preferito per poter eliminare questo salvataggio.",
+                "Entferne zuerst die Markierung, um diesen Speicherstand zu löschen.",
+                "Desmarca esta partida guardada antes de eliminarla.",
+                "Desmarca esta partida guardada antes de eliminarla.",
+                "Desmarque este save antes de excluí-lo.",
+                "Сначала снимите отметку с этого сохранения, чтобы удалить его.",
+                "Спочатку зніміть позначку з цього збереження, щоб видалити його.",
+                "请先取消收藏该存档，然后再删除。",
+                "",
+                "削除するには先にお気に入りを解除してください。",
+                "삭제하려면 먼저 즐겨찾기를 해제하세요.",
+                "Odznacz ten zapis, aby móc go usunąć.",
+                "Silmek için önce bu kaydın yıldızını kaldırın.",
             },
             [PickerText.Played] = new[]
             {

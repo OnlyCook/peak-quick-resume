@@ -6,6 +6,7 @@ using System.Linq;
 using BepInEx;
 using BepInEx.Logging;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Photon.Pun;
 using Zorro.Core;
 
@@ -21,6 +22,7 @@ namespace PEAKQuickResume
         public bool Offline; // category: offline vs coop
         public SaveTarget Target; // difficulty / custom-run this save belongs to
         public DateTime SortTime; // parsed from the archive filename (source mtime)
+        public bool Starred; // pinned to the top of the F7 picker; can't be deleted while true
 
         // Display metadata (read from the save's JSON; best-effort)
         public string SaveDate = "";
@@ -62,6 +64,14 @@ namespace PEAKQuickResume
         private static string CanonicalCoop => Path.Combine(CanonicalBase, "Coop");
         private static string ArchiveRoot => Path.Combine(Paths.PluginPath, "QuickResume", "Archive");
         private static string ArchiveDir(bool offline) => Path.Combine(ArchiveRoot, offline ? "Offline" : "Coop");
+
+        // Starred saves, persisted as a flat JSON array of archive filenames (unique
+        // across both categories: offline stems always end "_offline", coop stems
+        // never do, see List() below). One shared file rather than one per category,
+        // there's no per-category state here worth splitting. Loaded lazily, cached in
+        // memory for the rest of the session, written back to disk on every change
+        private static string StarredFile => Path.Combine(ArchiveRoot, "starred.json");
+        private static HashSet<string> _starredCache;
 
         private static string CanonicalDir(bool offline) => offline ? CanonicalBase : CanonicalCoop;
 
@@ -180,12 +190,13 @@ namespace PEAKQuickResume
                         Offline = offline,
                         Target = target,
                         SortTime = sortTime,
+                        Starred = LoadStarred(log).Contains(Path.GetFileName(file)),
                     };
                     ReadMetadata(entry, log);
                     result.Add(entry);
                 }
 
-                result.Sort((a, b) => b.SortTime.CompareTo(a.SortTime)); // newest first
+                result.Sort(CompareForDisplay);
             }
             catch (Exception e)
             {
@@ -221,9 +232,56 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>Permanently delete one archived save (does not touch the mod's files)</summary>
+        /// <summary>
+        /// Applies a JSON field patch to the canonical (not-yet-archived) save file for
+        /// the given userId in the current category, called by BackpackSaveMitigation
+        /// right after the checkpoint mod writes it and before Sync copies it into the
+        /// archive - see that class for why the patch has to land at this exact point.
+        /// For offline (single-player, no userId in the filename) this matches whichever
+        /// one canonical file exists for the category, since there's only ever one
+        /// </summary>
+        public static bool PatchCanonicalFileForUser(bool offline, string userId, Action<JObject> patch, ManualLogSource log)
+        {
+            try
+            {
+                string dir = CanonicalDir(offline);
+                if (!Directory.Exists(dir)) return false;
+
+                foreach (string file in Directory.GetFiles(dir, "peak_save_*.json"))
+                {
+                    if (!offline)
+                    {
+                        string stem = Path.GetFileNameWithoutExtension(file);
+                        if (!TryGetCoopUserId(stem, out string uid) || uid != userId) continue;
+                    }
+
+                    var json = JObject.Parse(File.ReadAllText(file));
+                    patch(json);
+                    File.WriteAllText(file, json.ToString(Formatting.Indented));
+                    return true;
+                }
+                return false;
+            }
+            catch (Exception e)
+            {
+                log?.LogError($"[archive] PatchCanonicalFileForUser failed: {e}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Permanently delete one archived save (does not touch the mod's files).
+        /// Refuses starred saves outright (the F7 picker's own two-step confirm should
+        /// never even reach here for one, see SavePicker.OnDeletePressed, this is just
+        /// the defensive backstop)
+        /// </summary>
         public static bool Delete(ArchivedSave save, ManualLogSource log)
         {
+            if (save.Starred)
+            {
+                log?.LogWarning($"[archive] Refused to delete starred save '{Path.GetFileName(save.FilePath)}'; unstar it first.");
+                return false;
+            }
             try
             {
                 if (File.Exists(save.FilePath)) File.Delete(save.FilePath);
@@ -234,6 +292,58 @@ namespace PEAKQuickResume
             {
                 log?.LogError($"[archive] Delete failed: {e}");
                 return false;
+            }
+        }
+
+        /// <summary>Stars or unstars an archived save, persisted to disk immediately</summary>
+        public static void SetStarred(ArchivedSave save, bool starred, ManualLogSource log)
+        {
+            var set = LoadStarred(log);
+            string key = Path.GetFileName(save.FilePath);
+            bool changed = starred ? set.Add(key) : set.Remove(key);
+            save.Starred = starred;
+            if (changed) SaveStarredToDisk(log);
+        }
+
+        /// <summary>
+        /// Display order for the F7 picker: every starred save sorts before every
+        /// non-starred one, newest-first within each of those two groups
+        /// </summary>
+        public static int CompareForDisplay(ArchivedSave a, ArchivedSave b)
+        {
+            int byStar = (b.Starred ? 1 : 0) - (a.Starred ? 1 : 0);
+            return byStar != 0 ? byStar : b.SortTime.CompareTo(a.SortTime);
+        }
+
+        private static HashSet<string> LoadStarred(ManualLogSource log)
+        {
+            if (_starredCache != null) return _starredCache;
+            try
+            {
+                _starredCache = File.Exists(StarredFile)
+                    ? new HashSet<string>(
+                        JsonConvert.DeserializeObject<List<string>>(File.ReadAllText(StarredFile)) ?? new List<string>(),
+                        StringComparer.Ordinal)
+                    : new HashSet<string>(StringComparer.Ordinal);
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"[archive] Could not read starred list, starting empty: {e.Message}");
+                _starredCache = new HashSet<string>(StringComparer.Ordinal);
+            }
+            return _starredCache;
+        }
+
+        private static void SaveStarredToDisk(ManualLogSource log)
+        {
+            try
+            {
+                Directory.CreateDirectory(ArchiveRoot);
+                File.WriteAllText(StarredFile, JsonConvert.SerializeObject(new List<string>(_starredCache)));
+            }
+            catch (Exception e)
+            {
+                log?.LogError($"[archive] Could not persist starred list: {e.Message}");
             }
         }
 

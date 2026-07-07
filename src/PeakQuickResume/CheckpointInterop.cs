@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -6,6 +8,14 @@ using Photon.Pun;
 
 namespace PEAKQuickResume
 {
+    /// <summary>One per-item "extra stat" entry read via <see cref="CheckpointInterop.ReadItemStateValues"/></summary>
+    public readonly struct ItemStateEntry
+    {
+        public readonly string TypeName;
+        public readonly float Value;
+        public ItemStateEntry(string typeName, float value) { TypeName = typeName; Value = value; }
+    }
+
     /// <summary>
     /// The single seam between us and dominik0207's "PEAK Checkpoint Save" mod
     ///
@@ -59,6 +69,26 @@ namespace PEAKQuickResume
         // to read/flip it, see IslandToggleButton
         private FieldInfo _boardingToggleField;
 
+        // Backpack-save mitigation (see BackpackSaveMitigation), all optional: reused
+        // straight off the checkpoint mod's own item-state serialization so an injected
+        // phantom backpack entry matches its save schema exactly rather than us
+        // re-guessing which DataEntryKeys existing item types populate and how each one
+        // coerces to a float. TryGetKey is private static; the other two are private
+        // instance methods; ExcludedItemIds is a private instance field
+        private MethodInfo _tryGetKeyMethod;
+        private MethodInfo _tryGetEntryObjectMethod;
+        private MethodInfo _tryReadEntryNumericMethod;
+        private FieldInfo _excludedItemIdsField;
+
+        // Same order the checkpoint mod's own SavePlayerOffline/Coop reads per item,
+        // see its inlined per-key blocks - not derivable from any single enum/list on
+        // its side, this list only exists as that repeated inline code
+        private static readonly string[] ItemStateKeyNames =
+        {
+            "ItemUses", "PetterItemUses", "UseRemainingPercentage", "CookedAmount", "Fuel",
+            "Color", "Scale", "value__", "Used", "SpawnedBees", "ScreamTime", "FlareActive", "InstanceID",
+        };
+
         private bool _resolved;
 
         public CheckpointInterop(ManualLogSource log) => _log = log;
@@ -107,6 +137,11 @@ namespace PEAKQuickResume
 
                 _boardingToggleField = AccessTools.Field(_pluginType, "_boardingToggle");
 
+                _tryGetKeyMethod = AccessTools.Method(_pluginType, "TryGetKey");
+                _tryGetEntryObjectMethod = AccessTools.Method(_pluginType, "TryGetEntryObject");
+                _tryReadEntryNumericMethod = AccessTools.Method(_pluginType, "TryReadEntryNumeric");
+                _excludedItemIdsField = AccessTools.Field(_pluginType, "ExcludedItemIds");
+
                 _log.LogInfo("Checkpoint interop probe:");
                 _log.LogInfo($"  Instance field ....... {(_instanceField != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  selectedAscent ....... {(_selectedAscentField != null ? "OK" : "MISSING")}");
@@ -123,6 +158,7 @@ namespace PEAKQuickResume
                 _log.LogInfo($"  loadKey/tutorialKey .. {(_loadKeyField != null && _tutorialKeyField != null ? "OK" : "MISSING (non-fatal, F1 screen falls back to defaults)")}");
                 _log.LogInfo($"  ShowTutorialMessage .. {(_showTutorialMessage != null ? "OK" : "MISSING (non-fatal, closing F1 with Escape may need a second F1 press to reopen)")}");
                 _log.LogInfo($"  _boardingToggle ...... {(_boardingToggleField != null ? "OK" : "MISSING (non-fatal, our own island-toggle button unavailable)")}");
+                _log.LogInfo($"  item-state helpers ... {(_tryGetKeyMethod != null && _tryGetEntryObjectMethod != null && _tryReadEntryNumericMethod != null ? "OK" : "MISSING (non-fatal, dropped-backpack save mitigation unavailable)")}");
 
                 // currentlyLoading is only a nicety (prevents double loads); not required
                 _resolved = _instanceField != null
@@ -363,6 +399,60 @@ namespace PEAKQuickResume
                 return _boardingToggleField.GetValue(inst) as UnityEngine.UI.Toggle;
             }
             catch (Exception e) { _log.LogWarning($"TryGetBoardingToggle failed (non-fatal): {e.Message}"); return null; }
+        }
+
+        /// <summary>
+        /// Reads a live item's "extra stats" (CookedAmount, Fuel, Color, ...) in exactly
+        /// the shape the checkpoint mod's own save schema uses: key name -> (runtime
+        /// type name, numeric value). Used by BackpackSaveMitigation to build a phantom
+        /// backpack save entry that round-trips through the checkpoint mod's own loader
+        /// the same as a normally-saved one would. Empty (never null) if unavailable
+        /// </summary>
+        public Dictionary<string, ItemStateEntry> ReadItemStateValues(ItemInstanceData data, ushort itemId)
+        {
+            var result = new Dictionary<string, ItemStateEntry>();
+            if (data == null || _tryGetKeyMethod == null || _tryGetEntryObjectMethod == null || _tryReadEntryNumericMethod == null)
+                return result;
+            var inst = Instance;
+            if (inst == null) return result;
+
+            bool excluded = IsExcludedItemId(itemId);
+            foreach (string name in ItemStateKeyNames)
+            {
+                // Matches the checkpoint mod's own SavePlayerOffline/Coop: these two
+                // keys are skipped for "excluded" item ids (consumables that shouldn't
+                // remember partial-use state across a save)
+                if (excluded && (name == "ItemUses" || name == "UseRemainingPercentage")) continue;
+
+                object[] keyArgs = { name, null };
+                if (!(bool)_tryGetKeyMethod.Invoke(null, keyArgs)) continue;
+
+                object[] entryArgs = { data, keyArgs[1], null };
+                if (!(bool)_tryGetEntryObjectMethod.Invoke(inst, entryArgs)) continue;
+                object entryObj = entryArgs[2];
+                if (entryObj == null) continue;
+
+                object[] numArgs = { entryObj, 0f };
+                if (!(bool)_tryReadEntryNumericMethod.Invoke(inst, numArgs)) continue;
+
+                result[name] = new ItemStateEntry(entryObj.GetType().AssemblyQualifiedName, (float)numArgs[1]);
+            }
+            return result;
+        }
+
+        private bool IsExcludedItemId(ushort itemId)
+        {
+            try
+            {
+                if (_excludedItemIdsField == null) return false;
+                var inst = Instance;
+                if (inst == null) return false;
+                if (_excludedItemIdsField.GetValue(inst) is IEnumerable list)
+                    foreach (var v in list)
+                        if (Convert.ToInt32(v) == itemId) return true;
+                return false;
+            }
+            catch { return false; }
         }
 
         private string TryGetKeyboardShortcutText(FieldInfo field)
