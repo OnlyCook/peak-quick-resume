@@ -2,8 +2,13 @@
 
 ## 1.1.0
 - **Star/favorite saves in the F7 picker:** press `B` (rebindable, new `star-key` setting) to star the highlighted save. Starred saves are pinned to the top (newest first) and can't be deleted until unstarred again.
-- **Fixed a PEAK Checkpoint Save bug:** a client finishing a cook on an already-lit campfire could sometimes trigger an extra, unwanted save (and its own "Saved!" message) on the host.
 - **Mitigated a common footgun:** dropping your backpack to rearrange items, then having the campfire lit before picking it back up, used to leave that backpack (and everything in it) out of the save entirely. It's now restored automatically as long as it's still on the ground, within 100m of that campfire, when it's lit.
+- **Fixed a PEAK Checkpoint Save bug:** a client finishing a cook on an already-lit campfire could sometimes trigger an extra, unwanted save (and its own "Saved!" message) on the host.
+- **Fixed saved islands/biomes not being restored correctly:** this mod now forces PEAK Checkpoint Save's own "use saved island" setting on for every load, regardless of its checkbox state, so resuming a save reliably restores the exact island (and therefore the exact biomes) you saved on, instead of sometimes silently loading today's daily island rotation instead.
+- **Fixed the dropped-backpack restore (above) silently patching the wrong save file** once more than one difficulty/custom run has ever been played, since multiple canonical save files can coexist on disk at once.
+- **Fixed a co-op bug where resuming an older save only restored the host correctly:** PEAK Checkpoint Save restores every player from their own separate save file, but only the host's file was ever rolled back to the chosen checkpoint, every other player kept whatever their most recent actual save was, regardless of which checkpoint was picked. Resuming now rolls every connected player's file back to the matching moment.
+- **Solo: campfires you spawn next to on load are no longer left unlit** when using PEAK Checkpoint Save's default `teleportJumpLogic 0`, a gap in that setting's own vanilla-adjacent teleport logic. Fixed silently (no save or on-screen indicator triggered).
+- **F1 help screen rewritten for clarity:** simplified language throughout (all languages), and added a new tip: most load issues are fixed simply by everyone quitting and rejoining (or restarting) the game before trying a different `teleportJumpLogic`.
 
 ## 1.0.0
 

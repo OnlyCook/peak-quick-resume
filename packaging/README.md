@@ -1,7 +1,5 @@
 # PEAK Quick Resume
 
-> **Full release** (v1.0.0): If you are updating from a beta release (v0.3.0 or older) be sure to check the CHANGELOG.
-
 **Press one key to browse your campfires and jump straight back to any of them.**
 
 Tired of the long ritual to load a [PEAK Checkpoint Save](https://thunderstore.io/c/peak/p/dominik0207/PEAK_Checkpoint_Save/): die, restart, walk to and open the Gate Kiosk, pick the difficulty, load in, then press the load key twice? This mod collapses all of that into a single key and adds an in-game menu so you can pick **which** checkpoint to load.
