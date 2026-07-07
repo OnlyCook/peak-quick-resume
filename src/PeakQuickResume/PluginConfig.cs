@@ -9,6 +9,7 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<KeyCode> ResumeKey;
         public readonly ConfigEntry<bool> ResumeKeyAlsoConfirmsLoad;
         public readonly ConfigEntry<KeyCode> HelpKey;
+        public readonly ConfigEntry<KeyCode> StarKey;
         public readonly ConfigEntry<bool> AllowMidGame;
         public readonly ConfigEntry<float> PanelOpacity;
         public readonly ConfigEntry<bool> EnableDebugLogging;
@@ -123,6 +124,14 @@ namespace PEAKQuickResume
                 "Opens the help screen (Quick Resume controls + the teleport-bug workaround). Also overrides "
                 + "PEAK Checkpoint Save's own tutorial/help key to match, so its own F1 detection and footer "
                 + "prompt stay in sync with whatever you set here.");
+
+            // Default of B (not the more obvious S): while the F7 picker is open, key
+            // input still reaches the character underneath it (it's an overlay, not a
+            // real pause), so WASD-adjacent keys double as movement input - some players
+            // even rely on that bleed-through deliberately. B has no vanilla listener
+            StarKey = cfg.Bind("General", "star-key", KeyCode.B,
+                "While the F7 save picker is open, stars/unstars the highlighted save. Starred saves are pinned "
+                + "to the top of the list (newest first) and can't be deleted until unstarred again.");
 
             AllowMidGame = cfg.Bind("General", "allow-mid-game", true,
                 "If enabled, the resume key also works while you are alive in a level (returns to the Airport, "

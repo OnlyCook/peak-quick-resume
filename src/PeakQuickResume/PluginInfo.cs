@@ -5,7 +5,7 @@ namespace PEAKQuickResume
     {
         public const string Guid = "OnlyCook.PEAKQuickResume";
         public const string Name = "PEAK Quick Resume";
-        public const string Version = "1.0.0";
+        public const string Version = "1.1.0";
 
         /// <summary>
         /// BepInEx GUID of the mod that does the actual saving/loading

@@ -44,7 +44,18 @@ namespace PEAKQuickResume
             }
         }
 
-        private static void PostfixOffline() => SaveArchive.Sync(offline: true, _log);
-        private static void PostfixCoop() => SaveArchive.Sync(offline: false, _log);
+        // BackpackSaveMitigation's restores must land in the canonical file BEFORE
+        // Sync copies it into the archive, see that class's remarks
+        private static void PostfixOffline()
+        {
+            BackpackSaveMitigation.ApplyPendingRestores(offline: true, _log);
+            SaveArchive.Sync(offline: true, _log);
+        }
+
+        private static void PostfixCoop()
+        {
+            BackpackSaveMitigation.ApplyPendingRestores(offline: false, _log);
+            SaveArchive.Sync(offline: false, _log);
+        }
     }
 }

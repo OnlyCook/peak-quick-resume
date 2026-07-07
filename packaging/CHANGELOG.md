@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+- **Star/favorite saves in the F7 picker:** press `B` (rebindable, new `star-key` setting) to star the highlighted save. Starred saves are pinned to the top (newest first) and can't be deleted until unstarred again.
+- **Fixed a PEAK Checkpoint Save bug:** a client finishing a cook on an already-lit campfire could sometimes trigger an extra, unwanted save (and its own "Saved!" message) on the host.
+- **Mitigated a common footgun:** dropping your backpack to rearrange items, then having the campfire lit before picking it back up, used to leave that backpack (and everything in it) out of the save entirely. It's now restored automatically as long as it's still on the ground, within 100m of that campfire, when it's lit.
+
 ## 1.0.0
 
 Full release.
