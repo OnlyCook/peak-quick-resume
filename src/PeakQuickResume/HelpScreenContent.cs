@@ -42,6 +42,11 @@ namespace PEAKQuickResume
                 .Append(HelpScreenLocalization.Get(HelpText.BugSymptoms)).Append('\n');
             sb.Append(HelpScreenLocalization.Get(HelpText.BugExplain)).Append("\n\n");
 
+            // The single most effective fix, and the cheapest to try - goes first,
+            // before any of the teleportJumpLogic workarounds below
+            sb.Append($"<color={Accent}>{HelpScreenLocalization.Get(HelpText.RestartFirstTitle)}</color> ")
+                .Append(HelpScreenLocalization.Get(HelpText.RestartFirstNote)).Append("\n\n");
+
             if (optimizedEnabled)
             {
                 sb.Append(HelpScreenLocalization.Get(HelpText.OptimizedIntroFormat, Key(loadKey), Key(resumeKey), optimizedVal, baseValText))

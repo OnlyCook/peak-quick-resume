@@ -33,6 +33,7 @@ namespace PEAKQuickResume
     ///     private bool   PreStartSetSegment(); (loads save meta, sets selectedLevel, returns true if a save exists)
     ///     public  void   LoadPlayerOffline();
     ///     public  void   LoadPlayerCoop();
+    ///     ConfigEntry&lt;bool&gt; configLoadLevelScene; (force-load the saved sceneName instead of today's daily island)
     /// </summary>
     public class CheckpointInterop
     {
@@ -68,6 +69,16 @@ namespace PEAKQuickResume
         // assembly), so once we have the Component itself no further reflection is needed
         // to read/flip it, see IslandToggleButton
         private FieldInfo _boardingToggleField;
+
+        // The checkpoint mod's own "enableLoadLevelScene" config (ConfigEntry<bool>):
+        // whether MapBaker.GetLevel gets force-overridden to the saved sceneName instead
+        // of today's live daily-rotation scene. Off, a resume silently loads today's
+        // island instead of the saved one - different biome layout per segment (biome
+        // assignment is fully baked per scene, no runtime randomness), while the save's
+        // own biome_names metadata stays stale, exactly the "wrong biome" symptom this
+        // toggle is responsible for. See ResumeOrchestrator, which forces this true for
+        // every Quick Resume load regardless of the checkbox's current UI state
+        private FieldInfo _useLevelSceneField;
 
         // Backpack-save mitigation (see BackpackSaveMitigation), all optional: reused
         // straight off the checkpoint mod's own item-state serialization so an injected
@@ -136,6 +147,7 @@ namespace PEAKQuickResume
                     new[] { typeof(bool), typeof(string) });
 
                 _boardingToggleField = AccessTools.Field(_pluginType, "_boardingToggle");
+                _useLevelSceneField = AccessTools.Field(_pluginType, "configLoadLevelScene");
 
                 _tryGetKeyMethod = AccessTools.Method(_pluginType, "TryGetKey");
                 _tryGetEntryObjectMethod = AccessTools.Method(_pluginType, "TryGetEntryObject");
@@ -158,6 +170,7 @@ namespace PEAKQuickResume
                 _log.LogInfo($"  loadKey/tutorialKey .. {(_loadKeyField != null && _tutorialKeyField != null ? "OK" : "MISSING (non-fatal, F1 screen falls back to defaults)")}");
                 _log.LogInfo($"  ShowTutorialMessage .. {(_showTutorialMessage != null ? "OK" : "MISSING (non-fatal, closing F1 with Escape may need a second F1 press to reopen)")}");
                 _log.LogInfo($"  _boardingToggle ...... {(_boardingToggleField != null ? "OK" : "MISSING (non-fatal, our own island-toggle button unavailable)")}");
+                _log.LogInfo($"  configLoadLevelScene . {(_useLevelSceneField != null ? "OK" : "MISSING (non-fatal, resumed saves may load today's island instead of the saved one)")}");
                 _log.LogInfo($"  item-state helpers ... {(_tryGetKeyMethod != null && _tryGetEntryObjectMethod != null && _tryReadEntryNumericMethod != null ? "OK" : "MISSING (non-fatal, dropped-backpack save mitigation unavailable)")}");
 
                 // currentlyLoading is only a nicety (prevents double loads); not required
@@ -399,6 +412,26 @@ namespace PEAKQuickResume
                 return _boardingToggleField.GetValue(inst) as UnityEngine.UI.Toggle;
             }
             catch (Exception e) { _log.LogWarning($"TryGetBoardingToggle failed (non-fatal): {e.Message}"); return null; }
+        }
+
+        /// <summary>
+        /// Forces the checkpoint mod's own "use saved island" config
+        /// (<c>configLoadLevelScene</c>, backing its boarding-pass checkbox) to
+        /// <paramref name="value"/>, so <c>MapBaker.GetLevel</c> is (or isn't) overridden
+        /// to the saved <c>sceneName</c> for the next run start. Quick Resume forces this
+        /// true unconditionally before every load, see <see cref="ResumeOrchestrator"/>
+        /// </summary>
+        public bool TrySetUseSavedLevel(bool value)
+        {
+            try
+            {
+                if (_useLevelSceneField == null) return false;
+                var inst = Instance;
+                if (inst == null) return false;
+                SetConfigEntryValue(_useLevelSceneField, inst, value);
+                return true;
+            }
+            catch (Exception e) { _log.LogWarning($"TrySetUseSavedLevel failed (non-fatal): {e.Message}"); return false; }
         }
 
         /// <summary>

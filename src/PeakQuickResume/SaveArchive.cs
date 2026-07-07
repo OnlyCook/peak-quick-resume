@@ -207,40 +207,114 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Copy an archived save back over the checkpoint mod's canonical file for its
-        /// difficulty/category, so the mod's own load path reads the chosen checkpoint
+        /// difficulty/category, so the mod's own load path reads the chosen checkpoint.
+        /// Coop: also rolls back every OTHER connected player's own canonical file to
+        /// the matching moment, see <see cref="RestoreCoopSiblings"/> for why that's
+        /// required, not optional
         /// </summary>
         public static bool Restore(ArchivedSave save, ManualLogSource log)
         {
+            if (!RestoreOne(save.FilePath, save.Offline, log)) return false;
+            if (!save.Offline) RestoreCoopSiblings(save, log);
+            return true;
+        }
+
+        private static bool RestoreOne(string archivedFilePath, bool offline, ManualLogSource log)
+        {
             try
             {
-                string name = Path.GetFileNameWithoutExtension(save.FilePath);
+                string name = Path.GetFileNameWithoutExtension(archivedFilePath);
                 int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
                 string stem = si > 0 ? name.Substring(0, si) : name;
 
-                string dir = CanonicalDir(save.Offline);
+                string dir = CanonicalDir(offline);
                 Directory.CreateDirectory(dir);
                 string dest = Path.Combine(dir, stem + ".json");
 
-                File.Copy(save.FilePath, dest, overwrite: true);
-                log?.LogInfo($"[archive] Restored '{Path.GetFileName(save.FilePath)}' -> canonical '{stem}.json'.");
+                File.Copy(archivedFilePath, dest, overwrite: true);
+                log?.LogInfo($"[archive] Restored '{Path.GetFileName(archivedFilePath)}' -> canonical '{stem}.json'.");
                 return true;
             }
             catch (Exception e)
             {
-                log?.LogError($"[archive] Restore failed: {e}");
+                log?.LogError($"[archive] RestoreOne failed: {e}");
                 return false;
             }
         }
 
         /// <summary>
-        /// Applies a JSON field patch to the canonical (not-yet-archived) save file for
-        /// the given userId in the current category, called by BackpackSaveMitigation
-        /// right after the checkpoint mod writes it and before Sync copies it into the
-        /// archive - see that class for why the patch has to land at this exact point.
-        /// For offline (single-player, no userId in the filename) this matches whichever
-        /// one canonical file exists for the category, since there's only ever one
+        /// The checkpoint mod's own <c>LoadPlayerCoop</c> (<c>LoadInventoryDelayed</c>)
+        /// restores EVERY connected player from their OWN per-user canonical file, not
+        /// just the host's - <see cref="List"/> only shows the host's own save per
+        /// timestamp (one row per real save event, from the host's perspective), so
+        /// picking an older checkpoint and only restoring the host's file left every
+        /// other player's canonical file untouched, silently keeping whatever their
+        /// MOST RECENT actual save left it at regardless of which older moment the host
+        /// picked. Confirmed against real session logs: same host save restored the
+        /// host's own first-campfire items correctly, but the client kept its
+        /// second-campfire items every time, matching this exactly
+        ///
+        /// Coop per-player autosaves all fire within the same save event, but a few
+        /// milliseconds apart (sequential file writes), not at an identical instant, so
+        /// siblings are matched by NEAREST archived write-time to the chosen host save
+        /// (restricted to the same ascent/custom-run target), not an exact match
         /// </summary>
-        public static bool PatchCanonicalFileForUser(bool offline, string userId, Action<JObject> patch, ManualLogSource log)
+        private static void RestoreCoopSiblings(ArchivedSave hostSave, ManualLogSource log)
+        {
+            try
+            {
+                string archiveDir = ArchiveDir(offline: false);
+                if (!Directory.Exists(archiveDir)) return;
+
+                string hostUserId = LocalUserId();
+                var bestByUser = new Dictionary<string, (string file, TimeSpan delta)>();
+
+                foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
+                {
+                    string name = Path.GetFileNameWithoutExtension(file);
+                    int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
+                    if (si <= 0) continue;
+                    string stem = name.Substring(0, si);
+                    string tsStr = name.Substring(si + Sep.Length);
+
+                    if (!TryGetCoopUserId(stem, out string uid) || uid == hostUserId) continue;
+                    if (!SaveDiscovery.TryParseStem(stem, offlineMode: false, out SaveTarget target)) continue;
+                    if (target.IsCustom != hostSave.Target.IsCustom || target.Ascent != hostSave.Target.Ascent) continue;
+                    if (!DateTime.TryParseExact(tsStr, TsFormat, CultureInfo.InvariantCulture,
+                            DateTimeStyles.None, out DateTime sortTime))
+                        continue;
+
+                    TimeSpan delta = (sortTime - hostSave.SortTime).Duration();
+                    if (!bestByUser.TryGetValue(uid, out var current) || delta < current.delta)
+                        bestByUser[uid] = (file, delta);
+                }
+
+                foreach (var kv in bestByUser)
+                    RestoreOne(kv.Value.file, offline: false, log);
+            }
+            catch (Exception e)
+            {
+                log?.LogError($"[archive] RestoreCoopSiblings failed: {e}");
+            }
+        }
+
+        /// <summary>
+        /// Applies a JSON field patch to the canonical (not-yet-archived) save file for
+        /// the given userId AND run target (ascent / custom run) in the current
+        /// category, called by BackpackSaveMitigation right after the checkpoint mod
+        /// writes it and before Sync copies it into the archive - see that class for why
+        /// the patch has to land at this exact point.
+        ///
+        /// <paramref name="target"/> is required even offline: multiple canonical files
+        /// (one per ascent, plus a separate custom-run one) can and do coexist
+        /// side-by-side in the same folder once more than one difficulty/custom run has
+        /// ever been played, so "the one canonical file" for a category is NOT a safe
+        /// assumption - an earlier version of this method patched whichever file
+        /// <c>Directory.GetFiles</c> happened to list first (filesystem-order, not
+        /// recency), which could silently write the restore into a stale, unrelated
+        /// save instead of the one actually being written by the save that triggered it
+        /// </summary>
+        public static bool PatchCanonicalFileForUser(bool offline, SaveTarget target, string userId, Action<JObject> patch, ManualLogSource log)
         {
             try
             {
@@ -249,9 +323,12 @@ namespace PEAKQuickResume
 
                 foreach (string file in Directory.GetFiles(dir, "peak_save_*.json"))
                 {
+                    string stem = Path.GetFileNameWithoutExtension(file);
+                    if (!SaveDiscovery.TryParseStem(stem, offline, out SaveTarget fileTarget)) continue;
+                    if (fileTarget.IsCustom != target.IsCustom || fileTarget.Ascent != target.Ascent) continue;
+
                     if (!offline)
                     {
-                        string stem = Path.GetFileNameWithoutExtension(file);
                         if (!TryGetCoopUserId(stem, out string uid) || uid != userId) continue;
                     }
 
