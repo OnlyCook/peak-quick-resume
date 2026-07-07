@@ -164,6 +164,16 @@ namespace PEAKQuickResume
             { Fail("Could not set custom-run flag before starting"); yield break; }
             if (!_checkpoint.TrySetSelectedAscent(ascent)) { Fail("Could not set selected ascent on checkpoint mod"); yield break; }
 
+            // Force "use saved island" on regardless of the checkpoint mod's own
+            // checkbox state: Quick Resume's whole point is reproducing the exact run
+            // you saved, biomes included (biome layout is baked per scene, not random -
+            // see docs/RESEARCH.md), so silently falling back to today's daily rotation
+            // scene here would defeat that. Doesn't touch the checkbox for vanilla F6/
+            // manual boarding-pass loads, only forces it for the moment THIS load starts
+            if (!_checkpoint.TrySetUseSavedLevel(true))
+                _log.LogWarning("[stage] Could not force 'use saved island' on; resumed run may load today's "
+                    + "daily island instead of the saved one if the checkbox is off.");
+
             if (!_checkpoint.TryPreStartSetSegment())
             {
                 Fail($"No checkpoint save found for {target} (PreStartSetSegment returned false)");

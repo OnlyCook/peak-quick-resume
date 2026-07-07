@@ -60,6 +60,7 @@ namespace PEAKQuickResume
         private class PendingRestore
         {
             public string UserId;
+            public SaveTarget Target;
             public JArray BackpackItemStates;
         }
         private static readonly List<PendingRestore> _pending = new List<PendingRestore>();
@@ -144,8 +145,16 @@ namespace PEAKQuickResume
 
                     if (!TryBuildBackpackItemStates(drop.Backpack, out var states) || states.Count == 0) continue;
 
-                    _pending.Add(new PendingRestore { UserId = drop.UserId, BackpackItemStates = states });
-                    _log?.LogInfo($"[backpack-mitigation] Queued a backpack restore for userId '{drop.UserId}' ({states.Count} item(s)).");
+                    // Lighting a campfire only ever happens mid-run, so the currently
+                    // active run (whatever RunLauncher/Ascents report right now) IS the
+                    // one the checkpoint mod's own autosave is about to write to - this
+                    // has to match at the exact moment of the save, see
+                    // SaveArchive.PatchCanonicalFileForUser for why guessing wrong here
+                    // silently patches an unrelated save file instead
+                    SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
+
+                    _pending.Add(new PendingRestore { UserId = drop.UserId, Target = target, BackpackItemStates = states });
+                    _log?.LogInfo($"[backpack-mitigation] Queued a backpack restore for userId '{drop.UserId}' ({target}, {states.Count} item(s)).");
                 }
             }
             catch (Exception e)
@@ -170,7 +179,7 @@ namespace PEAKQuickResume
             if (_pending.Count == 0) return;
             foreach (var restore in _pending)
             {
-                bool applied = SaveArchive.PatchCanonicalFileForUser(offline, restore.UserId, json =>
+                bool applied = SaveArchive.PatchCanonicalFileForUser(offline, restore.Target, restore.UserId, json =>
                 {
                     json["hasBackpack"] = true;
                     json["backpackItemStates"] = restore.BackpackItemStates;

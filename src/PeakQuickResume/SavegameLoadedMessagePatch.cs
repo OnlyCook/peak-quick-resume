@@ -24,10 +24,11 @@ namespace PEAKQuickResume
     /// This "Save game loaded!" moment is also the checkpoint mod's own signal that a
     /// load has actually finished (it fires from <c>LoadInventoryDelayed</c>, well
     /// after the teleport itself and its loading screen), so a postfix here also arms
-    /// <see cref="TeleportWatchdog"/>'s watch window, see Phase 6 in ROADMAP.md.
-    /// Postfixes see the final (already-localized) parameter value, so matching
-    /// against <see cref="MessagesLocalization.Get(MsgKey)"/> here works regardless
-    /// of patch ordering with the prefix below
+    /// <see cref="TeleportWatchdog"/>'s watch window, see Phase 6 in ROADMAP.md, and
+    /// triggers <see cref="CampfireRelightFix"/> (v1.1.0: solo teleportJumpLogic=0
+    /// spawns next to an unlit campfire). Postfixes see the final (already-localized)
+    /// parameter value, so matching against <see cref="MessagesLocalization.Get(MsgKey)"/>
+    /// here works regardless of patch ordering with the prefix below
     ///
     /// Also appends a subtle "(1)"/"(2)" suffix when a Phase 6 step 2 Shift/Alt
     /// teleport-config override is currently active (<see cref="TeleportConfigOverride.LastAppliedOverride"/>),
@@ -42,13 +43,15 @@ namespace PEAKQuickResume
         private static ManualLogSource _log;
         private static TeleportWatchdog _watchdog;
         private static TeleportConfigOverride _teleportOverride;
+        private static CheckpointInterop _checkpoint;
 
         public static void Apply(Harmony harmony, Type checkpointType, ManualLogSource log, TeleportWatchdog watchdog = null,
-            TeleportConfigOverride teleportOverride = null)
+            TeleportConfigOverride teleportOverride = null, CheckpointInterop checkpoint = null)
         {
             _log = log;
             _watchdog = watchdog;
             _teleportOverride = teleportOverride;
+            _checkpoint = checkpoint;
             try
             {
                 var target = AccessTools.Method(checkpointType, "ShowMessage",
@@ -90,9 +93,9 @@ namespace PEAKQuickResume
         {
             try
             {
-                if (_watchdog == null) return;
                 if (!text.StartsWith(MessagesLocalization.Get(MsgKey.SavegameLoaded), StringComparison.Ordinal)) return;
-                _watchdog.ArmPendingWatch();
+                _watchdog?.ArmPendingWatch();
+                CampfireRelightFix.TryRelightAfterLoad(_checkpoint, _log);
             }
             catch (Exception e)
             {

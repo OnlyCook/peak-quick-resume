@@ -95,7 +95,7 @@ namespace PEAKQuickResume
                 CampfireCookSaveFixPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 BackpackSaveMitigation.Apply(harmony, _checkpoint, Logger);
                 LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride);
-                SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride);
+                SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride, _checkpoint);
                 MessageOverlayWrapPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
             }
 
