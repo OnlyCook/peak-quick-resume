@@ -12,8 +12,11 @@ branch `feature/teleport-mitigation`: Steps 1–3 done and confirmed working
 in-game, Step 4 is next** — see "Handoff notes for the next session" at the
 bottom of this file for exactly where to pick up. **Phase 7 (boarding-pass
 island-toggle button) added on the same branch, session 10, NOT YET IN-GAME
-TESTED** — see below.
-**Last updated:** 2026-07-05 (session 10).
+TESTED** — see below. **Phase 8 (own save/load/teleport, drop the runtime
+dependency on PEAK Checkpoint Save) got a full, detailed execution plan this
+session (session 11, 2026-07-09) — see that section below for the milestone
+breakdown (M0-M9); not yet started.**
+**Last updated:** 2026-07-09 (session 11).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
 
@@ -48,6 +51,380 @@ a savefile present to confirm: the button appears bottom-right, position/size
 look right at actual game resolution, clicking it actually flips the island and
 the checkpoint mod's own text updates, and it correctly disappears in the
 "no savefile found" case.
+
+---
+
+## Phase 8 — own save/load/teleport, drop the PEAK Checkpoint Save runtime dependency (planned in full 2026-07-09, not started)
+
+**Maintainer decision, 2026-07-08 (context), scope locked down 2026-07-09:**
+after fully reverse-engineering why `teleportJumpLogic` 0/1/2 behave the way
+they do (see `docs/RESEARCH.md`), the conclusion was that the checkpoint mod's
+teleport/scene-sync path is fragile by construction (ad-hoc per-case
+RPC/`CustomCommands` patchwork, not a coherent design) and we've been carrying
+the cost of that fragility (Phase 6's whole watchdog/mitigation system exists
+only to paper over it) without being able to actually fix the root cause,
+since it's not our code. On top of that: PEAK is expecting a big content
+update, the checkpoint mod has had no updates in 3 months and is left in a
+state that already needs our mitigations to work reliably, and we have no
+source access to it — every future game update risks silently breaking our
+`CheckpointInterop` reflection with no way to fix the checkpoint mod's half.
+**Decision: port the checkpoint mod's own save/load/teleport logic into this
+mod as fully our own code, so the only remaining external dependency is
+BepInEx itself.**
+
+**2026-07-09 refinement of the approach (session 11 planning), locking in
+three decisions after discussion with the maintainer:**
+1. **Fidelity first, optimization later.** The very first working version of
+   our own teleport/restore must be a **near-literal port** of the checkpoint
+   mod's own `CustomJumpToSegment` coroutine — same retry-loop shape, same
+   `teleportJumpLogic` 0/1/2 branches, same wait-frame cadence, same
+   `TeleportClientsToHost` correction loop — not the "cleaner"
+   `MapHandler.JumpToSegment`-only design an earlier draft of this section
+   sketched. Reasoning: the mod already works perfectly in real testing today
+   (multiple islands/biomes/lobby sizes/items, confirmed by the maintainer),
+   and every mitigation we've built in Phase 6 (`TeleportWatchdog`,
+   `TeleportConfigOverride`, warp suppression) was tuned against *this exact*
+   retry-loop shape. Jumping straight to a cleaner design would both change
+   behavior we haven't verified is equivalent AND require re-tuning or
+   rewriting all of Phase 6 at the same time as the port, which is exactly the
+   kind of two-things-at-once risk we want to avoid. Optimization is an
+   explicit **second pass**, after the fidelity port is proven solid in-game
+   across several sessions (see "Second-pass optimization ideas" at the end of
+   this section — noted now so they aren't lost, not acted on yet).
+2. **Keep PEAK Checkpoint Save installed during development.** Our own code
+   stops *calling into* it, but it stays installed on the test profile so its
+   save files/behavior can be diffed against ours, and so there's an immediate
+   fallback if a bug is found in our new path mid-development. Only drop the
+   hard BepInEx dependency once the new system is proven solid across several
+   sessions (unchanged from the original plan's "Watch out for" note below).
+   **Consequence:** our own `PhotonView` must use a `ViewID` that cannot
+   collide with the checkpoint mod's own hardcoded `19420` (decompile line
+   992, `CreatePhotonView`) — pick something far away, e.g. `194200`, and
+   double check it doesn't collide with anything else PUN auto-assigns.
+3. **First coding milestone is the save-file compatibility layer, not a
+   minimal load path.** Write our own `SaveData`/`SavedItemState`/
+   `SavedBackpackItemState`/`SavedEntry` model and JSON reader/writer, matching
+   the existing shape field-for-field, and verify it round-trips real,
+   existing save files byte-for-byte (or at least semantically identical,
+   Newtonsoft doesn't guarantee byte-identical key ordering) **before writing
+   a single line of restore/capture logic.** This is verifiable without any
+   in-game test (just feed it real files from the maintainer's own save
+   folders), which matters a lot given every other milestone needs a full
+   build→deploy→maintainer-tests→report loop.
+
+### What the decompile actually showed (corrections to the original draft above)
+
+Re-reading the full decompile (`scratch/decomp/checkpoint/PEAK_Checkpoint_Save.decompiled.cs`,
+4775 lines) end to end for this plan turned up a few things the original sketch
+above got wrong or left too vague. These change the *risk profile* of the port,
+so recording them explicitly:
+
+- **The "world object state" list is destroy-only, not restore.** The original
+  draft said the `ChainShootable`/`RopeAnchor`/`RopeDynamic`/
+  `PortableStovetop_Placed`/`ClimbingSpikeHammered`/`CloudFungus`/
+  `Flag_Planted_Checkpoint`/`ShelfShroom`/`ScoutCannon_Placed`/
+  `BounceShroomSpawn`/`MagicBean` list (decompile ~2441-2504) "needs its own
+  inventory of what state each of these actually needs restored." **That's not
+  what the code does.** It's a cleanup pass: after a load, on the master
+  client only, it walks every `GameObject` in the scene and
+  `PhotonNetwork.Destroy()`s any whose name contains one of those strings, has
+  a non-room `PhotonView` with `CreatorActorNr > 0` (i.e. was player-placed
+  this session, not part of the baked scene) — same pattern immediately
+  followed by a separate destroy pass for stray `MagicBeanVine` objects
+  (~2485-2503). This is the same idea as `ResetLuggage`/"ResetDroppedRuntimeItems"
+  (decompile ~3527-3627, logged as "ResetWorldLoot"): the freshly-loaded level
+  starts from a clean slate (chests/luggage reset via reflective
+  duck-typing on field/method names like `opened`/`isOpened`/`Reset`/`Refresh`,
+  dropped non-player-holding `Item`/`ItemPickup` objects with a real
+  `PhotonView` destroyed outright) and then `ISpawner.TrySpawnItems()`
+  (called on every `ISpawner` in the target segment, ~2415-2426) deterministically
+  re-populates segment loot. **Nothing about ropes/chains/hammered spikes/
+  planted flags/etc. is saved or restored from the save file at all** — they're
+  just deleted so a re-load doesn't end up with duplicates or orphaned
+  player-placed props from a different timeline. This turns what looked like
+  the single highest-unknown, highest-risk part of the port into one of the
+  simplest: a straight destroy-by-name-substring loop, no state schema to
+  reverse-engineer.
+- **Inventory/backpack item-state restore has zero checkpoint-mod-specific
+  dependency once you look past the wrapper methods.** `TryGetEntryObject`/
+  `TryReadEntryNumeric`/`TryWriteEntryNumeric`/`TryGetKey`/`TryConvertToFloat`
+  (decompile ~3258-3480) all reflect into **game types**, not checkpoint-mod
+  types: `ItemInstanceData`'s own private dictionary field (reflected via a
+  cached `FieldInfo`, referred to in our existing `CheckpointInterop` as
+  `_iidDataField` — actually resolved against `ItemInstanceData` itself, not
+  the checkpoint mod), and `DataEntryKey`, a vanilla game enum. The only
+  checkpoint-mod-*owned* piece of this whole subsystem is the fixed list of 13
+  key names it happens to read/write (`ItemStateKeyNames` in our own
+  `CheckpointInterop.cs`: `ItemUses`, `PetterItemUses`, `UseRemainingPercentage`,
+  `CookedAmount`, `Fuel`, `Color`, `Scale`, `value__`, `Used`, `SpawnedBees`,
+  `ScreamTime`, `FlareActive`, `InstanceID`) and the hardcoded
+  `ExcludedItemIds` list (`{100, 58, 66, 2, 24, 104, 115, 17, 63, 64}`, decompile
+  line 891 — skips `ItemUses`/`UseRemainingPercentage` specifically for these
+  IDs; item names behind these IDs aren't labeled in the decompile, treat as
+  an opaque literal to copy verbatim rather than a list to second-guess).
+  **We already half-built this** — `BackpackSaveMitigation.cs`/
+  `CheckpointInterop.ReadItemStateValues` reach this exact functionality today
+  via reflection into the *checkpoint mod's* wrapper methods purely so we
+  didn't have to duplicate the reflection-into-`ItemInstanceData` logic
+  ourselves. Porting this properly means reimplementing those 5 small
+  reflection helpers directly against `ItemInstanceData`/`DataEntryKey`
+  (genuinely simple, game-type-only reflection, no dependency on the
+  checkpoint mod surviving at all) and retiring the wrapper-method reflection
+  in `CheckpointInterop`.
+- **`AddItemToInventory`/`AddItemToInventory_GetSlot`** (decompile ~3213-3525)
+  reflect into `Player.AddItem(ushort, ItemInstanceData, out ItemSlot)` — a
+  private/internal vanilla `Player` method, again a pure game-type reflection
+  target, no checkpoint-mod dependency.
+- **`ReviveDeadPlayers`** (decompile ~2760-2779) is *fully public, vanilla-only*
+  code already — `Character.data.dead/passedOut/fullyPassedOut/deathTimer/
+  sinceGrounded` (public fields) and `CharacterAfflictions.ClearAllStatus/
+  RemoveAllThorns/ClearAllAfflictions` (public methods). Trivial, no-risk port,
+  no reflection needed at all.
+- **The `PhotonView` for the checkpoint mod's own RPC channel is a manually
+  created, non-scene `GameObject` with a hardcoded `ViewID = 19420`**
+  (`CreatePhotonView`, decompile ~961-1003), `DontDestroyOnLoad`'d, holding a
+  `CheckpointNetwork : MonoBehaviourPun` component with these RPCs (decompile
+  ~461-695), which is the **complete surface** we need to replicate for our own
+  channel:
+  | RPC | Purpose | Do we need it? |
+  |---|---|---|
+  | `RPC_SendModVersionToMaster` | optional client mod-version mismatch warning | **Skip** — we don't enforce a mod-version check today (`docs/RESEARCH.md` C4 already notes we bypass this), no reason to add it now |
+  | `RPC_SendReadyStatusToMaster` | client → host "I'm ready" for the readiness gate | **Port** — needed for our own `CheckReadyStatusForPlayers` equivalent |
+  | `RPC_RequestSave` | client → host "please autosave now" (from a lit campfire) | **Port** — needed for our own campfire-autosave patch |
+  | `RPC_RecentlyLitCampfire` | host → clients, syncs the 32s re-light cooldown | **Port** |
+  | `RPC_RequestFalldamageProtection` | any → all, starts the fall-damage-immunity window | **Port** |
+  | `RPC_SendMessage` | host → clients, mirrors an on-screen message | **Port** (or reuse our own message overlay path if we build one — see M7) |
+  | `RPC_Loadingscreen` | host → clients, toggles the loading-screen overlay | **Port** |
+  | `RPC_SetHeroTitle` | host → clients, plays the "reached new area" banner | **Port** |
+  | `RPC_CloseEndscreen` | host → clients, force-closes a lingering end screen | **Port** |
+  | `RPC_ApplyAfflictions` | host → one client, applies afflictions/stamina | **Port** — this is how coop afflictions restore actually reaches non-host clients |
+  | `RPC_SyncMapVisuals` | PEAKapalooza-only segment resync | **Do not port** (PEAKapalooza) |
+- **Every place `Peakapalooza` appears in the decompile (63 hits, full list
+  catalogued this session)** is now a closed set, so "ignore entirely, do not
+  port" (below) is a checklist, not a vague instruction: lines 133, 137, 139,
+  149, 430, 575, 847, 849, 851, 853, 855, 857, 859, 861, 863, 889, 947, 1363,
+  1365, 1367, 1368, 1370, 1372, 1373, 1375, 1376, 1388, 1389, 1391, 1393, 1394,
+  1396, 1397, 1398, 1399, 1585, 1587, 1590, 1592, 1614, 1616, 1617, 1625, 1626,
+  1627, 1632, 1634, 1635, 1717, 1720, 1728, 2073, 2125, 2311, 2320, 2324, 2384,
+  2435, 2505, 2528, 2555, 2978, 4117, 4581 (line numbers as of the current
+  decompile snapshot — re-grep `Peakapalooza` case-insensitively if the source
+  file changes). Every one of these is either a field declaration, a guard
+  condition gating some other behavior off when PEAKapalooza is present, or a
+  wholly separate coroutine (`PeakapaloozaCheckGameobjects`,
+  `PeakapaloozaTeleportPlayersPeakToBeach`) — none of it needs a replacement in
+  our port, the *non*-PEAKapalooza branch of every one of those guards is what
+  we port instead.
+
+### Scope boundary (unchanged in spirit, restated precisely)
+
+- **Keep, near-verbatim (borrowed with credit, see Attribution below):** the
+  save-file *shape* — `SaveData`/`SavedItemState`/`SavedBackpackItemState`/
+  `SavedEntry` (decompile 389-459, full field list below) — and the
+  `MapBaker.GetLevel` Harmony-prefix trick (force a specific scene name over
+  the daily-rotation index; already proven safe, `docs/RESEARCH.md` "Scene
+  saving/loading" section).
+- **Port near-literally (this phase's actual work):** everything else the
+  checkpoint mod does to capture and restore a save — `CustomJumpToSegment`,
+  `TeleportToPosition`/`TeleportClientsToHost`, `ReviveDeadPlayers`,
+  `LoadInventoryDelayed`/`LoadPlayerInventory`/`LoadBackpackFromSave` and their
+  reflection helpers, `ResetLuggage` (world-loot cleanup), `ResetFogAfterLoad`/
+  `ResetLavaAfterLoad`/`ResetCampfire`, `SavePlayerOffline`/`SavePlayerCoop`,
+  `LoadPlayerOffline`/`LoadPlayerCoop`, `PreStartSetSegment`,
+  `CheckReadyStatusForPlayers`/`SendReadyStatusToMaster`, the `CheckpointNetwork`
+  RPC surface (minus PEAKapalooza's `RPC_SyncMapVisuals` and the unused
+  `RPC_SendModVersionToMaster`), and the campfire-autosave Harmony patch
+  (`Campfire_AutoSave_Patch`, decompile 123-172).
+- **Ignore entirely, do not port:** every PEAKapalooza branch (see the 63-line
+  list above). Per maintainer, 2026-07-08: PEAKapalooza hasn't been updated in
+  ~6 months and no longer works on the current PEAK version — the dev has
+  effectively abandoned it. If it's ever revived, that's a new, separate
+  compatibility request to evaluate then.
+
+### Full `SaveData` field reference (must match exactly, for JSON compatibility)
+
+From `PEAK_Checkpoint_Save.Plugin.SaveData` (decompile 389-431) — every field,
+verbatim, must exist with the same name/type/JSON-serialized shape in our own
+model (Newtonsoft `JsonConvert.SerializeObject(obj, Formatting.Indented)` /
+`DeserializeObject<SaveData>`, same as the checkpoint mod uses, so an existing
+file loads unchanged and a file we write loads unchanged in the checkpoint mod
+too during the transition window):
+
+```
+int settingsVersion; string saveDate; List<string> playerNames;
+string campfireName; float timePlayed; float timeOfDay;
+float posX; float posY; float posZ; string sceneName;
+List<BiomeType> biomes; List<string> biome_names; Segment segment;
+bool hasBackpack; bool isSkeleton;
+List<SavedItemState> inventoryItemStates;       // { int slotIndex; ushort itemId; Dictionary<string, SavedEntry> values; }
+List<SavedBackpackItemState> backpackItemStates; // { byte slotIndex; ushort itemId; Dictionary<string, SavedEntry> values; }
+float[] afflictions_current; float extraStamina;
+bool extModsPeakapaloozaPEAKTOBEACH;             // always write `false`, PEAKapalooza not supported — see below
+```
+`SavedEntry` = `{ string type; float value; }` (the `type` is a
+`Type.AssemblyQualifiedName`, used by `TrySetOrCreateEntry`'s
+`Activator.CreateInstance` to reconstruct the right wrapper type on load —
+keep this exactly as-is, do not simplify to a plain float, or a checkpoint-mod
+save's own item states — and vice versa, our own saves loaded by the
+checkpoint mod during the transition window — would fail to round-trip).
+`extModsPeakapaloozaPEAKTOBEACH` **stays in our model and is always written
+`false`** — dropping the field would break deserializing older/checkpoint-mod
+files that have it (Newtonsoft defaults missing fields, but the reverse —
+the checkpoint mod reading one of *our* files during the transition window —
+needs the field present, defaulting harmlessly).
+
+File paths and naming (`GetPlayerSaveFile`, decompile 2177-2216) — port
+exactly, this is the on-disk contract users and `SaveArchive`/`SaveDiscovery`
+already depend on:
+- Offline, normal: `{PluginPath}\Checkpoint_Save\peak_save_{ascent}_offline.json`
+- Offline, custom run: `{PluginPath}\Checkpoint_Save\peak_save_CustomRun_offline.json`
+- Coop, normal: `{PluginPath}\Checkpoint_Save\Coop\peak_save_{ascent}_{userId}.json`
+- Coop, custom run: `{PluginPath}\Checkpoint_Save\Coop\peak_save_CustomRun_{userId}.json`
+- Legacy single-file variants exist too (`configLegacySaveFile`) — **decide
+  later whether to carry the legacy toggle forward; not needed for parity
+  with a fresh install**, flag as an open question rather than silently
+  dropping it.
+
+We keep writing into the **same `Checkpoint_Save` folder structure** (not a
+new `QuickResume`-owned folder) specifically so `SaveArchive`/`SaveDiscovery`/
+the F7 picker need **zero changes** to keep working, and so the checkpoint mod
+(still installed per decision 2 above) keeps seeing/writing the exact same
+files for diffing during development.
+
+### Architecture — new/changed files, mapped against the existing module table
+
+Following this mod's own convention (small, single-responsibility files, see
+the "Architecture" table above) rather than one giant port of the checkpoint
+mod's single 4775-line `Plugin.cs`:
+
+| New file | Ports from (decompile) | Replaces / retires |
+|---|---|---|
+| `OwnSaveData.cs` | `SaveData`/`SavedItemState`/`SavedBackpackItemState`/`SavedEntry` (389-459) | nothing yet — new model, additive |
+| `OwnSavePaths.cs` | `GetPlayerSaveFile` (2177-2216) | nothing yet — additive, `SaveArchive`/`SaveDiscovery` keep using the same on-disk paths either way |
+| `OwnItemStateIO.cs` | `TryGetEntryObject`/`TryReadEntryNumeric`/`TryWriteEntryNumeric`/`TryGetKey`/`TryConvertToFloat` (3258-3480) + `ItemStateKeyNames`/`ExcludedItemIds` | `CheckpointInterop.ReadItemStateValues` and the wrapper-method reflection fields (`_tryGetKeyMethod` etc.) |
+| `OwnInventoryRestore.cs` | `LoadPlayerInventory`/`LoadBackpackFromSave`/`AddItemToInventory`/`AddItemToInventory_GetSlot`/`GetBackpackData` (3070-3256, 3482-3526) | — |
+| `OwnWorldLootReset.cs` | `ResetLuggage` a.k.a. "ResetWorldLoot" + destroy-by-name-substring passes from `CustomJumpToSegment` (3527-3627, 2441-2504) | — |
+| `OwnEnvironmentReset.cs` | `ResetFogAfterLoad`/`ResetLavaAfterLoad`/`ResetCampfire`/`SpawnFlaresAtPeak` (2563-2261 range) | — |
+| `OwnTeleportSequence.cs` | `CustomJumpToSegment`/`TeleportToPosition`/`TeleportClientsToHost`/`ReviveDeadPlayers` (2263-2779) | the parts of `TeleportWatchdog`/`TeleportConfigOverride` that currently only *observe*/tweak the checkpoint mod's version of this now become the actual implementation these mitigations sit on top of — same mitigation logic, new substrate |
+| `OwnSaveCapture.cs` | `SavePlayerOffline`/`SavePlayerCoop` (3715-4605) | — |
+| `OwnLoadEntryPoints.cs` | `LoadPlayerOffline`/`LoadPlayerCoop`/`PreStartSetSegment` (4605-4763, 914-954) | `CheckpointInterop.TryLoadPlayer`/`TryPreStartSetSegment` call sites in `ResumeOrchestrator` |
+| `OwnNetwork.cs` | `CheckpointNetwork` RPCs (461-695) + `CreatePhotonView` (961-1003) + `CheckReadyStatusForPlayers`/`SendReadyStatusToMaster` (1005-1054) | `CheckpointInterop.ReadyCheckEnabled`/`AllClientsReady`, our own new `PhotonView`/`ViewID`, see decision 2 above for the ID-collision note |
+| `MapBakerLevelOverridePatch.cs` | `GetLevel_Override`'s Harmony prefix on `MapBaker.GetLevel` (347-375) | the checkpoint mod's own copy of this patch — we now ship it ourselves |
+| `CampfireAutoSavePatch.cs` | `Campfire_AutoSave_Patch` (123-172) | the checkpoint mod's own patch on `Campfire.Interact_CastFinished` |
+| `PluginConfig.cs` (extended, not new) | every `ConfigEntry` we currently reflect into via `CheckpointInterop` (`configTeleportJumpLogic`, `configAdvancedTeleportFramesToWait`, `configAdvancedJumpLogicWaitTime`, `configInventory`, `configAfflictions`, `configItemStats`, `configOnetimeLoad`, `configLoadLevelScene`, `configDaytime`, `configCampfireReset`, `configTeleportTheKilnWorkaround`, `configAdvancedEnableClientReadyStatusCheck`, message colors) | the reflected `ConfigEntry` fields in `CheckpointInterop` — these become **our own** config entries with the same defaults, no more reading someone else's config object |
+
+`CheckpointInterop.cs` itself doesn't disappear in one shot — it retires
+member-by-member as each new `Own*` file takes over that member's job (see
+Milestones below), and only gets deleted once nothing calls into it anymore
+(Milestone M8).
+
+### Milestones (each independently build-deploy-test-able; do not start N+1 before N is confirmed)
+
+- **M0 — Save-file compatibility layer.** `OwnSaveData.cs` + `OwnSavePaths.cs`,
+  read/write only, no capture/restore logic. Verify against **real existing
+  save files** from the maintainer's own folders: deserialize with our model,
+  reserialize, confirm every field round-trips (a text diff is fine even if
+  key order differs — Newtonsoft doesn't guarantee stable ordering — the
+  important thing is no field is lost, renamed, or type-changed). No in-game
+  test needed for this milestone specifically.
+- **M1 — Own `PhotonView`/RPC channel skeleton.** `OwnNetwork.cs`: our own
+  `ViewID`, `CheckpointNetwork`-equivalent component, the readiness-gate RPCs
+  only (`RPC_SendReadyStatusToMaster`, `CheckReadyStatusForPlayers`). Testable
+  solo trivially (offline mode never touches this path); coop needs a real
+  2-player test to confirm the RPC actually arrives and doesn't collide with
+  the checkpoint mod's own channel (still installed per decision 2).
+- **M2 — Load entry points, disabled from the live path.** `OwnLoadEntryPoints.cs`
+  + `MapBakerLevelOverridePatch.cs`: our own `PreStartSetSegment`/
+  `LoadPlayerOffline`/`LoadPlayerCoop` guards, wired to call a stub
+  `OwnTeleportSequence` that just logs and returns. **Not yet wired into
+  `ResumeOrchestrator`** — build and deploy to confirm it compiles, resolves,
+  and logs correctly (probe-style, matching how `CheckpointInterop.Probe()`
+  already reports resolution status at startup) without touching the live F7
+  flow at all yet.
+- **M3 — Full teleport sequence port, solo only.** `OwnTeleportSequence.cs` +
+  `OwnWorldLootReset.cs` + `OwnEnvironmentReset.cs`, literal port of
+  `CustomJumpToSegment`'s full body including all three `teleportJumpLogic`
+  branches. Switch `ResumeOrchestrator`'s solo path (only) to call our own
+  `LoadPlayerOffline` instead of `CheckpointInterop.TryLoadPlayer()`. Test
+  solo, multiple islands/biomes, matching the maintainer's existing solo test
+  coverage before calling this milestone done.
+- **M4 — Inventory + backpack restore.** `OwnItemStateIO.cs` +
+  `OwnInventoryRestore.cs`, wired into M3's solo path. Test solo across
+  several item types (at minimum: a fuel-based tool, a rope/climbing item, a
+  food/cooked item, a throwable, something occupying a backpack slot) — this
+  is the part with the least ready-made test coverage elsewhere in this repo,
+  budget real time for it.
+- **M5 — Afflictions, revive, campfire/fog/lava/daytime restore.** Remaining
+  pieces of `LoadInventoryDelayed` not covered by M4, `ReviveDeadPlayers`,
+  `ResetFogAfterLoad`/`ResetLavaAfterLoad`/`ResetCampfire`/`SpawnFlaresAtPeak`.
+  Solo test across segments 0-5 (Caldera/segment 4's kiln-workaround branch
+  and the Peak/segment-5 flare-spawn branch both need at least one dedicated
+  test each, they're the most special-cased branches in the whole coroutine).
+- **M6 — Save capture.** `OwnSaveCapture.cs` + `CampfireAutoSavePatch.cs`. This
+  is the point where we can create a save file **without the checkpoint mod
+  running the show at all** — critically, diff a save we write against one
+  the still-installed checkpoint mod writes for the same in-game state
+  (decision 2's whole reason for keeping it installed). Solo only so far.
+- **M7 — Coop pass.** Finish `OwnNetwork.cs`'s remaining RPCs
+  (`RPC_RequestSave`, `RPC_RecentlyLitCampfire`, `RPC_RequestFalldamageProtection`,
+  `RPC_SendMessage` or our own message-overlay equivalent, `RPC_Loadingscreen`,
+  `RPC_SetHeroTitle`, `RPC_CloseEndscreen`, `RPC_ApplyAfflictions`),
+  `TeleportClientsToHost`, wire the coop path of `ResumeOrchestrator` to our
+  own `LoadPlayerCoop`/`SavePlayerCoop`. Full 2-player retest of everything
+  M3-M6 already covered solo, plus the existing Phase 6 mitigations
+  (`TeleportWatchdog`, `TeleportConfigOverride`, warp suppression, Shift/Alt
+  override) re-verified against our own teleport sequence instead of the
+  checkpoint mod's.
+- **M8 — Cut over Phase 6 mitigations and the F7/F1 UI to our own types.**
+  Once M0-M7 are solid: repoint `TeleportWatchdogPatch` (currently Harmony-
+  patches the checkpoint mod's `CustomJumpToSegment`/`Character.WarpPlayerRPC`)
+  onto our own `OwnTeleportSequence` methods directly (no Harmony needed for
+  our own code — just call our own hooks inline), repoint
+  `TeleportConfigOverride`/`SavePicker`'s footer indicator/`HelpScreenContent`
+  from `CheckpointInterop` reflection to our own `PluginConfig` entries
+  directly, repoint `IslandToggleButton` to our own boarding-pass-toggle
+  config (may need its own small UI addition since we no longer have the
+  checkpoint mod's own boarding-pass checkbox to mirror — flag as an open
+  question when this milestone starts). Delete `CheckpointInterop.cs` once
+  nothing references it.
+- **M9 — Drop the hard dependency, migration, packaging.** Change the
+  BepInEx dependency on `PEAK_Checkpoint_Save` from hard to soft/optional (or
+  remove it outright — decide based on how M0-M8 went). Write a one-time
+  migration note/importer if any file-format drift was introduced (shouldn't
+  be any, given M0's whole point). Update `packaging/manifest.json`,
+  `packaging/README.md`, `CHANGELOG.md` with the Attribution note (below).
+  Uninstall the checkpoint mod from the test profile for a final from-scratch
+  verification pass.
+
+### Attribution
+
+dominik0207's save-data shape and the `MapBaker.GetLevel` technique are both
+being reused deliberately (not reverse-engineered from scratch by us) — credit
+stays explicit in README/CHANGELOG when this ships, same as it is today. We
+are porting their restore/capture *implementation* into our own codebase (with
+credit), not claiming to have invented save/load for this game from nothing.
+
+### Second-pass optimization ideas (explicitly NOT this phase — noted so they aren't lost)
+
+Once the fidelity port (M0-M9) is proven solid across several real sessions:
+- Call `MapHandler.JumpToSegment` directly instead of replaying the full
+  `teleportJumpLogic` branch/retry-loop shape, now that we fully own and can
+  simplify it instead of blindly copying it.
+- Revisit whether the 150-attempt/30-second `TeleportClientsToHost` retry loop
+  is still needed once we're not fighting someone else's cadence — Phase 6's
+  entire warp-suppression mechanism exists only because that retry loop's
+  cadence structurally can't converge (see the Step 4/5 write-up above); owning
+  both sides means we could just fix the cadence instead of suppressing its
+  symptoms.
+- Reconsider `AltTeleportJumpLogic`'s default of `2` (`MapHandler.GoToSegment`)
+  given `docs/RESEARCH.md`'s finding that it never actually moves a player at
+  all — this was left alone deliberately while depending on the checkpoint
+  mod's own config surface, but becomes trivial to fix for real once we own
+  the whole teleport path.
+- Investigate whether the ~13 `WaitForSeconds(configAdvancedJumpLogicWaitTime.Value)`
+  calls scattered through the ported `CustomJumpToSegment` sequence are all
+  load-bearing or partly cargo-culted from the original code's own caution —
+  not to be touched during the fidelity port itself, but worth an efficiency
+  pass afterward.
 
 ---
 
@@ -1159,6 +1536,15 @@ Design confirmed from decompile: networked scene loads propagate to clients via
   checkpoint mod). Not our concern to fix, but mention in README.
 - **Config `settingsVersion`/save wipes on checkpoint-mod updates:** unrelated to us,
   but a checkpoint-mod update can delete saves — warn users before they rely on F7.
+- **`AltTeleportJumpLogic` defaults to `2`, but decompile analysis (see
+  `docs/RESEARCH.md`, "teleportJumpLogic ... why 0/1/2 behave so differently") shows
+  value `2` (`MapHandler.GoToSegment`) is the vanilla walk-between-campfires transition:
+  it never calls `WarpPlayerRPC` (doesn't move the player at all) and no-ops entirely
+  if the target segment isn't strictly greater than wherever `currentSegment` already
+  is. It is not a working teleport in solo or coop. Our help screen currently tells
+  users "if it still happens, try Shift or Alt instead" — the Alt path is likely dead
+  advice as configured. **Deliberately left as-is for now** (maintainer decision,
+  2026-07-08) — revisit default/help-text wording in a future session.
 
 ## Handoff notes for the next session
 
