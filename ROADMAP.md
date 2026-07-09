@@ -25,10 +25,11 @@ clean, deployed (session 13). M3 (full teleport sequence port, solo) is
 **done and confirmed in-game** (session 13, 3 islands/biomes, no issues). M4
 (inventory + backpack restore) is **done and confirmed in-game** (session 13,
 items correctly restored, log clean). M5 (afflictions/skeleton/stamina/time
-sync/cleanup) is implemented, builds clean, deployed (session 13) — needs
-in-game testing (a save with saved afflictions/skeleton/stamina, plus
-Caldera-kiln and Peak-flare segment coverage) before M6. Coop is completely
-unaffected (unchanged, still via the checkpoint mod).**
+sync/cleanup) is **done and confirmed in-game** (session 13, Tropics/Caldera/
+TheKiln, status effects restored, log clean; skeleton-state restore alone is
+still unverified, coop-only mechanic, not blocking). Coop is completely
+unaffected so far (unchanged, still via the checkpoint mod). M6 (save
+capture) is next.**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -623,11 +624,20 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   still isn't ported (unchanged gap from M2, `configOnetimeLoad` itself isn't
   ported so this can never trigger regardless).
 
-  Builds clean, deployed to the test profile. **Not yet tested in-game** -
-  needs the segment/branch coverage the milestone plan above calls for
-  (Caldera/kiln-workaround, Peak/flare-spawn) plus a save with saved
-  afflictions/skeleton-state/stamina to actually exercise this milestone,
-  before M6 starts.
+  Builds clean, deployed to the test profile. **Confirmed in-game (session
+  13):** solo loads into Tropics, Caldera, and TheKiln, all status effects
+  restored correctly. Maintainer clarified "Peak" (segment 5, the final
+  hilltop) has no campfire/save at all - it's the finish line, not a
+  checkpoint location; TheKiln (segment 4) is the actual last save-able
+  segment, and is what both the kiln-workaround config AND the flare-spawn
+  trigger key off (`(int)segment == 4`, decompile - a naming mismatch against
+  the enum's own `Peak` member worth remembering), so the TheKiln load above
+  already exercises both of those special-cased branches. `LogOutput.log`
+  cross-checked: `OwnInventoryRestore: restore sequence complete` logged for
+  all three loads, zero warnings/errors anywhere. Skeleton-state restore
+  specifically is still unverified (maintainer: only reachable via a
+  coop-specific mechanic, no solo save to test it with) - noted for whenever
+  it can be tested, not blocking. **M5 done.**
 - **M6 — Save capture.** `OwnSaveCapture.cs` + `CampfireAutoSavePatch.cs`. This
   is the point where we can create a save file **without the checkpoint mod
   running the show at all** — critically, diff a save we write against one
