@@ -19,14 +19,17 @@ namespace PEAKQuickResume
     /// path - see ROADMAP.md Phase 8. Not wired into <see cref="ResumeOrchestrator"/>
     /// yet; this milestone only proves the channel itself works
     ///
-    /// Uses a distinct <c>ViewID</c> (194200) from the checkpoint mod's own hardcoded
+    /// Uses a distinct <c>ViewID</c> (69420) from the checkpoint mod's own hardcoded
     /// 19420 (decompile line 992) since both mods' PhotonViews coexist during the
     /// Phase 8 transition window (checkpoint mod stays installed for diffing, see
-    /// ROADMAP.md decision 2)
+    /// ROADMAP.md decision 2). Safe from Photon's auto-allocated range: PEAK caps
+    /// rooms at 4 players (<c>NetworkingUtilities.MAX_PLAYERS</c>, decompile line
+    /// 89482), so with PUN's default 1000 auto-IDs per actor, nothing auto-assigned
+    /// ever gets remotely close to 69420
     /// </summary>
     public class OwnNetwork : MonoBehaviour
     {
-        private const int ViewId = 194200;
+        private const int ViewId = 69420;
 
         private ManualLogSource _log;
         private PluginConfig _cfg;

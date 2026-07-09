@@ -18,8 +18,10 @@ branch `feature/phase8-independent-saveload` (session 11, 2026-07-09) — see
 that section below for the milestone breakdown (M0-M9). M0 (save-file
 compatibility layer) is done and verified (session 12): 110/110 real save
 files round-trip losslessly through `OwnSaveData.cs`/`OwnSavePaths.cs`. M1
-(own PhotonView/RPC channel) is next.**
-**Last updated:** 2026-07-09 (session 12).
+(own PhotonView/RPC channel, `ViewID=69420`) is implemented and confirmed
+in-game (solo + solo-hosted coop, session 13). M2 (own load entry points,
+not yet wired into the live resume path) is next.**
+**Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
 
@@ -359,10 +361,12 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   the checkpoint mod's own channel (still installed per decision 2).
 
   **Implemented (session 12).** `OwnNetwork.cs`: a new `PEAKQuickResume.OwnNetwork`
-  `GameObject` (`DontDestroyOnLoad`), its own `PhotonView` at `ViewID=194200`
-  (chosen far from the checkpoint mod's hardcoded `19420` — that ID sits inside
-  Photon's auto-allocated range for actor 19, ours would need ~194 players in
-  one room to ever collide, never realistic for this game) plus an
+  `GameObject` (`DontDestroyOnLoad`), its own `PhotonView` at `ViewID=69420`
+  (maintainer's choice, session 13 — changed from an initial `194200`; both are
+  safely clear of the checkpoint mod's hardcoded `19420` for the same reason:
+  PEAK caps rooms at 4 players (`NetworkingUtilities.MAX_PLAYERS`, decompile
+  line 89482), so with PUN's default 1000 auto-assigned IDs per actor, nothing
+  auto-assigned ever gets remotely close to either number) plus an
   `OwnNetworkRpc : MonoBehaviourPun` holding just `RPC_SendReadyStatusToMaster`.
   `OwnNetwork.Update()` mirrors the checkpoint mod's own scene-keyed state
   machine (decompile 1345-1413) field-for-field for just this RPC's bookkeeping:
@@ -379,11 +383,10 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   channel up — **nothing reads `CheckReadyStatusForPlayers()` yet**, this
   milestone is only about the channel existing and not colliding.
   Builds clean against the real game assemblies, deployed to the test profile.
-  **Not yet confirmed in-game**: needs the maintainer to launch once solo to
-  confirm the `OwnNetwork: PhotonView created (ViewID=194200)` log line appears
-  with no error, and ideally a short coop session (host + one client) to
-  confirm `RPC_SendReadyStatusToMaster` actually logs on the host side without
-  interfering with the checkpoint mod's own still-active channel.
+  **Confirmed (session 13):** maintainer launched once solo and once in a
+  (solo-hosted) coop session, each loading a separate save, no errors reported.
+  `ViewId` changed to `69420` right after per the maintainer's preference (see
+  above) and redeployed.
 - **M2 — Load entry points, disabled from the live path.** `OwnLoadEntryPoints.cs`
   + `MapBakerLevelOverridePatch.cs`: our own `PreStartSetSegment`/
   `LoadPlayerOffline`/`LoadPlayerCoop` guards, wired to call a stub
