@@ -11,21 +11,27 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Phase 8 milestone M4: our own port of the inventory/backpack-restoring half of
-    /// <c>LoadInventoryDelayed</c> (decompile 2781-2844) plus the functions it calls -
-    /// <c>LoadPlayerInventory</c> (3070-3138), <c>LoadBackpackFromSave</c>/
-    /// <c>GetBackpackData</c> (3140-3211), <c>AddItemToInventory</c>/
-    /// <c>AddItemToInventory_GetSlot</c> (3213-3256, 3482-3525)
+    /// Our own port of <c>LoadInventoryDelayed</c> (decompile 2781-2968) plus the
+    /// functions it calls - <c>LoadPlayerInventory</c> (3070-3138),
+    /// <c>LoadBackpackFromSave</c>/<c>GetBackpackData</c> (3140-3211),
+    /// <c>AddItemToInventory</c>/<c>AddItemToInventory_GetSlot</c> (3213-3256,
+    /// 3482-3525). <see cref="RestoreAll"/> covers the FULL per-player loop
+    /// (inventory/backpack restore - M4; afflictions/skeleton/extra-stamina restore
+    /// and time-played sync - M5) plus the post-loop cleanup, called as a
+    /// fire-and-forget coroutine from <see cref="OwnTeleportSequence"/> exactly like
+    /// the original starts <c>LoadInventoryDelayed</c> without yielding on it
     ///
-    /// The REMAINING pieces of <c>LoadInventoryDelayed</c> (afflictions/skeleton/
-    /// extra-stamina restore, time-played sync, the "Save game loaded!"
-    /// message/hero-title banner, one-time-load file deletion,
-    /// <c>currentlyLoading</c>/<c>RecentlyLoaded</c> cleanup) are NOT ported yet -
-    /// that's M5. <see cref="RestoreAll"/> mirrors ONLY decompile lines 2781-2844
-    /// (the 60-frame wait, per-player loop, thorn removal, and the inventory/backpack
-    /// restore itself), called as a fire-and-forget coroutine from
-    /// <see cref="OwnTeleportSequence"/> exactly like the original starts
-    /// <c>LoadInventoryDelayed</c> without yielding on it
+    /// Deliberately NOT ported (documented, not silent): the checkpoint mod's own
+    /// "Loading savegame..."/"Save game loaded!" UI captions and the hero-title
+    /// banner sequence are cosmetic only - <c>ResumeOrchestrator</c> already shows
+    /// its own completion message right after starting this coroutine (same timing
+    /// quirk the original has too: its own message only fires once THIS coroutine
+    /// finishes, seconds after the restore was kicked off, same as ours), so a
+    /// second, redundant caption would be dead weight, consistent with the same call
+    /// made for the loading caption in M3. One-time-load (Hardmode) file deletion is
+    /// also not ported - <c>configOnetimeLoad</c> isn't ported yet (see
+    /// <see cref="OwnLoadEntryPoints.OneTimeLoadEnabled"/>), so this can never
+    /// trigger for us regardless
     /// </summary>
     public static class OwnInventoryRestore
     {
@@ -33,13 +39,14 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Mirrors the per-player loop in <c>LoadInventoryDelayed</c> (decompile
-        /// 2789-2844) for JUST inventory/backpack restore. Each player's own save
-        /// file is re-read independently (matching the original exactly - not reusing
-        /// the segment-level <c>OwnSaveData</c> passed into <see cref="OwnTeleportSequence"/>),
-        /// since in coop each player has their own file. Solo has exactly one player,
-        /// so this reads the same file back a second time - harmless, matches original
+        /// 2789-2956) in full, plus its post-loop cleanup (decompile 2966-2969).
+        /// Each player's own save file is re-read independently (matching the
+        /// original exactly - not reusing the segment-level <c>OwnSaveData</c>
+        /// passed into <see cref="OwnTeleportSequence"/>), since in coop each player
+        /// has their own file. Solo has exactly one player, so this reads the same
+        /// file back a second time - harmless, matches original
         /// </summary>
-        public static IEnumerator RestoreAll(SaveTarget target, bool offline, PluginConfig cfg, ManualLogSource log)
+        public static IEnumerator RestoreAll(SaveTarget target, bool offline, PluginConfig cfg, OwnLoadEntryPoints entryPoints, ManualLogSource log)
         {
             for (int i = 0; i < 60; i++) yield return null;
 
@@ -83,7 +90,54 @@ namespace PEAKQuickResume
                     if (playerView != null && playerView.Owner != null && data.backpackItemStates.Count > 0)
                         LoadBackpackFromSave(ch.player, data, cfg, log);
                 }
+
+                // M5: afflictions/skeleton/extra-stamina restore (decompile 2845-2934).
+                // Solo-only branch ported; the coop (RPC_ApplyAfflictions) branch is
+                // M7's job, same as everywhere else coop-specific in this port
+                if (cfg.OwnAfflictions.Value && data != null && offline)
+                {
+                    try
+                    {
+                        try { ch.data.SetSkeleton(data.isSkeleton); }
+                        catch { /* matches the original's own swallow */ }
+
+                        try { ch.SetExtraStamina(data.extraStamina > 0f && data.extraStamina <= 1f ? data.extraStamina : 0f); }
+                        catch { /* matches the original's own swallow */ }
+
+                        CharacterAfflictions afflictions = ch.refs.afflictions;
+                        if (data.afflictions_current != null && afflictions.currentStatuses != null
+                            && afflictions.currentStatuses.Length == data.afflictions_current.Length)
+                        {
+                            Array.Copy(data.afflictions_current, afflictions.currentStatuses, afflictions.currentStatuses.Length);
+                        }
+                    }
+                    catch { /* matches the original's own outer swallow */ }
+                }
+
+                // M5: decompile 2935-2946 (SendSyncInventory is coop-only, M7's job)
+                for (int k = 0; k < 20; k++) yield return null;
+                for (int k = 0; k < 20; k++) yield return null;
+
+                // M5: time-played sync (decompile 2947-2955)
+                if (ch.photonView != null && ch.photonView.Owner != null && ch.photonView.Owner.IsMasterClient && data != null && data.timePlayed > 0f)
+                {
+                    RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
+                    if (runManager != null)
+                    {
+                        runManager.timeSinceRunStarted = data.timePlayed;
+                        typeof(RunManager).GetMethod("SyncTimeMaster", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                            ?.Invoke(runManager, null);
+                    }
+                }
             }
+
+            // M5: post-loop cleanup (decompile 2957-2969; LoadingScreen(false)/
+            // RPC_Loadingscreen are the cosmetic caption skipped since M3, not ported)
+            for (int i = 0; i < 30; i++) yield return null;
+            entryPoints?.MarkNotCurrentlyLoading();
+            entryPoints?.ArmRecentlyLoadedCooldown(10f);
+            entryPoints?.ArmRecentlyLitCampfireCooldown(32f);
+            log?.LogInfo("OwnInventoryRestore: restore sequence complete.");
         }
 
         /// <summary>Mirrors LoadPlayerInventory exactly (decompile 3070-3138)</summary>

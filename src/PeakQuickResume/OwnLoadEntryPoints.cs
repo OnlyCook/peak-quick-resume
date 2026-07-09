@@ -21,11 +21,9 @@ namespace PEAKQuickResume
     ///    Airport); nothing sets it into the future yet, since the two real call sites
     ///    that do (the campfire autosave patch, decompile line 148; the end of inventory
     ///    restore, decompile line 2968) are both ported in later milestones (M6, M4/M5)
-    ///  - <see cref="CurrentlyLoading"/> is set true here but never reset to false -
-    ///    the original resets it (<c>currentlyLoading = false;</c>) at decompile line
-    ///    2966, inside <c>LoadInventoryDelayed</c> (M4/M5). Harmless for now since
-    ///    nothing reads this property yet; will be fixed the moment M4/M5 ports that
-    ///    method's actual completion point
+    ///  - <see cref="CurrentlyLoading"/> is set true here; as of M5,
+    ///    <see cref="MarkNotCurrentlyLoading"/> is called by <see cref="OwnInventoryRestore"/>
+    ///    at the same point the original resets it (decompile line 2966)
     /// </summary>
     public class OwnLoadEntryPoints : MonoBehaviour
     {
@@ -55,6 +53,14 @@ namespace PEAKQuickResume
 
         private float _recentlyLoadedUntil = -1f;
 
+        /// <summary>
+        /// Mirrors the checkpoint mod's own <c>RecentlyLitCampfire</c> (decompile line
+        /// 827): armed at the end of a real restore (decompile line 2969) so the
+        /// campfire-autosave patch doesn't immediately re-save right after a load.
+        /// Unused until M6 ports that patch; tracked now for fidelity/completeness
+        /// </summary>
+        public float RecentlyLitCampfireUntil { get; private set; } = -1f;
+
         public void Init(ManualLogSource log, PluginConfig cfg, OwnNetwork network, OwnTeleportSequence teleportSequence)
         {
             _log = log;
@@ -62,6 +68,15 @@ namespace PEAKQuickResume
             _network = network;
             _teleportSequence = teleportSequence;
         }
+
+        /// <summary>Mirrors <c>currentlyLoading = false;</c> (decompile line 2966)</summary>
+        internal void MarkNotCurrentlyLoading() => CurrentlyLoading = false;
+
+        /// <summary>Mirrors <c>RecentlyLoaded = Time.time + 10f;</c> (decompile line 2968)</summary>
+        internal void ArmRecentlyLoadedCooldown(float seconds) => _recentlyLoadedUntil = Time.time + seconds;
+
+        /// <summary>Mirrors <c>RecentlyLitCampfire = Time.time + 32f;</c> (decompile line 2969)</summary>
+        internal void ArmRecentlyLitCampfireCooldown(float seconds) => RecentlyLitCampfireUntil = Time.time + seconds;
 
         /// <summary>Called by <see cref="OwnTeleportSequence"/> at the end of its own sequence, mirroring the original's <c>loadedSaveFileThisRound = true;</c> (decompile line 2560)</summary>
         internal void MarkLoadedThisRound() => LoadedSaveFileThisRound = true;

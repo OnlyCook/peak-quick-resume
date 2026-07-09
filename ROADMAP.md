@@ -24,9 +24,11 @@ chain, still not wired into the live resume path) is implemented, builds
 clean, deployed (session 13). M3 (full teleport sequence port, solo) is
 **done and confirmed in-game** (session 13, 3 islands/biomes, no issues). M4
 (inventory + backpack restore) is **done and confirmed in-game** (session 13,
-items correctly restored, log clean). Afflictions/skeleton/stamina still
-don't restore yet (M5, next). Coop is completely unaffected (unchanged, still
-via the checkpoint mod).**
+items correctly restored, log clean). M5 (afflictions/skeleton/stamina/time
+sync/cleanup) is implemented, builds clean, deployed (session 13) — needs
+in-game testing (a save with saved afflictions/skeleton/stamina, plus
+Caldera-kiln and Peak-flare segment coverage) before M6. Coop is completely
+unaffected (unchanged, still via the checkpoint mod).**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -595,6 +597,37 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   branch and the Peak/segment-5 flare-spawn branch both need at least one
   dedicated test each, they're the most special-cased branches in the whole
   coroutine).
+
+  **Implemented (session 13).** Folded directly into `OwnInventoryRestore.
+  RestoreAll` (the SAME per-player loop M4 already wrote, matching the
+  original's own control flow - inventory and afflictions restore share one
+  loop body in `LoadInventoryDelayed`, not two separate passes): skeleton
+  state, extra stamina, and the raw afflictions-array copy (decompile
+  2845-2934, solo branch only - the coop `RPC_ApplyAfflictions` branch is
+  M7's job), the time-played sync onto `RunManager.timeSinceRunStarted` +
+  reflection-invoked `SyncTimeMaster` (2947-2955), and the post-loop cleanup
+  (2966-2969) via three new `OwnLoadEntryPoints` methods
+  (`MarkNotCurrentlyLoading`/`ArmRecentlyLoadedCooldown`/
+  `ArmRecentlyLitCampfireCooldown`) - this also retroactively closes the
+  `CurrentlyLoading`-never-reset and `RecentlyLoaded`-never-armed gaps
+  flagged back in M2/M3. New `PluginConfig.OwnAfflictions` (Own-Teleport
+  section, mirrors `configAfflictions`).
+
+  **Deliberately not ported** (documented in the file's own remarks): the
+  checkpoint mod's "Save game loaded!" message and hero-title banner sequence
+  are cosmetic only, same reasoning as M3's loading-caption decision -
+  `ResumeOrchestrator` already shows its own completion message once the
+  restore is kicked off (both the original and our own version show theirs
+  at slightly different points relative to when the coroutine actually
+  finishes, an existing quirk, not a new one). One-time-load file deletion
+  still isn't ported (unchanged gap from M2, `configOnetimeLoad` itself isn't
+  ported so this can never trigger regardless).
+
+  Builds clean, deployed to the test profile. **Not yet tested in-game** -
+  needs the segment/branch coverage the milestone plan above calls for
+  (Caldera/kiln-workaround, Peak/flare-spawn) plus a save with saved
+  afflictions/skeleton-state/stamina to actually exercise this milestone,
+  before M6 starts.
 - **M6 — Save capture.** `OwnSaveCapture.cs` + `CampfireAutoSavePatch.cs`. This
   is the point where we can create a save file **without the checkpoint mod
   running the show at all** — critically, diff a save we write against one

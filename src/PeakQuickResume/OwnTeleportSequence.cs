@@ -183,7 +183,7 @@ namespace PEAKQuickResume
                 // 2553) - fire-and-forget, NOT yielded on, matching exactly. M4 only:
                 // inventory/backpack restore. Afflictions/skeleton/stamina/time-sync/
                 // message/hero-title/one-time-load-delete are M5, not ported yet
-                StartCoroutine(OwnInventoryRestore.RestoreAll(target, offline, _cfg, _log));
+                StartCoroutine(OwnInventoryRestore.RestoreAll(target, offline, _cfg, _entryPoints, _log));
             }
 
             if (isFoggedSegment)

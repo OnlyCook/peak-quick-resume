@@ -115,6 +115,9 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> OwnInventory;
         public readonly ConfigEntry<bool> OwnItemStats;
 
+        // Phase 8 M5: our own copy of configAfflictions (decompile line 1081)
+        public readonly ConfigEntry<bool> OwnAfflictions;
+
         public PluginConfig(ConfigFile cfg)
         {
             // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig (the in-game mod
@@ -391,6 +394,10 @@ namespace PEAKQuickResume
             OwnItemStats = cfg.Bind("Own-Teleport", "item-stats", true,
                 "Phase 8: if enabled, restores saved item stats (cooking amount, fuel, rope length...) for our "
                 + "own restore path. Same meaning/default as the checkpoint mod's own configItemStats.");
+
+            OwnAfflictions = cfg.Bind("Own-Teleport", "afflictions", true,
+                "Phase 8: if enabled, restores your saved afflictions (hunger, poison, cold, sleep, skeleton...) "
+                + "for our own restore path. Same meaning/default as the checkpoint mod's own configAfflictions.");
         }
     }
 }
