@@ -62,6 +62,22 @@ namespace PEAKQuickResume
         public static string For(SaveTarget target, bool offline, string userId = null)
             => target.IsCustom ? ForCustomRun(offline, userId) : ForAscent(offline, target.Ascent, userId);
 
+        /// <summary>
+        /// Phase 8 M6: a NON-canonical path (sibling "OwnCapture" folder, never
+        /// scanned by <see cref="SaveArchive"/>/<see cref="SaveDiscovery"/>/the F7
+        /// picker) for our own save-capture port to write into for diffing against
+        /// the checkpoint mod's own canonical file, without touching the live
+        /// save/load/archive pipeline at all yet. Deliberately NOT the same file
+        /// <see cref="For"/> resolves - see ROADMAP.md Phase 8 M6 for why cutting
+        /// over the actual canonical write path is a separate, later step
+        /// </summary>
+        public static string ForDiagnosticCapture(SaveTarget target, bool offline, string userId = null)
+        {
+            string canonical = For(target, offline, userId);
+            string dir = Path.Combine(Path.GetDirectoryName(canonical)!, "OwnCapture");
+            return Path.Combine(dir, Path.GetFileName(canonical));
+        }
+
         /// <summary>Our own Photon user id (== SteamID64), same source SaveArchive already uses</summary>
         public static string LocalUserId()
         {

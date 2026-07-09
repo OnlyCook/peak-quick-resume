@@ -119,6 +119,12 @@ namespace PEAKQuickResume
             // flow through it - see MapBakerLevelOverridePatch.cs
             MapBakerLevelOverridePatch.Apply(harmony, Logger);
 
+            // Phase 8 M6: our own save-capture port, triggered additively alongside the
+            // checkpoint mod's own still-active autosave patch. Writes to a NON-canonical
+            // diagnostic path only (see OwnSaveCapture.cs) - does not touch the live
+            // save file the checkpoint mod still writes and our own restore path still reads
+            CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, Logger);
+
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)
             //  - archive every save it writes so the F7 picker can browse past checkpoints

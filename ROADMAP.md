@@ -27,9 +27,11 @@ clean, deployed (session 13). M3 (full teleport sequence port, solo) is
 items correctly restored, log clean). M5 (afflictions/skeleton/stamina/time
 sync/cleanup) is **done and confirmed in-game** (session 13, Tropics/Caldera/
 TheKiln, status effects restored, log clean; skeleton-state restore alone is
-still unverified, coop-only mechanic, not blocking). Coop is completely
-unaffected so far (unchanged, still via the checkpoint mod). M6 (save
-capture) is next.**
+still unverified, coop-only mechanic, not blocking). M6 (save capture) is
+implemented, builds clean, deployed (session 13) — writes to a NON-canonical
+diagnostic path only (does not touch the live save file yet), needs an
+in-game campfire-light to compare against the checkpoint mod's own output.
+Coop is completely unaffected so far (unchanged, still via the checkpoint mod).**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -643,6 +645,40 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   running the show at all** — critically, diff a save we write against one
   the still-installed checkpoint mod writes for the same in-game state
   (decision 2's whole reason for keeping it installed). Solo only so far.
+
+  **Implemented (session 13).** `OwnSaveCapture.cs` ports `SavePlayerOffline`
+  field-for-field (decompile 3715-4137), including the biome-variant
+  campfire-naming quirk (Roots-variant Tropics / Mesa-variant Alpine name
+  their campfire after the biome, not the segment - decompile 4087-4094) and
+  the exact `extraStamina`/`timePlayed`/`timeOfDay` rounding. The 13 repeated
+  per-key capture blocks collapse into one loop over
+  `OwnItemStateIO.ItemStateKeyNames` (confirmed mechanically identical
+  against the decompile, not a behavior change - see the file's own remarks).
+  `CampfireAutoSavePatch.cs` ports the campfire-lit autosave trigger
+  (decompile 123-172), solo branch only (coop is M7).
+
+  **Deliberate, important scope decision:** this milestone writes to a
+  **non-canonical diagnostic path** (`OwnSavePaths.ForDiagnosticCapture`, a
+  sibling `OwnCapture/` folder), NOT the real save file. `CampfireAutoSavePatch`
+  runs **additively alongside** the checkpoint mod's own still-active autosave
+  patch on the same method - it does not replace or interfere with it. This
+  was a deliberate reading of the milestone's own goal ("diff a save we write
+  against one the checkpoint mod writes") as validation-first, not a live
+  cutover: flipping the actual canonical save-file writer to our own code is
+  real, separate risk (it's what `SaveArchive`'s `Sync`/`SavePatch` currently
+  key their own Harmony postfix off of - the checkpoint mod's own
+  `SavePlayerOffline`/`SavePlayerCoop` being called - so our own capture
+  replacing that call entirely needs those two systems updated in the same
+  step, not silently left behind). Flagged as a distinct follow-up, not
+  assumed to happen automatically as part of M8/M9.
+
+  Builds clean, deployed to the test profile. **Needs an in-game test**:
+  light a campfire solo once, so both the checkpoint mod's canonical
+  `Checkpoint_Save/peak_save_*.json` and our own
+  `Checkpoint_Save/OwnCapture/peak_save_*.json` exist for the same moment -
+  since the maintainer's r2modman profile lives on this same machine, the
+  actual byte/field diff can be done directly (like the M0 round-trip check)
+  rather than asking the maintainer to compare by hand.
 - **M7 — Coop pass.** Finish `OwnNetwork.cs`'s remaining RPCs
   (`RPC_RequestSave`, `RPC_RecentlyLitCampfire`, `RPC_RequestFalldamageProtection`,
   `RPC_SendMessage` or our own message-overlay equivalent, `RPC_Loadingscreen`,
