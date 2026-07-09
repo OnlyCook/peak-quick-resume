@@ -19,8 +19,10 @@ that section below for the milestone breakdown (M0-M9). M0 (save-file
 compatibility layer) is done and verified (session 12): 110/110 real save
 files round-trip losslessly through `OwnSaveData.cs`/`OwnSavePaths.cs`. M1
 (own PhotonView/RPC channel, `ViewID=69420`) is implemented and confirmed
-in-game (solo + solo-hosted coop, session 13). M2 (own load entry points,
-not yet wired into the live resume path) is next.**
+in-game (solo + solo-hosted coop, session 13). M2 (own load-entry-point guard
+chain, still not wired into the live resume path) is implemented, builds
+clean, deployed (session 13). M3 (full teleport sequence port, solo) is
+next — the first milestone that touches the live F7 flow.**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -395,6 +397,41 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   and logs correctly (probe-style, matching how `CheckpointInterop.Probe()`
   already reports resolution status at startup) without touching the live F7
   flow at all yet.
+
+  **Implemented (session 13).** `OwnLoadEntryPoints.cs` ports `PreStartSetSegment`
+  (914-954) and the shared guard chain from `LoadPlayerOffline`/`LoadPlayerCoop`
+  (4605-4763) field-for-field: not-at-Airport / host-only / one-time-hardmode-
+  load / post-load cooldown / (coop) readiness-gate checks, in the same order,
+  using `OwnSavePaths`/`OwnSaveData` from M0 and `OwnNetwork.CheckReadyStatusForPlayers`
+  from M1. `MapBakerLevelOverridePatch.cs` ports the `GetLevel_Override` Harmony
+  prefix (347-373) onto the vanilla `MapBaker.GetLevel` directly (no
+  checkpoint-mod dependency). `OwnTeleportSequence.cs` added as the M3 landing
+  pad — right now it's a one-method stub that only logs what it *would* restore.
+
+  **Two deliberate, documented gaps** (not silent divergence — see the class
+  remarks in `OwnLoadEntryPoints.cs`): the one-time-load/Hardmode guard always
+  passes (that config isn't ported yet, so it can never block), and the
+  `RecentlyLoaded` cooldown is only ever reset here, never armed — the two real
+  call sites that arm it (campfire autosave, decompile line 148; end of
+  inventory restore, decompile line 2968) are ported in M6 and M4/M5
+  respectively. Also skipped the original's `configLoadLevelScene` toggle
+  gate on the `MapBaker.GetLevel` override entirely — Quick Resume's own flow
+  already forces that setting on unconditionally for every load (see
+  `ResumeOrchestrator.TrySetUseSavedLevel`), so a togglable gate we'd only
+  ever force `true` anyway would be dead weight; revisit only if M8 needs it
+  independently switchable.
+
+  **Confirmed safe to run alongside the checkpoint mod's own equivalent patch**:
+  `OwnLoadEntryPoints.SelectedLevel` starts (and stays, since nothing calls
+  `TryPreStartSetSegment` outside this milestone's own scope yet) at `"null"`,
+  so `MapBakerLevelOverridePatch`'s prefix is a proven no-op — it can't
+  interfere with the checkpoint mod's own active `GetLevel` override no matter
+  which patch Harmony runs first. Wired into `Plugin.Awake` on the existing
+  persistent `GameObject`; nothing outside this milestone's own files calls
+  `TryLoadPlayer`/`TryPreStartSetSegment` yet. Builds clean, deployed to the
+  test profile. No in-game test is meaningfully possible for this milestone
+  specifically (nothing live calls into it) — the next milestone that needs
+  one is M3.
 - **M3 — Full teleport sequence port, solo only.** `OwnTeleportSequence.cs` +
   `OwnWorldLootReset.cs` + `OwnEnvironmentReset.cs`, literal port of
   `CustomJumpToSegment`'s full body including all three `teleportJumpLogic`

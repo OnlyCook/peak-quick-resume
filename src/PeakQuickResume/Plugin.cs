@@ -34,6 +34,10 @@ namespace PEAKQuickResume
         // see OwnNetwork.cs / ROADMAP.md Phase 8
         private OwnNetwork _ownNetwork;
 
+        // Phase 8 M2: our own PreStartSetSegment/LoadPlayerOffline/LoadPlayerCoop
+        // guard chain, not wired into ResumeOrchestrator yet - see OwnLoadEntryPoints.cs
+        private OwnLoadEntryPoints _ownLoadEntryPoints;
+
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
         internal string ResumeKeyText => _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
 
@@ -91,6 +95,18 @@ namespace PEAKQuickResume
             // own ViewID) purely to prove it resolves/works; nothing reads from it yet
             _ownNetwork = go.AddComponent<OwnNetwork>();
             _ownNetwork.Init(Logger, _cfg);
+
+            // Phase 8 M2: our own load-entry-point guard chain. Not called from anywhere
+            // live yet (TryLoadPlayer/TryPreStartSetSegment have no callers outside this
+            // milestone's own scope) - purely proves it resolves and builds correctly
+            _ownLoadEntryPoints = go.AddComponent<OwnLoadEntryPoints>();
+            _ownLoadEntryPoints.Init(Logger, _cfg, _ownNetwork);
+
+            // Phase 8 M2: our own copy of the checkpoint mod's MapBaker.GetLevel prefix.
+            // Safe alongside its own equivalent patch: OwnLoadEntryPoints.SelectedLevel
+            // stays "null" (a pure no-op) until a later milestone wires a real resume
+            // flow through it - see MapBakerLevelOverridePatch.cs
+            MapBakerLevelOverridePatch.Apply(harmony, Logger);
 
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)
