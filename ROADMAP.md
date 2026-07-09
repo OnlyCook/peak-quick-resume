@@ -22,12 +22,11 @@ files round-trip losslessly through `OwnSaveData.cs`/`OwnSavePaths.cs`. M1
 in-game (solo + solo-hosted coop, session 13). M2 (own load-entry-point guard
 chain, still not wired into the live resume path) is implemented, builds
 clean, deployed (session 13). M3 (full teleport sequence port, solo) is
-**done and confirmed in-game** (session 13, 3 islands/biomes, no issues) — the
-SOLO F7 flow now goes through our own restore path end to end. M4 (inventory +
-backpack restore) is implemented, builds clean, deployed (session 13) — needs
-in-game testing across several item types before M5. Afflictions/skeleton/
-stamina still don't restore yet (M5). Coop is completely unaffected
-(unchanged, still via the checkpoint mod).**
+**done and confirmed in-game** (session 13, 3 islands/biomes, no issues). M4
+(inventory + backpack restore) is **done and confirmed in-game** (session 13,
+items correctly restored, log clean). Afflictions/skeleton/stamina still
+don't restore yet (M5, next). Coop is completely unaffected (unchanged, still
+via the checkpoint mod).**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -581,10 +580,14 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   `currentlyLoading`/`RecentlyLoaded`/`RecentlyLitCampfire` cleanup. Much
   smaller than the original M5 write-up implied.
 
-  Builds clean, deployed to the test profile. **Not yet tested in-game** -
-  needs the item-type coverage the milestone plan above calls for (fuel tool,
-  rope/climbing item, cooked food, throwable, backpack-slot item at minimum)
-  before M5 starts.
+  Builds clean, deployed to the test profile. **Confirmed in-game (session
+  13):** several solo loads with saved inventories, maintainer confirmed
+  items were correctly restored (right items) on at least 2 of them.
+  `LogOutput.log` cross-checked: zero warnings/errors from any `Own*` code
+  across all loads; `OwnInventoryRestore: backpack states loaded for
+  <userId> (items=2)` / `(items=3)` confirm the backpack path ran and found
+  saved backpack contents on two of the loads, consistent with what was
+  reported. **M4 done.**
 - **M5 — Remainder of `LoadInventoryDelayed`: afflictions, skeleton, extra
   stamina, time sync, load-complete message/banner, cleanup.** (Revised scope,
   see M4's note above - `ReviveDeadPlayers`/environment resets are already
