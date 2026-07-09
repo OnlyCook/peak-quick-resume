@@ -29,6 +29,11 @@ namespace PEAKQuickResume
         private TeleportConfigOverride _teleportOverride;
         private IslandToggleButton _islandToggle;
 
+        // Phase 8 M1: our own PhotonView/RPC channel, standing up alongside the
+        // checkpoint mod's (still installed) rather than replacing anything yet -
+        // see OwnNetwork.cs / ROADMAP.md Phase 8
+        private OwnNetwork _ownNetwork;
+
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
         internal string ResumeKeyText => _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
 
@@ -81,6 +86,11 @@ namespace PEAKQuickResume
             // the checkpoint mod's own tiny, easy-to-miss checkbox, see IslandToggleButton)
             _islandToggle = go.AddComponent<IslandToggleButton>();
             _islandToggle.Init(Logger, _cfg, _checkpoint);
+
+            // Phase 8 M1: stands up our own PhotonView/RPC channel (separate GameObject,
+            // own ViewID) purely to prove it resolves/works; nothing reads from it yet
+            _ownNetwork = go.AddComponent<OwnNetwork>();
+            _ownNetwork.Init(Logger, _cfg);
 
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)

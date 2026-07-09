@@ -87,6 +87,11 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<int> PendingOverrideOriginalFramesToWait;
         public readonly ConfigEntry<float> PendingOverrideOriginalWaitTime;
 
+        // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
+        // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
+        // same meaning) once we stop reflecting into its instance for this
+        public readonly ConfigEntry<bool> OwnEnableClientReadyStatusCheck;
+
         public PluginConfig(ConfigFile cfg)
         {
             // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig (the in-game mod
@@ -326,6 +331,11 @@ namespace PEAKQuickResume
             PendingOverrideOriginalWaitTime = cfg.Bind("Teleport-Override-Recovery", "pending-original-wait-time", 0f,
                 "Internal bookkeeping, do not edit by hand. Same as pending-original-jump-logic, for "
                 + "jumpLogicWaitTime.");
+
+            OwnEnableClientReadyStatusCheck = cfg.Bind("Own-Network", "enable-client-ready-status-check", true,
+                "COOP ONLY (Phase 8): if enabled, our own save/load restore waits until every connected client has "
+                + "reported itself ready (in a Level scene) before proceeding, same behavior and default as the "
+                + "checkpoint mod's own equivalent setting.");
         }
     }
 }

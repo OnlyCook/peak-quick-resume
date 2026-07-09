@@ -357,6 +357,33 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   solo trivially (offline mode never touches this path); coop needs a real
   2-player test to confirm the RPC actually arrives and doesn't collide with
   the checkpoint mod's own channel (still installed per decision 2).
+
+  **Implemented (session 12).** `OwnNetwork.cs`: a new `PEAKQuickResume.OwnNetwork`
+  `GameObject` (`DontDestroyOnLoad`), its own `PhotonView` at `ViewID=194200`
+  (chosen far from the checkpoint mod's hardcoded `19420` — that ID sits inside
+  Photon's auto-allocated range for actor 19, ours would need ~194 players in
+  one room to ever collide, never realistic for this game) plus an
+  `OwnNetworkRpc : MonoBehaviourPun` holding just `RPC_SendReadyStatusToMaster`.
+  `OwnNetwork.Update()` mirrors the checkpoint mod's own scene-keyed state
+  machine (decompile 1345-1413) field-for-field for just this RPC's bookkeeping:
+  resets `_playerReceivedReadyStatus`/`_clientSentReadyStatus` on `Airport`/
+  `Title`, starts the same 5s-after-character-exists `SendReadyStatusToMaster`
+  coroutine on a `Level` scene for non-host clients only.
+  `CheckReadyStatusForPlayers()` mirrors the original method's exact traversal
+  (every live `Player`'s `character.player` userId via `NetworkingUtilities.
+  GetUserId`, master-client owner exempted) rather than approximating it.
+  Gated by a new `OwnEnableClientReadyStatusCheck` config entry (`Own-Network`
+  section, default `true`, same meaning/default as the checkpoint mod's own
+  `configAdvancedEnableClientReadyStatusCheck`). Wired into `Plugin.Awake` (own
+  `GameObject`, not touching any existing component) purely to stand the
+  channel up — **nothing reads `CheckReadyStatusForPlayers()` yet**, this
+  milestone is only about the channel existing and not colliding.
+  Builds clean against the real game assemblies, deployed to the test profile.
+  **Not yet confirmed in-game**: needs the maintainer to launch once solo to
+  confirm the `OwnNetwork: PhotonView created (ViewID=194200)` log line appears
+  with no error, and ideally a short coop session (host + one client) to
+  confirm `RPC_SendReadyStatusToMaster` actually logs on the host side without
+  interfering with the checkpoint mod's own still-active channel.
 - **M2 — Load entry points, disabled from the live path.** `OwnLoadEntryPoints.cs`
   + `MapBakerLevelOverridePatch.cs`: our own `PreStartSetSegment`/
   `LoadPlayerOffline`/`LoadPlayerCoop` guards, wired to call a stub
