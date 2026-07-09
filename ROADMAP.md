@@ -22,10 +22,11 @@ files round-trip losslessly through `OwnSaveData.cs`/`OwnSavePaths.cs`. M1
 in-game (solo + solo-hosted coop, session 13). M2 (own load-entry-point guard
 chain, still not wired into the live resume path) is implemented, builds
 clean, deployed (session 13). M3 (full teleport sequence port, solo) is
-implemented, builds clean, deployed (session 13) — the SOLO F7 flow now goes
-through our own restore path end to end. **Needs in-game solo testing across
-multiple islands/biomes/segments before M4 starts.** Coop is completely
-unaffected (unchanged, still via the checkpoint mod).**
+**done and confirmed in-game** (session 13, 3 islands/biomes, no issues) — the
+SOLO F7 flow now goes through our own restore path end to end; inventory/
+afflictions correctly don't restore yet (M4/M5). Coop is completely
+unaffected (unchanged, still via the checkpoint mod). M4 (inventory +
+backpack restore) is next.**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -529,11 +530,18 @@ Milestones below), and only gets deleted once nothing calls into it anymore
     false yet (the original's reset call lives inside `LoadInventoryDelayed`,
     M4/M5) - harmless today since nothing reads this property yet.
 
-  Builds clean against the real game assemblies, deployed to the test profile.
-  **Not yet tested in-game** - this is the first Phase 8 milestone that
-  touches the live F7 flow (solo only), so needs real testing across multiple
-  islands/biomes/segments before M4 starts, matching the maintainer's existing
-  solo test coverage per the milestone's own plan above.
+  **Confirmed in-game (session 13):** three solo loads across three different
+  islands/biomes (Tropics, Alpine, TheKiln segments) - all teleported cleanly,
+  no glitching, correct biome every time, campfire always lit. `LogOutput.log`
+  confirms each warped in exactly 1 attempt and shows zero errors/warnings
+  from any new `Own*` code (the log's one warning that session is unrelated -
+  Phase 6's `TeleportConfigOverride` recovering a config value stuck from an
+  earlier crash/quit). Inventory/backpack/afflictions correctly did NOT
+  restore (expected - M4/M5's job, not yet ported). Maintainer confirmed: "to
+  me everything works perfectly fine in solo." **M3 done.** Separately noted:
+  the biome-seed determinism question (tied to the `Patch_MapGenerator`
+  discovery above) still needs real investigation before M9, not resolved by
+  this test.
 - **M4 — Inventory + backpack restore.** `OwnItemStateIO.cs` +
   `OwnInventoryRestore.cs`, wired into M3's solo path. Test solo across
   several item types (at minimum: a fuel-based tool, a rope/climbing item, a
