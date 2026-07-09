@@ -28,10 +28,11 @@ items correctly restored, log clean). M5 (afflictions/skeleton/stamina/time
 sync/cleanup) is **done and confirmed in-game** (session 13, Tropics/Caldera/
 TheKiln, status effects restored, log clean; skeleton-state restore alone is
 still unverified, coop-only mechanic, not blocking). M6 (save capture) is
-implemented, builds clean, deployed (session 13) — writes to a NON-canonical
-diagnostic path only (does not touch the live save file yet), needs an
-in-game campfire-light to compare against the checkpoint mod's own output.
-Coop is completely unaffected so far (unchanged, still via the checkpoint mod).**
+**done and confirmed in-game** (session 13): our diagnostic capture is
+byte-for-byte IDENTICAL to the checkpoint mod's own canonical file after two
+real campfire lights. Still writes to a non-canonical path only (live save
+file untouched). Coop is completely unaffected so far (unchanged, still via
+the checkpoint mod). M7 (coop pass) is next.**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -672,13 +673,19 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   step, not silently left behind). Flagged as a distinct follow-up, not
   assumed to happen automatically as part of M8/M9.
 
-  Builds clean, deployed to the test profile. **Needs an in-game test**:
-  light a campfire solo once, so both the checkpoint mod's canonical
-  `Checkpoint_Save/peak_save_*.json` and our own
-  `Checkpoint_Save/OwnCapture/peak_save_*.json` exist for the same moment -
-  since the maintainer's r2modman profile lives on this same machine, the
-  actual byte/field diff can be done directly (like the M0 round-trip check)
-  rather than asking the maintainer to compare by hand.
+  Builds clean, deployed to the test profile. **Confirmed in-game (session
+  13):** maintainer started a fresh run and lit two campfires (Tropics then
+  Alpine/Mesa-variant). Both canonical and `OwnCapture` files read directly
+  off the maintainer's machine and diffed byte-for-byte after the second
+  light - **`diff` reported zero differences, fully identical files**:
+  position, both inventory items (with fuel/cooked-amount/flare-active
+  values) and three backpack items, the Mesa-variant campfire-naming quirk,
+  biome names, and the exact afflictions array all matched exactly.
+  `LogOutput.log` confirms both campfire lights triggered our capture
+  cleanly (`OwnSaveCapture: position + inventory saved... Items: 1` then
+  `... Items: 3`), zero warnings/errors. **M6 done** - the strongest
+  confirmation yet that the capture-side port is correct, not just
+  plausible.
 - **M7 — Coop pass.** Finish `OwnNetwork.cs`'s remaining RPCs
   (`RPC_RequestSave`, `RPC_RecentlyLitCampfire`, `RPC_RequestFalldamageProtection`,
   `RPC_SendMessage` or our own message-overlay equivalent, `RPC_Loadingscreen`,
