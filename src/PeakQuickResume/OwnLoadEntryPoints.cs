@@ -164,7 +164,7 @@ namespace PEAKQuickResume
                     return false;
                 }
 
-                _teleportSequence.Begin(data);
+                _teleportSequence.Begin(data, target, offline);
                 return true;
             }
             catch (Exception e)

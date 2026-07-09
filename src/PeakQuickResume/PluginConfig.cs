@@ -109,6 +109,12 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> OwnCampfireReset;
         public readonly ConfigEntry<bool> OwnDaytime;
 
+        // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
+        // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
+        // checkpoint mod's instance
+        public readonly ConfigEntry<bool> OwnInventory;
+        public readonly ConfigEntry<bool> OwnItemStats;
+
         public PluginConfig(ConfigFile cfg)
         {
             // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig (the in-game mod
@@ -377,6 +383,14 @@ namespace PEAKQuickResume
             OwnDaytime = cfg.Bind("Own-Teleport", "daytime", true,
                 "Phase 8: if enabled, restores the saved in-game time of day for our own restore path. Same "
                 + "meaning/default as the checkpoint mod's own configDaytime.");
+
+            OwnInventory = cfg.Bind("Own-Teleport", "inventory", true,
+                "Phase 8: if enabled, restores saved inventory and backpack items for our own restore path. Same "
+                + "meaning/default as the checkpoint mod's own configInventory.");
+
+            OwnItemStats = cfg.Bind("Own-Teleport", "item-stats", true,
+                "Phase 8: if enabled, restores saved item stats (cooking amount, fuel, rope length...) for our "
+                + "own restore path. Same meaning/default as the checkpoint mod's own configItemStats.");
         }
     }
 }

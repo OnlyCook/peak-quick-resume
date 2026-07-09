@@ -17,10 +17,11 @@ namespace PEAKQuickResume
     /// "fidelity first" decision. Optimization is an explicit later pass
     ///
     /// PEAKapalooza's branches are NOT ported (maintainer decision, see ROADMAP.md).
-    /// Inventory/afflictions restore (the original's <c>LoadInventoryDelayed</c>) is
-    /// NOT ported yet - that's M4/M5; this milestone stubs that hand-off with a log
-    /// line only, exactly like <c>OwnLoadEntryPoints</c>'s M2 stub did for the whole
-    /// sequence
+    /// As of M4, inventory/backpack restore (<see cref="OwnInventoryRestore"/>) is
+    /// wired in as a fire-and-forget coroutine, mirroring the original starting
+    /// <c>LoadInventoryDelayed</c> without yielding on it (decompile line 2553).
+    /// Afflictions/skeleton/stamina/time-sync/message/hero-title/one-time-load-delete
+    /// (the REST of <c>LoadInventoryDelayed</c>) are still not ported - that's M5
     ///
     /// Known, deliberate differences from the original (documented, not silent):
     ///  - The checkpoint mod's own "Loading savegame..." UI caption
@@ -52,9 +53,9 @@ namespace PEAKQuickResume
             _entryPoints = entryPoints;
         }
 
-        public void Begin(OwnSaveData data) => StartCoroutine(RunSequence(data));
+        public void Begin(OwnSaveData data, SaveTarget target, bool offline) => StartCoroutine(RunSequence(data, target, offline));
 
-        private IEnumerator RunSequence(OwnSaveData data)
+        private IEnumerator RunSequence(OwnSaveData data, SaveTarget target, bool offline)
         {
             Segment finalSegment = data.segment;
             Vector3 savedPos = new Vector3(data.posX, data.posY, data.posZ);
@@ -178,9 +179,11 @@ namespace PEAKQuickResume
                     dayNight?.setTimeOfDay(data.timeOfDay);
                 }
 
-                // M4/M5 stub - real inventory/afflictions restore not ported yet
-                _log?.LogInfo("OwnTeleportSequence (STUB, Phase 8 M3): would now restore "
-                    + "inventory/afflictions here (see M4/M5 in ROADMAP.md Phase 8).");
+                // Mirrors the original starting LoadInventoryDelayed here (decompile line
+                // 2553) - fire-and-forget, NOT yielded on, matching exactly. M4 only:
+                // inventory/backpack restore. Afflictions/skeleton/stamina/time-sync/
+                // message/hero-title/one-time-load-delete are M5, not ported yet
+                StartCoroutine(OwnInventoryRestore.RestoreAll(target, offline, _cfg, _log));
             }
 
             if (isFoggedSegment)

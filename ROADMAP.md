@@ -23,10 +23,11 @@ in-game (solo + solo-hosted coop, session 13). M2 (own load-entry-point guard
 chain, still not wired into the live resume path) is implemented, builds
 clean, deployed (session 13). M3 (full teleport sequence port, solo) is
 **done and confirmed in-game** (session 13, 3 islands/biomes, no issues) — the
-SOLO F7 flow now goes through our own restore path end to end; inventory/
-afflictions correctly don't restore yet (M4/M5). Coop is completely
-unaffected (unchanged, still via the checkpoint mod). M4 (inventory +
-backpack restore) is next.**
+SOLO F7 flow now goes through our own restore path end to end. M4 (inventory +
+backpack restore) is implemented, builds clean, deployed (session 13) — needs
+in-game testing across several item types before M5. Afflictions/skeleton/
+stamina still don't restore yet (M5). Coop is completely unaffected
+(unchanged, still via the checkpoint mod).**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -548,12 +549,49 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   food/cooked item, a throwable, something occupying a backpack slot) — this
   is the part with the least ready-made test coverage elsewhere in this repo,
   budget real time for it.
-- **M5 — Afflictions, revive, campfire/fog/lava/daytime restore.** Remaining
-  pieces of `LoadInventoryDelayed` not covered by M4, `ReviveDeadPlayers`,
-  `ResetFogAfterLoad`/`ResetLavaAfterLoad`/`ResetCampfire`/`SpawnFlaresAtPeak`.
-  Solo test across segments 0-5 (Caldera/segment 4's kiln-workaround branch
-  and the Peak/segment-5 flare-spawn branch both need at least one dedicated
-  test each, they're the most special-cased branches in the whole coroutine).
+
+  **Implemented (session 13).** `OwnItemStateIO.cs` ports the item-extra-stat
+  IO helpers field-for-field (`TryGetEntryObject`/`TryReadEntryNumeric`/
+  `TryConvertToFloat` - read side, unused until M6; `TryGetKey`/
+  `TrySetOrCreateEntry`/`TryWriteEntryNumeric` - write side, used now), plus
+  the 13 key names and excluded-item-id list as static readonly arrays (both
+  reflect straight into vanilla `ItemInstanceData`/`DataEntryKey`, zero
+  checkpoint-mod dependency, confirming the decompile-brief's earlier finding
+  that this whole subsystem never actually needed the checkpoint mod's own
+  types). `OwnInventoryRestore.cs` ports `LoadPlayerInventory`/
+  `LoadBackpackFromSave`/`GetBackpackData`/`AddItemToInventory`/
+  `AddItemToInventory_GetSlot` (decompile 3070-3256, 3482-3525) plus
+  `RestoreAll`, mirroring the inventory-restoring half of `LoadInventoryDelayed`
+  itself (decompile 2781-2844: the 60-frame wait, per-player loop re-reading
+  EACH player's own save file independently, thorn removal, item-slot/backpack
+  emptying, then the actual restore). Wired into `OwnTeleportSequence` as a
+  **fire-and-forget** `StartCoroutine` (not yielded on), exactly matching how
+  the original starts `LoadInventoryDelayed` (decompile line 2553) - including
+  its quirk of living inside the `daytime`-config-gated block. New
+  `PluginConfig` entries `OwnInventory`/`OwnItemStats` (Own-Teleport section,
+  same names/defaults as `configInventory`/`configItemStats`).
+
+  **Revised milestone boundary** (found while implementing, corrects the plan
+  above): `ReviveDeadPlayers` and the fog/lava/campfire/flare resets were
+  already ported in **M3** (they're called directly from `CustomJumpToSegment`,
+  not from `LoadInventoryDelayed`) - M5's actual remaining scope is just
+  `LoadInventoryDelayed`'s non-inventory tail: afflictions/skeleton/extra-
+  stamina restore, time-played sync, the "Save game loaded!" message +
+  hero-title banner, one-time-load file deletion, and the
+  `currentlyLoading`/`RecentlyLoaded`/`RecentlyLitCampfire` cleanup. Much
+  smaller than the original M5 write-up implied.
+
+  Builds clean, deployed to the test profile. **Not yet tested in-game** -
+  needs the item-type coverage the milestone plan above calls for (fuel tool,
+  rope/climbing item, cooked food, throwable, backpack-slot item at minimum)
+  before M5 starts.
+- **M5 — Remainder of `LoadInventoryDelayed`: afflictions, skeleton, extra
+  stamina, time sync, load-complete message/banner, cleanup.** (Revised scope,
+  see M4's note above - `ReviveDeadPlayers`/environment resets are already
+  done.) Solo test across segments 0-5 (Caldera/segment 4's kiln-workaround
+  branch and the Peak/segment-5 flare-spawn branch both need at least one
+  dedicated test each, they're the most special-cased branches in the whole
+  coroutine).
 - **M6 — Save capture.** `OwnSaveCapture.cs` + `CampfireAutoSavePatch.cs`. This
   is the point where we can create a save file **without the checkpoint mod
   running the show at all** — critically, diff a save we write against one
