@@ -13,10 +13,13 @@ in-game, Step 4 is next** — see "Handoff notes for the next session" at the
 bottom of this file for exactly where to pick up. **Phase 7 (boarding-pass
 island-toggle button) added on the same branch, session 10, NOT YET IN-GAME
 TESTED** — see below. **Phase 8 (own save/load/teleport, drop the runtime
-dependency on PEAK Checkpoint Save) got a full, detailed execution plan this
-session (session 11, 2026-07-09) — see that section below for the milestone
-breakdown (M0-M9); not yet started.**
-**Last updated:** 2026-07-09 (session 11).
+dependency on PEAK Checkpoint Save) got a full, detailed execution plan on
+branch `feature/phase8-independent-saveload` (session 11, 2026-07-09) — see
+that section below for the milestone breakdown (M0-M9). M0 (save-file
+compatibility layer) is done and verified (session 12): 110/110 real save
+files round-trip losslessly through `OwnSaveData.cs`/`OwnSavePaths.cs`. M1
+(own PhotonView/RPC channel) is next.**
+**Last updated:** 2026-07-09 (session 12).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
 
@@ -326,6 +329,28 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   key order differs — Newtonsoft doesn't guarantee stable ordering — the
   important thing is no field is lost, renamed, or type-changed). No in-game
   test needed for this milestone specifically.
+
+  **Done (session 12, 2026-07-09).** `OwnSaveData.cs`/`OwnSavePaths.cs` written,
+  fields verified byte-for-byte against the decompile (`SaveData` 389-431,
+  `GetPlayerSaveFile` 2177-2216 — legacy-single-file mode deliberately not
+  ported yet, see the open question above). Verified with a throwaway scratch
+  project (`scratch/roundtrip-test/`, git-ignored, references the real
+  `OwnSaveData.cs` via a `<Compile Include>` so it can never drift from what
+  ships) that deserializes every real `peak_save_*.json` on the maintainer's
+  machine (canonical `Checkpoint_Save/` + `Checkpoint_Save/Coop/` + every
+  archived copy under `QuickResume/Archive/` — 110 files total) with our model
+  and structurally diffs the reserialized JSON against the original.
+  **110/110 round-tripped with zero information loss.** First pass flagged
+  ~100 as mismatched on `posX`/`posY`/`posZ` only — turned out to be a false
+  alarm in the *test's own comparison*, not a real bug: the model's position
+  fields are `float` (32-bit), but the test's JSON library parses numbers as
+  `double`, so a 9-digit string like `-14.5291834` and a re-serialized
+  7-digit string like `-14.529183` can be the exact same float32 bit pattern
+  (float32 only has ~7-9 significant digits of precision either way) even
+  though they look different as text. Fixed by comparing both sides parsed
+  back down to `float` (matching the model's real field type) instead of
+  comparing the raw double/string values; all 110 then matched exactly.
+  **No in-game test needed or done for this milestone**, exactly as planned.
 - **M1 — Own `PhotonView`/RPC channel skeleton.** `OwnNetwork.cs`: our own
   `ViewID`, `CheckpointNetwork`-equivalent component, the readiness-gate RPCs
   only (`RPC_SendReadyStatusToMaster`, `CheckReadyStatusForPlayers`). Testable
