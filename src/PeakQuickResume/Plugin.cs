@@ -72,8 +72,6 @@ namespace PEAKQuickResume
             // our own F7 flow (below) and the native-F6 path (LoadingScreenPatch)
             _teleportOverride = new TeleportConfigOverride(Logger, _cfg, _checkpoint, _orchestrator);
 
-            _orchestrator.Init(Logger, _cfg, _checkpoint, _teleportOverride, _watchdog);
-
             _restart = go.AddComponent<RestartOrchestrator>();
             _restart.Init(Logger, _cfg, _checkpoint, _watchdog);
 
@@ -96,11 +94,24 @@ namespace PEAKQuickResume
             _ownNetwork = go.AddComponent<OwnNetwork>();
             _ownNetwork.Init(Logger, _cfg);
 
-            // Phase 8 M2: our own load-entry-point guard chain. Not called from anywhere
-            // live yet (TryLoadPlayer/TryPreStartSetSegment have no callers outside this
-            // milestone's own scope) - purely proves it resolves and builds correctly
+            // Phase 8 M3: our own literal port of CustomJumpToSegment/TeleportToPosition/
+            // TeleportClientsToHost/ReviveDeadPlayers (see OwnTeleportSequence.cs)
+            var ownTeleportSequence = go.AddComponent<OwnTeleportSequence>();
+
+            // Phase 8 M2/M3: our own load-entry-point guard chain. As of M3, its solo path
+            // IS wired live via ResumeOrchestrator below
             _ownLoadEntryPoints = go.AddComponent<OwnLoadEntryPoints>();
-            _ownLoadEntryPoints.Init(Logger, _cfg, _ownNetwork);
+            _ownLoadEntryPoints.Init(Logger, _cfg, _ownNetwork, ownTeleportSequence);
+            ownTeleportSequence.Init(Logger, _cfg, _ownLoadEntryPoints);
+
+            // Now that _ownLoadEntryPoints exists, wire the orchestrator (Phase 8 M3:
+            // its SOLO path calls _ownLoadEntryPoints directly; coop is unchanged, still
+            // via _checkpoint - see ResumeOrchestrator.cs)
+            _orchestrator.Init(Logger, _cfg, _checkpoint, _ownLoadEntryPoints, _teleportOverride, _watchdog);
+
+            // Phase 8 M3: our own copy of the checkpoint mod's fall/lava-damage
+            // protection window, armed from OwnTeleportSequence (see OwnFallDamageProtection.cs)
+            OwnFallDamageProtection.Apply(harmony, Logger);
 
             // Phase 8 M2: our own copy of the checkpoint mod's MapBaker.GetLevel prefix.
             // Safe alongside its own equivalent patch: OwnLoadEntryPoints.SelectedLevel

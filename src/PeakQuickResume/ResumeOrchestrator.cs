@@ -26,6 +26,7 @@ namespace PEAKQuickResume
         private ManualLogSource _log;
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
+        private OwnLoadEntryPoints _ownLoadEntryPoints;
         private TeleportConfigOverride _teleportOverride;
         private TeleportWatchdog _watchdog;
         private bool _running;
@@ -43,11 +44,13 @@ namespace PEAKQuickResume
         public bool IsRunning => _running;
 
         public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint,
+            OwnLoadEntryPoints ownLoadEntryPoints = null,
             TeleportConfigOverride teleportOverride = null, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
+            _ownLoadEntryPoints = ownLoadEntryPoints;
             _teleportOverride = teleportOverride;
             _watchdog = watchdog;
         }
@@ -162,25 +165,45 @@ namespace PEAKQuickResume
             // save, or PreStartSetSegment looks in the wrong file
             if (!RunLauncher.TrySetCustomRun(target.IsCustom, _log))
             { Fail("Could not set custom-run flag before starting"); yield break; }
-            if (!_checkpoint.TrySetSelectedAscent(ascent)) { Fail("Could not set selected ascent on checkpoint mod"); yield break; }
 
-            // Force "use saved island" on regardless of the checkpoint mod's own
-            // checkbox state: Quick Resume's whole point is reproducing the exact run
-            // you saved, biomes included (biome layout is baked per scene, not random -
-            // see docs/RESEARCH.md), so silently falling back to today's daily rotation
-            // scene here would defeat that. Doesn't touch the checkbox for vanilla F6/
-            // manual boarding-pass loads, only forces it for the moment THIS load starts
-            if (!_checkpoint.TrySetUseSavedLevel(true))
-                _log.LogWarning("[stage] Could not force 'use saved island' on; resumed run may load today's "
-                    + "daily island instead of the saved one if the checkbox is off.");
+            bool offline = PhotonNetwork.OfflineMode;
 
-            if (!_checkpoint.TryPreStartSetSegment())
+            if (offline && _ownLoadEntryPoints != null)
             {
-                Fail($"No checkpoint save found for {target} (PreStartSetSegment returned false)");
-                Msg(target.IsCustom
-                    ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
-                    : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
-                yield break;
+                // Phase 8 M3: solo now resolves entirely through our own port - no
+                // checkpoint-mod calls needed for this step (our own MapBakerLevelOverridePatch
+                // doesn't need an equivalent "use saved island" toggle, see its own remarks)
+                if (!_ownLoadEntryPoints.TryPreStartSetSegment(target, offline: true, userId: ""))
+                {
+                    Fail($"No checkpoint save found for {target} (TryPreStartSetSegment returned false)");
+                    Msg(target.IsCustom
+                        ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
+                        : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
+                    yield break;
+                }
+            }
+            else
+            {
+                if (!_checkpoint.TrySetSelectedAscent(ascent)) { Fail("Could not set selected ascent on checkpoint mod"); yield break; }
+
+                // Force "use saved island" on regardless of the checkpoint mod's own
+                // checkbox state: Quick Resume's whole point is reproducing the exact run
+                // you saved, biomes included (biome layout is baked per scene, not random -
+                // see docs/RESEARCH.md), so silently falling back to today's daily rotation
+                // scene here would defeat that. Doesn't touch the checkbox for vanilla F6/
+                // manual boarding-pass loads, only forces it for the moment THIS load starts
+                if (!_checkpoint.TrySetUseSavedLevel(true))
+                    _log.LogWarning("[stage] Could not force 'use saved island' on; resumed run may load today's "
+                        + "daily island instead of the saved one if the checkbox is off.");
+
+                if (!_checkpoint.TryPreStartSetSegment())
+                {
+                    Fail($"No checkpoint save found for {target} (PreStartSetSegment returned false)");
+                    Msg(target.IsCustom
+                        ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
+                        : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
+                    yield break;
+                }
             }
             _log.LogInfo("[stage] Save confirmed for this difficulty; starting fresh run.");
             Msg(MessagesLocalization.Get(MsgKey.StartingFreshRun), MsgInfo);
@@ -242,32 +265,46 @@ namespace PEAKQuickResume
                 _log.LogInfo("[stage] Coop: all clients ready.");
             }
 
-            // Don't fight the checkpoint mod if it's mid-load for some reason
-            float guard = 0f;
-            while (_checkpoint.IsCurrentlyLoading && guard < timeout)
-            {
-                guard += Time.deltaTime;
-                yield return null;
-            }
-
-            _log.LogInfo("[stage] Triggering checkpoint restore.");
-
-            // Apply the Shift/Alt override (if any) for exactly the duration of this
-            // synchronous call - see TeleportConfigOverride for why this needs to be a
-            // flag rather than relying on ambient Input at this point (the user likely
-            // released the key seconds ago, back when they confirmed the load)
             bool loadOk;
-            if (_teleportOverride != null) _teleportOverride.IsDrivingOurOwnLoad = true;
-            try
+            if (offline && _ownLoadEntryPoints != null)
             {
-                _teleportOverride?.ApplyForOurOwnLoad(_teleportOverrideValue);
-                loadOk = _checkpoint.TryLoadPlayer();
+                // Phase 8 M3: solo loads go through our own restore path. No busy-wait
+                // guard needed yet (nothing concurrent can trigger it), and no Shift/Alt
+                // override applied - TeleportConfigOverride still only affects the
+                // checkpoint mod's own config, which our own path no longer consults;
+                // this is an explicit, temporary limitation until M8 repoints it onto our
+                // own PluginConfig entries. See ROADMAP.md Phase 8 M3
+                _log.LogInfo("[stage] Triggering our own restore (Phase 8).");
+                loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline: true, userId: "");
             }
-            finally
+            else
             {
-                if (_teleportOverride != null) _teleportOverride.IsDrivingOurOwnLoad = false;
+                // Don't fight the checkpoint mod if it's mid-load for some reason
+                float guard = 0f;
+                while (_checkpoint.IsCurrentlyLoading && guard < timeout)
+                {
+                    guard += Time.deltaTime;
+                    yield return null;
+                }
+
+                _log.LogInfo("[stage] Triggering checkpoint restore.");
+
+                // Apply the Shift/Alt override (if any) for exactly the duration of this
+                // synchronous call - see TeleportConfigOverride for why this needs to be a
+                // flag rather than relying on ambient Input at this point (the user likely
+                // released the key seconds ago, back when they confirmed the load)
+                if (_teleportOverride != null) _teleportOverride.IsDrivingOurOwnLoad = true;
+                try
+                {
+                    _teleportOverride?.ApplyForOurOwnLoad(_teleportOverrideValue);
+                    loadOk = _checkpoint.TryLoadPlayer();
+                }
+                finally
+                {
+                    if (_teleportOverride != null) _teleportOverride.IsDrivingOurOwnLoad = false;
+                }
             }
-            if (!loadOk) { Fail("Checkpoint load call failed"); yield break; }
+            if (!loadOk) { Fail("Load call failed"); yield break; }
 
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
             Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack)

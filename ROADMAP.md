@@ -22,7 +22,10 @@ files round-trip losslessly through `OwnSaveData.cs`/`OwnSavePaths.cs`. M1
 in-game (solo + solo-hosted coop, session 13). M2 (own load-entry-point guard
 chain, still not wired into the live resume path) is implemented, builds
 clean, deployed (session 13). M3 (full teleport sequence port, solo) is
-next — the first milestone that touches the live F7 flow.**
+implemented, builds clean, deployed (session 13) — the SOLO F7 flow now goes
+through our own restore path end to end. **Needs in-game solo testing across
+multiple islands/biomes/segments before M4 starts.** Coop is completely
+unaffected (unchanged, still via the checkpoint mod).**
 **Last updated:** 2026-07-09 (session 13).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, untested)
@@ -439,6 +442,98 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   `LoadPlayerOffline` instead of `CheckpointInterop.TryLoadPlayer()`. Test
   solo, multiple islands/biomes, matching the maintainer's existing solo test
   coverage before calling this milestone done.
+
+  **Implemented (session 13).** Ported field-for-field from the decompile:
+  `OwnTeleportSequence.cs` (`CustomJumpToSegment` 2263-2561, `TeleportToPosition`/
+  `TeleportClientsToHost` 2629-2758, `ReviveDeadPlayers` 2760-2779),
+  `OwnWorldLootReset.cs` (`ResetLuggage`/"ResetWorldLoot" 3527-3627 + the
+  segment-object/`MagicBeanVine` destroy passes and the held-item destroy pass,
+  both previously inlined directly in `CustomJumpToSegment`, 2372-2504),
+  `OwnEnvironmentReset.cs` (`ResetFogAfterLoad` 2563-2599, `ResetLavaAfterLoad`
+  2601-2627, `ResetCampfire` 2239-2261, `SpawnFlaresAtPeak` 2218-2237), and a new
+  `OwnFallDamageProtection.cs` (see below). New `PluginConfig` section
+  "Own-Teleport" (`teleport-jump-logic`, `teleport-frames-to-wait`,
+  `jump-logic-wait-time`, `teleport-the-kiln-workaround`, `campfire-reset`,
+  `daytime`, same names/defaults/meaning as their checkpoint-mod equivalents).
+  `ResumeOrchestrator` now branches on `PhotonNetwork.OfflineMode`: solo calls
+  `OwnLoadEntryPoints.TryPreStartSetSegment`/`TryLoadPlayer` directly (no
+  checkpoint-mod calls in that path at all anymore); coop is completely
+  unchanged, still 100% via `CheckpointInterop` (M7's job).
+
+  **A real, previously-undocumented fidelity risk found while reading this
+  section closely, ported alongside it:** `RPC_RequestFalldamageProtection`
+  (called from `CustomJumpToSegment` right after the teleport starts) doesn't
+  do anything by itself - it just sets the checkpoint mod's own static
+  `NoFallDamageUntil` field, which THREE separate Harmony prefixes elsewhere in
+  its assembly (`Patch_FallDamage_Protection` on `CharacterMovement.
+  CheckFallDamage`, plus two on `Lava.HitPlayer`/`Lava.Heat`, decompile
+  184-224) gate on to suppress fall/lava damage during a teleport's settling
+  window. Since our own restore path never calls the checkpoint mod's RPC, its
+  `NoFallDamageUntil` would simply stay expired for every load we drive -
+  fall/lava damage during our own teleport window would go completely
+  unprotected, a real (if narrow-window) regression versus today's behavior.
+  **Ported as our own copy**, `OwnFallDamageProtection.cs`: our own static
+  window field + our own three Harmony prefixes on the same vanilla targets
+  (`CharacterMovement.CheckFallDamage`, `Lava.HitPlayer`, `Lava.Heat`), armed
+  by `OwnTeleportSequence` at the same point in the sequence or the checkpoint
+  mod's own copy did. Both sets of patches can coexist harmlessly (the
+  checkpoint mod's own patches just stay permanently inert for loads that go
+  through our path, since its own field never gets armed by us).
+
+  **A second, more consequential discovery, out of scope for M3 itself but
+  important enough to flag now rather than lose:** `Patch_MapGenerator`
+  (decompile 174-182, Harmony prefix on `MapGenerator.GenerateAll`) forces
+  `__instance.seed = 3232` — a **permanent, global, always-on patch** applied
+  the moment the checkpoint mod loads, completely unconditional on any
+  save/load activity. Because it's a blanket patch (not something
+  `CustomJumpToSegment` triggers), it stays in effect for the ENTIRE Phase 8
+  transition window regardless of what our own code does, simply because the
+  checkpoint mod stays installed (ROADMAP decision 2) — so it needed no action
+  for M3. **It becomes relevant at M9**, when the checkpoint mod is finally
+  uninstalled for the from-scratch verification pass: once that patch is gone,
+  `MapGenerator.GenerateAll` will use whatever seed the game itself would
+  normally pick instead of a fixed `3232`. Nobody currently knows whether this
+  constant seed is load-bearing for anything (e.g., matching loot/prop layout
+  determinism against existing saves, or just a leftover debug value) - **flag
+  this explicitly for evaluation before M9's uninstall step**, don't assume
+  it's safe to lose by default. Added as a checklist item to M9 below.
+
+  **Known, deliberate gaps, all documented in the new files' own remarks**
+  (not silent divergence - see each file for the full reasoning):
+  - The checkpoint mod's own "Loading savegame..." UI caption is not ported
+    (purely cosmetic; `ResumeOrchestrator` already shows its own status
+    messages around the whole resume flow, a second caption would be
+    redundant).
+  - The obscure `else if (segment != 4 && !configLoadLevelScene.Value)
+    spawnPos.y += 8` branch is not ported - it exists to compensate for the
+    checkpoint mod's OWN scene-override toggle being off, which has no
+    equivalent in our flow (we always force the override on, see M2).
+  - **Holding Shift/Alt while loading solo now has NO effect** until M8
+    repoints `TeleportConfigOverride` onto our own `PluginConfig` entries -
+    today it only reads/writes the checkpoint mod's OWN `teleportJumpLogic`,
+    which our own restore path no longer consults at all. Low real-world
+    impact: solo already works fine at the default `teleportJumpLogic=0`
+    (`docs/RESEARCH.md`), and Alt's configured value of `2` was already
+    established as non-functional as a teleport in either mode anyway - but
+    flagged here explicitly since "no visible change" was the goal and this
+    is a real, if narrow, behavioral difference for solo players who'd
+    developed a habit of using the override.
+  - The solo unlit-campfire-after-`jumpLogic=0`-load fix (previously
+    `CampfireRelightFix.cs`, hooked off the checkpoint mod's own "Save game
+    loaded!" message) is folded directly into `OwnTeleportSequence` right
+    after segment activation - the actual root-cause location - since our own
+    path never produces that message for the old hook to trigger on.
+    `CampfireRelightFix.cs`/`SavegameLoadedMessagePatch.cs` are UNCHANGED and
+    still correctly cover the native F6 path.
+  - `OwnLoadEntryPoints.CurrentlyLoading` is set true but never reset to
+    false yet (the original's reset call lives inside `LoadInventoryDelayed`,
+    M4/M5) - harmless today since nothing reads this property yet.
+
+  Builds clean against the real game assemblies, deployed to the test profile.
+  **Not yet tested in-game** - this is the first Phase 8 milestone that
+  touches the live F7 flow (solo only), so needs real testing across multiple
+  islands/biomes/segments before M4 starts, matching the maintainer's existing
+  solo test coverage per the milestone's own plan above.
 - **M4 — Inventory + backpack restore.** `OwnItemStateIO.cs` +
   `OwnInventoryRestore.cs`, wired into M3's solo path. Test solo across
   several item types (at minimum: a fuel-based tool, a rope/climbing item, a
@@ -486,6 +581,15 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   `packaging/README.md`, `CHANGELOG.md` with the Attribution note (below).
   Uninstall the checkpoint mod from the test profile for a final from-scratch
   verification pass.
+  - **New checklist item found during M3 (session 13):** the checkpoint mod
+    has a permanent, always-on Harmony prefix (`Patch_MapGenerator`, decompile
+    174-182) forcing `MapGenerator.GenerateAll`'s `seed = 3232` globally,
+    completely unrelated to save/load - it's just been silently in effect
+    this entire time because the checkpoint mod stays installed. Uninstalling
+    it removes this too. **Evaluate whether this fixed seed is load-bearing
+    for anything (loot/prop layout determinism, matching old saves, etc.)
+    before this uninstall step** - don't assume it's safe to lose by default,
+    since nobody has ever tested this mod (or the game) without it in effect.
 
 ### Attribution
 

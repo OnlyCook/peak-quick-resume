@@ -92,6 +92,23 @@ namespace PEAKQuickResume
         // same meaning) once we stop reflecting into its instance for this
         public readonly ConfigEntry<bool> OwnEnableClientReadyStatusCheck;
 
+        // Phase 8 M3: our own copies of the checkpoint mod's teleport-sequence
+        // config entries (same names/defaults/meaning as configTeleportJumpLogic,
+        // configAdvancedTeleportFramesToWait, configAdvancedJumpLogicWaitTime,
+        // configTeleportTheKilnWorkaround, configCampfireReset, configDaytime -
+        // decompile lines 1081-1116), used by OwnTeleportSequence.cs instead of
+        // reflecting into the checkpoint mod's instance. NOTE: these are the BASE
+        // values only - the Shift/Alt/optimized-coop override system
+        // (TeleportConfigOverride) still only reads/writes the checkpoint mod's OWN
+        // config and has no effect on these yet (that repoint is M8's job); see
+        // ROADMAP.md Phase 8 M3 for the exact, temporary consequence of this
+        public readonly ConfigEntry<int> OwnTeleportJumpLogic;
+        public readonly ConfigEntry<int> OwnTeleportFramesToWait;
+        public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
+        public readonly ConfigEntry<bool> OwnTeleportTheKilnWorkaround;
+        public readonly ConfigEntry<bool> OwnCampfireReset;
+        public readonly ConfigEntry<bool> OwnDaytime;
+
         public PluginConfig(ConfigFile cfg)
         {
             // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig (the in-game mod
@@ -336,6 +353,30 @@ namespace PEAKQuickResume
                 "COOP ONLY (Phase 8): if enabled, our own save/load restore waits until every connected client has "
                 + "reported itself ready (in a Level scene) before proceeding, same behavior and default as the "
                 + "checkpoint mod's own equivalent setting.");
+
+            OwnTeleportJumpLogic = cfg.Bind("Own-Teleport", "teleport-jump-logic", 0,
+                "Phase 8: our own base teleport-jump-logic setting for saves loaded through our own restore path "
+                + "(0 = SetSegmentOnSpawn, 1 = JumpToSegment, 2 = GoToSegment). Same meaning/default as the "
+                + "checkpoint mod's own configTeleportJumpLogic. Not yet affected by Shift/Alt overrides (M8).");
+
+            OwnTeleportFramesToWait = cfg.Bind("Own-Teleport", "teleport-frames-to-wait", 30,
+                "Phase 8: frames to wait between teleport-correction tries in our own restore path (advanced).");
+
+            OwnJumpLogicWaitTime = cfg.Bind("Own-Teleport", "jump-logic-wait-time", 1f,
+                "Phase 8: seconds to wait between steps of our own restore path's teleport sequence (advanced).");
+
+            OwnTeleportTheKilnWorkaround = cfg.Bind("Own-Teleport", "teleport-the-kiln-workaround", false,
+                "Phase 8: if enabled, tries to teleport to the end of Caldera (in front of the volcano) instead of "
+                + "loading the next map segment, ONLY for our own restore path. Same meaning/default as the "
+                + "checkpoint mod's own configTeleportTheKilnWorkaround.");
+
+            OwnCampfireReset = cfg.Bind("Own-Teleport", "campfire-reset", true,
+                "Phase 8: if enabled, the campfire resets after loading more than once in the current run, for "
+                + "our own restore path. Same meaning/default as the checkpoint mod's own configCampfireReset.");
+
+            OwnDaytime = cfg.Bind("Own-Teleport", "daytime", true,
+                "Phase 8: if enabled, restores the saved in-game time of day for our own restore path. Same "
+                + "meaning/default as the checkpoint mod's own configDaytime.");
         }
     }
 }
