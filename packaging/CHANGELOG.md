@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0
+
+> **This update declares independence!** It's recommended to delete `PEAK Quick Resume` and `PEAK Checkpoint Save` and then just reinstall `PEAK Quick Resume` so that your config is reset and the dependency is dropped (although PEAK Checkpoint Save won't conflict with this mod if still installed).
+
+- **No longer requires PEAK Checkpoint Save.** Quick Resume now has its own independent save/load/teleport implementation and works entirely on its own. PEAK Checkpoint Save can still be installed alongside it without conflicting, but it's optional now, not a dependency. Huge thanks to dominik0207, whose PEAK Checkpoint Save this mod was originally built around and whose save file format this mod's own implementation is still based on. *Note: I have dropped the dependency mainly so that it's easier for me to maintain when the game updates as well as to have an easier time fixing its issues.*
+- The default key for the help menu was changed to be F2 (still changeable through the config) and fixed other languages and the logs hardcoding the F1 key (now dynamic).
+
 ## 1.1.0
 - **Star/favorite saves in the F7 picker:** press `B` (rebindable, new `star-key` setting) to star the highlighted save. Starred saves are pinned to the top (newest first) and can't be deleted until unstarred again.
 - **Mitigated a common footgun:** dropping your backpack to rearrange items, then having the campfire lit before picking it back up, used to leave that backpack (and everything in it) out of the save entirely. It's now restored automatically as long as it's still on the ground, within 100m of that campfire, when it's lit.

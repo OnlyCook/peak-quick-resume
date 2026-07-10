@@ -1,14 +1,15 @@
 ## Requirements
 
 - [BepInExPack PEAK](https://thunderstore.io/c/peak/p/BepInEx/BepInExPack_PEAK/) `5.4.2403`
-- [PEAK Checkpoint Save](https://thunderstore.io/c/peak/p/dominik0207/PEAK_Checkpoint_Save/) `0.4.7` (**hard dependency**)
+
+No other mods are required. [PEAK Checkpoint Save](https://thunderstore.io/c/peak/p/dominik0207/PEAK_Checkpoint_Save/) by dominik0207 can still be installed alongside this mod without conflicting, but it isn't needed (see "Credit where it's due" above).
 
 ## For players
 
 - You can install the mod through r2modman as `PEAK_Quick_Resume`
 - Or on Thunderstore as `PEAK Quick Resume` ([Website](https://thunderstore.io/c/peak/p/OnlyCook/PEAK_Quick_Resume/))
 
-⚠️ Loading a checkpoint save can grant Steam achievements (a property of the underlying checkpoint mod). Don't use it if you want to earn everything unassisted.
+⚠️ Loading a checkpoint save can grant Steam achievements. Don't use it if you want to earn everything unassisted.
 
 ## For developers
 

@@ -402,7 +402,8 @@ namespace PEAKQuickResume
 
         private IEnumerator ShowMessageResiliently()
         {
-            string text = MessagesLocalization.Get(MsgKey.TeleportBugHint);
+            string helpKey = _cfg != null ? _cfg.HelpKey.Value.ToString() : "F2";
+            string text = MessagesLocalization.Get(MsgKey.TeleportBugHint, helpKey);
             var color = new Color(1f, 0.7f, 0.2f, 1f);
 
             _messageOverlay?.Show(text, color, 6f);

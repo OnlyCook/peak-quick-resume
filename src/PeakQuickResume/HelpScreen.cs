@@ -363,7 +363,7 @@ namespace PEAKQuickResume
             if (_root == null) return;
             try
             {
-                string tutorialKey = _checkpoint?.TryGetTutorialKeyText() ?? "F1";
+                string tutorialKey = _checkpoint?.TryGetTutorialKeyText() ?? _cfg?.HelpKey.Value.ToString() ?? "F2";
 
                 _titleText.text = $"Quick Resume {HelpScreenLocalization.Get(HelpText.HelpTitleWord)}";
                 _bodyText.text = HelpScreenContent.Build(_checkpoint, _cfg);

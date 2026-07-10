@@ -1,18 +1,17 @@
 # Release checklist
 
 Steps to cut a new PEAK Quick Resume release. Do the version bump in **every** place
-below — they are not auto-synced.
+below, they are not auto-synced.
 
 ## 1. Bump the version number (must match everywhere)
 
 | # | File | What to change | Why it matters |
 |---|------|----------------|----------------|
-| 1 | `src/PeakQuickResume/PluginInfo.cs` | `public const string Version` | **In-game F1 help screen** version line + the BepInEx plugin version |
+| 1 | `src/PeakQuickResume/PluginInfo.cs` | `public const string Version` | The BepInEx plugin version, also logged on startup |
 | 2 | `src/PeakQuickResume/PeakQuickResume.csproj` | `<Version>` | Compiled assembly metadata |
 | 3 | `packaging/manifest.json` | `version_number` | Thunderstore package version + the release zip filename (`build-release.sh` reads it) |
-| 4 | `packaging/README.md` | the `> **Beta (vX.Y.Z).**` line | Shown on Thunderstore and (generated) on GitHub |
 
-> The repo-root `README.md` is **generated** from `packaging/README.md` — do **not**
+> The repo-root `README.md` is **generated** from `packaging/README.md`, do **not**
 > edit it or bump a version in it by hand.
 
 ## 2. Update the changelog

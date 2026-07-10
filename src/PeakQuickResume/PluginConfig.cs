@@ -102,13 +102,13 @@ namespace PEAKQuickResume
             // it's also pushed onto PEAK Checkpoint Save's own configTutorialKey (see
             // CheckpointInterop.TrySetTutorialKey / Plugin.Awake), which is otherwise
             // stuck as a KeyboardShortcut with no ModConfig rebind widget of its own.
-            // Overriding it keeps the checkpoint mod's own F1 detection (which
-            // HelpScreen/TutorialPatch ride on) and its footer prompt in sync with
-            // whatever key is actually configured here
-            HelpKey = cfg.Bind("General", "help-key", KeyCode.F1,
-                "Opens the help screen (Quick Resume controls + the teleport-bug workaround). Also overrides "
-                + "PEAK Checkpoint Save's own tutorial/help key to match, so its own F1 detection and footer "
-                + "prompt stay in sync with whatever you set here.");
+            // Overriding it (when the checkpoint mod is installed) keeps its own tutorial-
+            // key detection (which HelpScreen/TutorialPatch ride on) and its footer prompt
+            // in sync with whatever key is actually configured here
+            HelpKey = cfg.Bind("General", "help-key", KeyCode.F2,
+                "Opens the help screen (Quick Resume controls + the teleport-bug workaround). If PEAK Checkpoint "
+                + "Save is installed, also overrides its own tutorial/help key to match, so its own key detection "
+                + "and footer prompt stay in sync with whatever you set here.");
 
             // Default of B (not the more obvious S): while the F7 picker is open, key
             // input still reaches the character underneath it (it's an overlay, not a
@@ -189,9 +189,10 @@ namespace PEAKQuickResume
                 + "reported itself ready (in a Level scene) before proceeding.");
 
             EnableTeleportWatchdog = cfg.Bind("Teleport-Mitigation", "enable-teleport-watchdog", true,
-                "Watches every checkpoint-mod teleport (its own F6 load, or ours) for the known intermittent "
-                + "upstream bug: warp-loop glitching or falling through the world. When detected, shows an "
-                + "on-screen hint pointing at the F1 help screen. Disable to turn off all Phase 6 detection.");
+                "Watches every teleport (a checkpoint-mod F6 load, if installed, or ours) for the known "
+                + "intermittent bad-teleport symptoms: warp-loop glitching or falling through the world. When "
+                + "detected, shows an on-screen hint pointing at the help screen (help-key). Disable to turn off "
+                + "all teleport-bug detection.");
 
             WatchdogWindowSeconds = cfg.Bind("Teleport-Mitigation", "watchdog-window-seconds", 30f,
                 "How long after a teleport to keep watching for the bad-teleport symptoms below (advanced).");
