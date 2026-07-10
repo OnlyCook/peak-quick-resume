@@ -70,7 +70,17 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> EnableWarpSuppression;
         public readonly ConfigEntry<float> WarpSuppressionExtraSeconds;
 
+        // Native-feeling wake-up + loading-screen crossfade around the teleport step of
+        // our own restore path (OwnWakeUpEffect.cs / OwnLoadingScreen.cs), replacing the
+        // checkpoint mod's abrupt instant on/off overlay
+        public readonly ConfigEntry<bool> OwnWakeUpAnimationEnabled;
+        public readonly ConfigEntry<float> OwnLoadingScreenFadeInDelay;
+        public readonly ConfigEntry<float> OwnWakeUpSettleHoldTime;
+        public readonly ConfigEntry<float> OwnWakeUpStandTime;
+        public readonly ConfigEntry<float> OwnLoadingScreenFadeTime;
+
         public readonly ConfigEntry<bool> EnableDebugLogging;
+        public readonly ConfigEntry<bool> DebugDisableLoadingScreen;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -255,9 +265,45 @@ namespace PEAKQuickResume
                 "How far (in meters) from the intended target still counts as \"not settled\" when the position "
                 + "recovery check above runs (advanced).");
 
+            OwnWakeUpAnimationEnabled = cfg.Bind("Wake-Up", "wake-up-animation-enabled", true,
+                "If enabled, the teleport step of our own restore path plays a native-feeling "
+                + "\"waking up at your last checkpoint\" beat (reusing the game's own pass-out/revive "
+                + "pose, client-side only - nobody else sees it) and crossfades into the game's real "
+                + "\"LOADING...\" screen while the teleport happens, instead of an instant cut. "
+                + "Disable to go back to the plain instant teleport.");
+
+            OwnLoadingScreenFadeInDelay = cfg.Bind("Wake-Up", "loading-screen-fade-in-delay", 0.5f,
+                "Seconds to wait before starting the crossfade into our own loading screen "
+                + "(advanced). Without this, our screen can start covering things up slightly "
+                + "before the game's own level-load screen has actually finished clearing, "
+                + "cutting it off a beat too early.");
+
+            OwnWakeUpSettleHoldTime = cfg.Bind("Wake-Up", "wake-up-settle-hold-time", 1.4f,
+                "Seconds to keep the loading screen fully opaque AFTER collapsing into the "
+                + "passed-out pose, before it starts fading out (advanced). Covers up two things "
+                + "that would otherwise still be visible right as the screen clears: the tail end "
+                + "of the real teleport's small landing drop/settle, and the collapse into the "
+                + "passed-out pose itself. Raise this if you still catch either one; lower it if "
+                + "the loading screen feels like it lingers too long after you've actually arrived.");
+
+            OwnWakeUpStandTime = cfg.Bind("Wake-Up", "wake-up-stand-time", 1.8f,
+                "Seconds to let the native stand-up recovery play out (after the loading screen "
+                + "clears, revealing the player already lying at the new position) before the "
+                + "resume sequence considers itself fully done (advanced). The recovery itself "
+                + "ramps over roughly 2 seconds.");
+
+            OwnLoadingScreenFadeTime = cfg.Bind("Wake-Up", "loading-screen-fade-time", 0.4f,
+                "Seconds for each crossfade into/out of the loading screen (advanced).");
+
             EnableDebugLogging = cfg.Bind("Debug", "enable-debug-logging", true,
                 "Verbose logging of every step of the resume sequence. Very useful while the mod is young, "
                 + "please keep this on when reporting issues.");
+
+            DebugDisableLoadingScreen = cfg.Bind("Debug", "disable-loading-screen", false,
+                "If enabled, skips showing the custom loading screen during Quick Resume's wake-up "
+                + "sequence - the wake-up animation itself, and every other Wake-Up setting above, "
+                + "still apply exactly as configured. Useful for debugging without the screen "
+                + "hiding what's happening underneath.");
         }
     }
 }

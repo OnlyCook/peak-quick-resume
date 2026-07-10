@@ -48,6 +48,8 @@ namespace PEAKQuickResume
         internal OwnMessageOverlay MessageOverlay { get; private set; }
         internal TeleportWatchdog Watchdog { get; private set; }
         internal OwnLoadEntryPoints EntryPoints { get; private set; }
+        internal OwnWakeUpEffect WakeUpEffect { get; private set; }
+        internal OwnLoadingScreen LoadingScreen { get; private set; }
 
         private GameObject _networkGo;
         private PhotonView _pv;
@@ -57,6 +59,13 @@ namespace PEAKQuickResume
         // scene transitions exactly like the original (decompile 1345-1413)
         private readonly Dictionary<string, string> _playerReceivedReadyStatus = new Dictionary<string, string>();
         private bool _clientSentReadyStatus;
+
+        // Own addition: userId -> reported PluginInfo.Version. Diagnostic only (see
+        // ClientPresentationOthers' remarks for why it doesn't gate anything) - logged on
+        // receipt so a session log shows exactly who's running what. Never populated in
+        // solo/offline (no other players to hear from)
+        private readonly Dictionary<string, string> _playerModVersions = new Dictionary<string, string>();
+        private bool _clientSentVersionReport;
 
         public void Init(ManualLogSource log, PluginConfig cfg)
         {
@@ -71,11 +80,14 @@ namespace PEAKQuickResume
         /// object in <c>Plugin.Awake</c> (mirrors <see cref="Init"/>'s own late-binding
         /// shape rather than restructuring construction order)
         /// </summary>
-        internal void AttachDependencies(OwnMessageOverlay messageOverlay, TeleportWatchdog watchdog, OwnLoadEntryPoints entryPoints)
+        internal void AttachDependencies(OwnMessageOverlay messageOverlay, TeleportWatchdog watchdog, OwnLoadEntryPoints entryPoints,
+            OwnWakeUpEffect wakeUpEffect = null, OwnLoadingScreen loadingScreen = null)
         {
             MessageOverlay = messageOverlay;
             Watchdog = watchdog;
             EntryPoints = entryPoints;
+            WakeUpEffect = wakeUpEffect;
+            LoadingScreen = loadingScreen;
         }
 
         private void CreatePhotonView()
@@ -108,6 +120,7 @@ namespace PEAKQuickResume
             if (RunLauncher.InAirport)
             {
                 _clientSentReadyStatus = false;
+                _clientSentVersionReport = false;
                 _playerReceivedReadyStatus.Clear();
                 return;
             }
@@ -119,12 +132,18 @@ namespace PEAKQuickResume
                     StartCoroutine(SendReadyStatusToMaster());
                     _clientSentReadyStatus = true;
                 }
+                if (!_clientSentVersionReport && !RunLauncher.IsHost)
+                {
+                    StartCoroutine(ReportVersionToMaster());
+                    _clientSentVersionReport = true;
+                }
                 return;
             }
 
             if (RunLauncher.InTitle)
             {
                 _clientSentReadyStatus = false;
+                _clientSentVersionReport = false;
                 _playerReceivedReadyStatus.Clear();
             }
         }
@@ -145,6 +164,87 @@ namespace PEAKQuickResume
             {
                 _log?.LogError($"OwnNetwork.SendReadyStatusToMaster RPC failed: {e}");
             }
+        }
+
+        // Own addition: unlike ready-status (which deliberately waits 5s to settle), the version
+        // report has nothing to wait on - send it as soon as the local character exists, so it's
+        // guaranteed to reach the host well before the (5s-delayed) ready-status report does,
+        // which is what the host's own coop wait actually gates on before ever loading a save
+        private IEnumerator ReportVersionToMaster()
+        {
+            while (Character.localCharacter == null) yield return null;
+
+            try
+            {
+                _pv.RPC(nameof(OwnNetworkRpc.RPC_ReportModVersion), RpcTarget.MasterClient,
+                    PhotonNetwork.LocalPlayer.UserId, PluginInfo.Version);
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnNetwork.ReportVersionToMaster failed: {e.Message}");
+            }
+        }
+
+        // Called (master-client side only) by OwnNetworkRpc.RPC_ReportModVersion
+        internal void OnClientReportedVersion(string userId, string version)
+        {
+            try
+            {
+                _playerModVersions[userId] = version;
+                _log?.LogInfo($"OwnNetwork: client {userId} reports Quick Resume v{version}.");
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnNetwork.OnClientReportedVersion failed: {e.Message}");
+            }
+        }
+
+        // Called on the RECEIVING client's machine by OwnNetworkRpc.RPC_ClientPresentation
+        // (sent by the host, see ClientPresentationOthers) - mirrors the host's own local
+        // presentation using this machine's own WakeUpEffect/LoadingScreen instances
+        internal void HandleClientPresentation(bool show)
+        {
+            StartCoroutine(show ? RunClientPresentationEnter() : RunClientPresentationExit());
+        }
+
+        private IEnumerator RunClientPresentationEnter()
+        {
+            // The host fires this RPC as soon as ITS OWN character/teleport sequence is ready,
+            // with no guarantee this client's own character has finished spawning into the fresh
+            // level scene yet (confirmed in a real session log: PlayWakeUp saw
+            // Character.localCharacter as null and silently skipped the whole beat). Wait for it
+            // here, with a timeout so a genuinely stuck spawn can't hang this coroutine forever
+            float waited = 0f;
+            const float timeout = 15f;
+            while (Character.localCharacter == null && waited < timeout)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (Character.localCharacter == null)
+                _log?.LogWarning("OwnNetwork.RunClientPresentationEnter: local character still null after "
+                    + $"{timeout:F0}s; proceeding anyway (wake-up beat will no-op).");
+
+            // Mirrors the host's own ordering exactly (see OwnTeleportSequence.cs remarks): just
+            // hide the screen here, the collapse/reveal/stand-up happens on RunClientPresentationExit.
+            // DebugDisableLoadingScreen skips just the overlay, same as on the host
+            bool showLoadingScreen = _cfg != null && !_cfg.DebugDisableLoadingScreen.Value;
+            if (showLoadingScreen && LoadingScreen != null)
+                yield return LoadingScreen.FadeIn(_cfg.OwnLoadingScreenFadeTime.Value);
+        }
+
+        private IEnumerator RunClientPresentationExit()
+        {
+            // Mirrors the host's own ordering exactly, including the settle hold before fading
+            // out (see OwnTeleportSequence.cs remarks) - each client manages its own local timing
+            bool showLoadingScreen = _cfg != null && !_cfg.DebugDisableLoadingScreen.Value;
+            if (WakeUpEffect != null) WakeUpEffect.Collapse();
+            if (_cfg != null)
+                yield return new WaitForSeconds(Mathf.Max(0f, _cfg.OwnWakeUpSettleHoldTime.Value));
+            if (showLoadingScreen && LoadingScreen != null)
+                yield return LoadingScreen.FadeOut(_cfg.OwnLoadingScreenFadeTime.Value);
+            if (_cfg != null && WakeUpEffect != null)
+                yield return WakeUpEffect.Wake(_cfg.OwnWakeUpStandTime.Value);
         }
 
         // Called (master-client side only) by OwnNetworkRpc.RPC_SendReadyStatusToMaster.
@@ -253,6 +353,28 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.RecentlyLitCampfireOthers failed: {e.Message}"); }
         }
 
+        /// <summary>
+        /// Own addition: mirrors the host's own wake-up + loading-screen presentation (see
+        /// OwnTeleportSequence.cs) onto every OTHER connected player, unconditionally
+        /// (RpcTarget.Others, same shape as LoadingScreenOthers above) rather than gating on the
+        /// per-player version reported above: an earlier version tried to only target players
+        /// confirmed (via that dict) to be running Quick Resume v2.0.0+, but the version report is
+        /// sent on its own timeline (as soon as each client's local character exists) with no
+        /// synchronization to when the HOST happens to reach this call - confirmed in a real
+        /// session log where the host's broadcast fired and the client's version report arrived
+        /// only several log lines later, so the dict lookup missed a client that WAS actually
+        /// running this exact build. A genuinely older client (pre-2.0.0, before this RPC existed
+        /// at all) simply has no <c>RPC_ClientPresentation</c> method for Photon to find - it logs
+        /// a harmless "RPC method not found" on ITS end and nothing happens, the same graceful
+        /// degradation an explicit version gate would have provided, without the race. The version
+        /// report above is kept (logged on receipt) as a diagnostic breadcrumb, not a gate
+        /// </summary>
+        public void ClientPresentationOthers(bool show)
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_ClientPresentation), RpcTarget.Others, show); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.ClientPresentationOthers failed: {e.Message}"); }
+        }
+
         /// <summary>Mirrors decompile line 167: RpcTarget.MasterClient (2), client -> host</summary>
         public void RequestSaveToMaster()
         {
@@ -279,6 +401,23 @@ namespace PEAKQuickResume
         public void RPC_SendReadyStatusToMaster(string userId, string userName)
         {
             Owner?.OnClientReportedReady(userId, userName);
+        }
+
+        /// <summary>Own addition: client -> host, see OwnNetwork.ReportVersionToMaster</summary>
+        [PunRPC]
+        public void RPC_ReportModVersion(string userId, string version)
+        {
+            Owner?.OnClientReportedVersion(userId, version);
+        }
+
+        /// <summary>
+        /// Own addition: host -> a specific qualifying client, see OwnNetwork.ClientPresentationOthers.
+        /// Mirrors the host's own wake-up + loading-screen presentation locally on this machine
+        /// </summary>
+        [PunRPC]
+        public void RPC_ClientPresentation(bool show)
+        {
+            Owner?.HandleClientPresentation(show);
         }
 
         /// <summary>Mirrors RPC_RequestSave exactly (decompile 507-516): master-only</summary>

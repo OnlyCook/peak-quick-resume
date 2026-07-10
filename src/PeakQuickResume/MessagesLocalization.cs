@@ -39,6 +39,7 @@ namespace PEAKQuickResume
         LoadingSavegame,
         SavegameLoaded,
         TeleportBugHint,
+        LoadingSaveScreen, // ALL CAPS, base text for OwnLoadingScreen's cycling "LOADING SAVE..." caption
     }
 
     internal static class MessagesLocalization
@@ -371,6 +372,24 @@ namespace PEAKQuickResume
                 "무언가 잘못되었나요? 그렇다면 {0}을 눌러 도움말 화면을 열어보세요.",
                 "Czy coś poszło nie tak? Jeśli tak, naciśnij {0}, aby otworzyć ekran pomocy.",
                 "Bir şeyler mi ters gitti? Öyleyse, yardım ekranını açmak için {0} tuşuna basın.",
+            },
+            [MsgKey.LoadingSaveScreen] = new[]
+            {
+                "LOADING SAVE",
+                "CHARGEMENT SAUVEGARDE",
+                "CARICAMENTO SALVATAGGIO",
+                "SPEICHERSTAND LADEN",
+                "CARGANDO PARTIDA",
+                "CARGANDO PARTIDA",
+                "CARREGANDO SAVE",
+                "ЗАГРУЗКА СОХРАНЕНИЯ",
+                "ЗАВАНТАЖЕННЯ ЗБЕРЕЖЕННЯ",
+                "正在加载存档",
+                "",
+                "セーブデータ読み込み中",
+                "저장 파일 로딩 중",
+                "WCZYTYWANIE ZAPISU",
+                "KAYIT YÜKLENİYOR",
             },
         };
 

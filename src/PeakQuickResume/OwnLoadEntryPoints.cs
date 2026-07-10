@@ -42,6 +42,15 @@ namespace PEAKQuickResume
 
         public bool CurrentlyLoading { get; private set; }
 
+        /// <summary>
+        /// True while a <see cref="OwnTeleportSequence"/> triggered by <see cref="TryLoadPlayer"/>
+        /// is still running, including its wake-up + loading-screen presentation at the end.
+        /// <see cref="TryLoadPlayer"/> itself is fire-and-forget (starts the sequence and returns
+        /// immediately) - <see cref="ResumeOrchestrator"/> polls this to know when it's actually
+        /// safe to show the "Save loaded" message
+        /// </summary>
+        public bool TeleportInProgress => _teleportSequence != null && _teleportSequence.IsRunning;
+
         /// <summary>Exposes the shared <see cref="OwnNetwork"/> channel (RPCs, watchdog/checkpoint refs attached to it) to <see cref="OwnTeleportSequence"/>/<see cref="OwnInventoryRestore"/></summary>
         internal OwnNetwork Network => _network;
 
