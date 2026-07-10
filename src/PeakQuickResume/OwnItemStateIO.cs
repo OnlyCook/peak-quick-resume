@@ -1,10 +1,19 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using BepInEx.Logging;
 
 namespace PEAKQuickResume
 {
+    /// <summary>One per-item "extra stat" entry read via <see cref="OwnItemStateIO.ReadItemStateValues"/></summary>
+    public readonly struct OwnItemStateEntry
+    {
+        public readonly string TypeName;
+        public readonly float Value;
+        public OwnItemStateEntry(string typeName, float value) { TypeName = typeName; Value = value; }
+    }
+
     /// <summary>
     /// Our own copy of the checkpoint mod's item "extra stat" (per-item-type
     /// key/value) IO helpers, ported field-for-field from the decompile
@@ -43,6 +52,33 @@ namespace PEAKQuickResume
         // ItemInstanceData's own private dictionary field (decompile line 893)
         private static readonly FieldInfo IidDataField =
             typeof(ItemInstanceData).GetField("data", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        /// <summary>
+        /// Reads a live item's "extra stats" (CookedAmount, Fuel, Color, ...) in exactly
+        /// the shape the checkpoint mod's own save schema uses: key name -> (runtime type
+        /// name, numeric value). Used by <see cref="BackpackSaveMitigation"/> to build a
+        /// phantom backpack save entry that round-trips through either save/load path the
+        /// same as a normally-saved one would (Phase 8 M9: no longer needs the checkpoint
+        /// mod's own instance - same direct game-type reflection every other read/write
+        /// helper in this file already uses). Empty (never null) if unavailable
+        /// </summary>
+        public static Dictionary<string, OwnItemStateEntry> ReadItemStateValues(ItemInstanceData data, ushort itemId)
+        {
+            var result = new Dictionary<string, OwnItemStateEntry>();
+            if (data == null) return result;
+
+            bool excluded = Array.IndexOf(ExcludedItemIds, itemId) >= 0;
+            foreach (string name in ItemStateKeyNames)
+            {
+                if (excluded && (name == "ItemUses" || name == "UseRemainingPercentage")) continue;
+                if (!TryGetKey(name, out DataEntryKey key)) continue;
+                if (!TryGetEntryObject(data, key, out object entryObj)) continue;
+                if (!TryReadEntryNumeric(entryObj, out float value)) continue;
+
+                result[name] = new OwnItemStateEntry(entryObj.GetType().AssemblyQualifiedName, value);
+            }
+            return result;
+        }
 
         /// <summary>Mirrors TryGetEntryObject exactly (decompile 3258-3278)</summary>
         public static bool TryGetEntryObject(ItemInstanceData inst, DataEntryKey key, out object entryObj)

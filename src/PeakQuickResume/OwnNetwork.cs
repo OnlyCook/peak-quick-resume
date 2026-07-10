@@ -45,7 +45,7 @@ namespace PEAKQuickResume
 
         private ManualLogSource _log;
         private PluginConfig _cfg;
-        internal CheckpointInterop Checkpoint { get; private set; }
+        internal OwnMessageOverlay MessageOverlay { get; private set; }
         internal TeleportWatchdog Watchdog { get; private set; }
         internal OwnLoadEntryPoints EntryPoints { get; private set; }
 
@@ -71,9 +71,9 @@ namespace PEAKQuickResume
         /// object in <c>Plugin.Awake</c> (mirrors <see cref="Init"/>'s own late-binding
         /// shape rather than restructuring construction order)
         /// </summary>
-        internal void AttachDependencies(CheckpointInterop checkpoint, TeleportWatchdog watchdog, OwnLoadEntryPoints entryPoints)
+        internal void AttachDependencies(OwnMessageOverlay messageOverlay, TeleportWatchdog watchdog, OwnLoadEntryPoints entryPoints)
         {
-            Checkpoint = checkpoint;
+            MessageOverlay = messageOverlay;
             Watchdog = watchdog;
             EntryPoints = entryPoints;
         }
@@ -312,8 +312,8 @@ namespace PEAKQuickResume
         /// <summary>
         /// Mirrors RPC_SendMessage's dispatch shape (decompile 538-563), colors reduced to
         /// our own known set (only ever sent by our own code, not an open text channel) -
-        /// reuses the checkpoint mod's own overlay via <see cref="CheckpointInterop.TryShowMessage"/>
-        /// so it looks identical to every other message this mod shows
+        /// shows through our own <see cref="OwnMessageOverlay"/> (Phase 8 M9), same as
+        /// every other message this mod shows
         /// </summary>
         [PunRPC]
         public void RPC_SendMessage(string message, string colorKey, string seconds)
@@ -328,7 +328,7 @@ namespace PEAKQuickResume
                 "warning" => new Color(1f, 0.8f, 0.4f, 1f),
                 _ => new Color(0.6f, 0.8f, 1f, 1f),
             };
-            Owner?.Checkpoint?.TryShowMessage(message, color, duration);
+            Owner?.MessageOverlay?.Show(message, color, duration);
         }
 
         /// <summary>

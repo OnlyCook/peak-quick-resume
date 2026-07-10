@@ -22,7 +22,7 @@ namespace PEAKQuickResume
     {
         private ManualLogSource _log;
         private PluginConfig _cfg;
-        private CheckpointInterop _checkpoint; // only used for on-screen messages
+        private OwnMessageOverlay _messageOverlay;
         private TeleportWatchdog _watchdog;
         private bool _running;
 
@@ -30,11 +30,11 @@ namespace PEAKQuickResume
 
         public bool IsRunning => _running;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint, TeleportWatchdog watchdog = null)
+        public void Init(ManualLogSource log, PluginConfig cfg, OwnMessageOverlay messageOverlay, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
-            _checkpoint = checkpoint;
+            _messageOverlay = messageOverlay;
             _watchdog = watchdog;
         }
 
@@ -131,7 +131,7 @@ namespace PEAKQuickResume
         private static readonly Color MsgSuccess = new Color(0.5f, 1f, 0.5f, 1f);
         private static readonly Color MsgError = new Color(1f, 0.5f, 0.5f, 1f);
 
-        private void Msg(string text, Color color) => _checkpoint?.TryShowMessage(text, color, 4f);
+        private void Msg(string text, Color color) => _messageOverlay?.Show(text, color, 4f);
 
         private IEnumerator WaitFor(Func<bool> condition, float timeoutSeconds, string what)
         {

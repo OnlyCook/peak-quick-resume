@@ -26,6 +26,7 @@ namespace PEAKQuickResume
         private ManualLogSource _log;
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
+        private OwnMessageOverlay _messageOverlay;
         private OwnLoadEntryPoints _ownLoadEntryPoints;
         private TeleportWatchdog _watchdog;
         private bool _running;
@@ -37,12 +38,13 @@ namespace PEAKQuickResume
 
         public bool IsRunning => _running;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint,
+        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint, OwnMessageOverlay messageOverlay,
             OwnLoadEntryPoints ownLoadEntryPoints = null, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
+            _messageOverlay = messageOverlay;
             _ownLoadEntryPoints = ownLoadEntryPoints;
             _watchdog = watchdog;
         }
@@ -65,9 +67,13 @@ namespace PEAKQuickResume
 
             _chosen = chosen;
 
-            if (!_checkpoint.IsAvailable)
+            // Phase 8 M9: our own restore path (_ownLoadEntryPoints) works completely
+            // independently of the checkpoint mod - only refuse outright if NEITHER path
+            // is available (e.g. our own components somehow failed to initialize AND the
+            // checkpoint mod isn't installed either)
+            if (_ownLoadEntryPoints == null && !_checkpoint.IsAvailable)
             {
-                _log.LogError("Cannot resume: checkpoint mod interop is not available.");
+                _log.LogError("Cannot resume: neither our own restore path nor the checkpoint mod interop is available.");
                 return;
             }
 
@@ -303,7 +309,7 @@ namespace PEAKQuickResume
         private static readonly Color MsgSuccess = new Color(0.5f, 1f, 0.5f, 1f);
         private static readonly Color MsgError = new Color(1f, 0.5f, 0.5f, 1f);
 
-        private void Msg(string text, Color color) => _checkpoint?.TryShowMessage(text, color, 4f);
+        private void Msg(string text, Color color) => _messageOverlay?.Show(text, color, 4f);
 
         /// <summary>
         /// Which save should we load, a normal difficulty (ascent) or a custom run?

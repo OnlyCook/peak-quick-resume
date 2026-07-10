@@ -12,7 +12,6 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<KeyCode> StarKey;
         public readonly ConfigEntry<bool> AllowMidGame;
         public readonly ConfigEntry<float> PanelOpacity;
-        public readonly ConfigEntry<bool> EnableDebugLogging;
 
         // Miscellaneous QoL: pause menu buttons (mechanics 3 & 4). Each independently
         // hides its button from the pause menu entirely when disabled
@@ -27,6 +26,30 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<float> SettleAfterLevel;
         public readonly ConfigEntry<float> StepTimeout;
         public readonly ConfigEntry<float> CoopAirportSettle;
+
+        // Phase 8 M3: our own copies of the checkpoint mod's teleport-sequence
+        // config entries (same names/defaults/meaning as configAdvancedTeleportFramesToWait,
+        // configAdvancedJumpLogicWaitTime, configCampfireReset, configDaytime - decompile
+        // lines 1081-1116), used by OwnTeleportSequence.cs instead of reflecting into the
+        // checkpoint mod's instance
+        public readonly ConfigEntry<int> OwnTeleportFramesToWait;
+        public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
+        public readonly ConfigEntry<bool> OwnCampfireReset;
+        public readonly ConfigEntry<bool> OwnDaytime;
+
+        // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
+        // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
+        // checkpoint mod's instance
+        public readonly ConfigEntry<bool> OwnInventory;
+        public readonly ConfigEntry<bool> OwnItemStats;
+
+        // Phase 8 M5: our own copy of configAfflictions (decompile line 1081)
+        public readonly ConfigEntry<bool> OwnAfflictions;
+
+        // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
+        // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
+        // same meaning) once we stop reflecting into its instance for this
+        public readonly ConfigEntry<bool> OwnEnableClientReadyStatusCheck;
 
         // Phase 6: helps recover from the checkpoint mod's own intermittent teleport
         // bug (up/down warp-loop glitching, occasionally falling through the world).
@@ -47,29 +70,7 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> EnableWarpSuppression;
         public readonly ConfigEntry<float> WarpSuppressionExtraSeconds;
 
-        // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
-        // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
-        // same meaning) once we stop reflecting into its instance for this
-        public readonly ConfigEntry<bool> OwnEnableClientReadyStatusCheck;
-
-        // Phase 8 M3: our own copies of the checkpoint mod's teleport-sequence
-        // config entries (same names/defaults/meaning as configAdvancedTeleportFramesToWait,
-        // configAdvancedJumpLogicWaitTime, configCampfireReset, configDaytime - decompile
-        // lines 1081-1116), used by OwnTeleportSequence.cs instead of reflecting into the
-        // checkpoint mod's instance
-        public readonly ConfigEntry<int> OwnTeleportFramesToWait;
-        public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
-        public readonly ConfigEntry<bool> OwnCampfireReset;
-        public readonly ConfigEntry<bool> OwnDaytime;
-
-        // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
-        // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
-        // checkpoint mod's instance
-        public readonly ConfigEntry<bool> OwnInventory;
-        public readonly ConfigEntry<bool> OwnItemStats;
-
-        // Phase 8 M5: our own copy of configAfflictions (decompile line 1081)
-        public readonly ConfigEntry<bool> OwnAfflictions;
+        public readonly ConfigEntry<bool> EnableDebugLogging;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -127,10 +128,6 @@ namespace PEAKQuickResume
                     + "opaque). Lower this if you want to be able to see what's behind the menu while it's open.",
                     new AcceptableValueRange<float>(0f, 1f)));
 
-            EnableDebugLogging = cfg.Bind("Debug", "enable-debug-logging", true,
-                "Verbose logging of every step of the resume sequence. Very useful while the mod is young, "
-                + "please keep this on when reporting issues.");
-
             ShowRestartButton = cfg.Bind("Pause-Menu", "show-restart-button", true,
                 "Show the \"Restart\" button in the pause menu while mid-run (host only). Instantly returns "
                 + "everyone to the Airport and starts a fresh run of the same difficulty, no checkpoint is loaded.");
@@ -165,6 +162,31 @@ namespace PEAKQuickResume
                 "COOP ONLY: extra seconds to wait at the Airport before starting the fresh run, so other "
                 + "players have finished loading the Airport and will receive the run-start (advanced). "
                 + "Raise this if a client occasionally gets left behind on a slow connection.");
+
+            OwnTeleportFramesToWait = cfg.Bind("Teleport", "teleport-frames-to-wait", 30,
+                "Frames to wait between teleport-correction tries in our own restore path (advanced).");
+
+            OwnJumpLogicWaitTime = cfg.Bind("Teleport", "jump-logic-wait-time", 1f,
+                "Seconds to wait between steps of our own restore path's teleport sequence (advanced).");
+
+            OwnCampfireReset = cfg.Bind("Teleport", "campfire-reset", true,
+                "If enabled, the campfire resets after loading more than once in the current run.");
+
+            OwnDaytime = cfg.Bind("Teleport", "daytime", true,
+                "If enabled, restores the saved in-game time of day.");
+
+            OwnInventory = cfg.Bind("Teleport", "inventory", true,
+                "If enabled, restores saved inventory and backpack items.");
+
+            OwnItemStats = cfg.Bind("Teleport", "item-stats", true,
+                "If enabled, restores saved item stats (cooking amount, fuel, rope length...).");
+
+            OwnAfflictions = cfg.Bind("Teleport", "afflictions", true,
+                "If enabled, restores your saved afflictions (hunger, poison, cold, sleep, skeleton...).");
+
+            OwnEnableClientReadyStatusCheck = cfg.Bind("Network", "enable-client-ready-status-check", true,
+                "COOP ONLY: if enabled, our own save/load restore waits until every connected client has "
+                + "reported itself ready (in a Level scene) before proceeding.");
 
             EnableTeleportWatchdog = cfg.Bind("Teleport-Mitigation", "enable-teleport-watchdog", true,
                 "Watches every checkpoint-mod teleport (its own F6 load, or ours) for the known intermittent "
@@ -232,36 +254,9 @@ namespace PEAKQuickResume
                 "How far (in meters) from the intended target still counts as \"not settled\" when the position "
                 + "recovery check above runs (advanced).");
 
-            OwnEnableClientReadyStatusCheck = cfg.Bind("Own-Network", "enable-client-ready-status-check", true,
-                "COOP ONLY (Phase 8): if enabled, our own save/load restore waits until every connected client has "
-                + "reported itself ready (in a Level scene) before proceeding, same behavior and default as the "
-                + "checkpoint mod's own equivalent setting.");
-
-            OwnTeleportFramesToWait = cfg.Bind("Own-Teleport", "teleport-frames-to-wait", 30,
-                "Phase 8: frames to wait between teleport-correction tries in our own restore path (advanced).");
-
-            OwnJumpLogicWaitTime = cfg.Bind("Own-Teleport", "jump-logic-wait-time", 1f,
-                "Phase 8: seconds to wait between steps of our own restore path's teleport sequence (advanced).");
-
-            OwnCampfireReset = cfg.Bind("Own-Teleport", "campfire-reset", true,
-                "Phase 8: if enabled, the campfire resets after loading more than once in the current run, for "
-                + "our own restore path. Same meaning/default as the checkpoint mod's own configCampfireReset.");
-
-            OwnDaytime = cfg.Bind("Own-Teleport", "daytime", true,
-                "Phase 8: if enabled, restores the saved in-game time of day for our own restore path. Same "
-                + "meaning/default as the checkpoint mod's own configDaytime.");
-
-            OwnInventory = cfg.Bind("Own-Teleport", "inventory", true,
-                "Phase 8: if enabled, restores saved inventory and backpack items for our own restore path. Same "
-                + "meaning/default as the checkpoint mod's own configInventory.");
-
-            OwnItemStats = cfg.Bind("Own-Teleport", "item-stats", true,
-                "Phase 8: if enabled, restores saved item stats (cooking amount, fuel, rope length...) for our "
-                + "own restore path. Same meaning/default as the checkpoint mod's own configItemStats.");
-
-            OwnAfflictions = cfg.Bind("Own-Teleport", "afflictions", true,
-                "Phase 8: if enabled, restores your saved afflictions (hunger, poison, cold, sleep, skeleton...) "
-                + "for our own restore path. Same meaning/default as the checkpoint mod's own configAfflictions.");
+            EnableDebugLogging = cfg.Bind("Debug", "enable-debug-logging", true,
+                "Verbose logging of every step of the resume sequence. Very useful while the mod is young, "
+                + "please keep this on when reporting issues.");
         }
     }
 }

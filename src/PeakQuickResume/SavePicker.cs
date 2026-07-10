@@ -34,7 +34,6 @@ namespace PEAKQuickResume
     {
         private ManualLogSource _log;
         private PluginConfig _cfg;
-        private CheckpointInterop _checkpoint;
 
         private List<ArchivedSave> _entries = new List<ArchivedSave>();
         private int _selected;
@@ -62,11 +61,10 @@ namespace PEAKQuickResume
         public ArchivedSave Selected =>
             (IsOpen && _selected >= 0 && _selected < _entries.Count) ? _entries[_selected] : null;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint = null)
+        public void Init(ManualLogSource log, PluginConfig cfg)
         {
             _log = log;
             _cfg = cfg;
-            _checkpoint = checkpoint;
         }
 
         /// <summary>

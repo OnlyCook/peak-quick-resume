@@ -11,19 +11,14 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Phase 8 milestone M6: our own port of <c>SavePlayerOffline</c> (decompile
-    /// 3715-4137). Coop's <c>SavePlayerCoop</c> (4139-4605) is NOT ported yet - M7.
-    ///
-    /// Writes to a NON-canonical diagnostic path (<see cref="OwnSavePaths.ForDiagnosticCapture"/>),
-    /// deliberately NOT the live save file the checkpoint mod's own autosave still
-    /// writes and our own restore path (M3-M5) still reads. This milestone proves we
-    /// CAN produce an equivalent capture - for diffing against whatever the
-    /// checkpoint mod writes for the same in-game state - it does NOT yet make us
-    /// the live save-file writer. Actually cutting the canonical write path over is a
-    /// separate, later step (needs coordinating with <see cref="SaveArchive"/>/
-    /// <see cref="SavePatch"/>, which currently only trigger off the checkpoint mod's
-    /// own <c>SavePlayerOffline</c>/<c>SavePlayerCoop</c> being called) - see
-    /// ROADMAP.md Phase 8 M6
+    /// Our own port of <c>SavePlayerOffline</c>/<c>SavePlayerCoop</c> (decompile
+    /// 3715-4603, ported M6/M7). Phase 8 M9: now the CANONICAL save-file writer -
+    /// writes directly to <see cref="OwnSavePaths.For"/> (not a diagnostic path
+    /// anymore) and independently triggers <see cref="BackpackSaveMitigation.ApplyPendingRestores"/>
+    /// + <see cref="SaveArchive.Sync"/> right after writing, the same two steps
+    /// <see cref="SavePatch"/>'s postfix used to apply only when the CHECKPOINT MOD's
+    /// own save methods were called - our own capture needed the same trigger since
+    /// it can now run with no checkpoint mod involved at all
     ///
     /// The 13 repeated per-key blocks in the original (one `if (TryGetKey(...) &amp;&amp;
     /// TryGetEntryObject(...) &amp;&amp; TryReadEntryNumeric(...))` per key, identical
@@ -48,9 +43,6 @@ namespace PEAKQuickResume
         /// master branch, <see cref="OwnNetworkRpc.RPC_RequestSave"/>'s master-only
         /// guard), matching the original's own call-site-gated (not internally
         /// guarded) shape exactly - no internal IsMasterClient check added here either
-        ///
-        /// Writes to the same NON-canonical diagnostic path as <see cref="SavePlayerOffline"/>
-        /// (see its own remarks) - not a live cutover yet, M7 scope matches M6's
         /// </summary>
         public static void SavePlayerCoop(PluginConfig cfg, ManualLogSource log, OwnNetwork network)
         {
@@ -59,7 +51,7 @@ namespace PEAKQuickResume
                 SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
 
                 // Mirrors the original's own stale-coop-file cleanup (decompile 4201-4228):
-                // deletes existing DIAGNOSTIC captures for this exact ascent bucket before
+                // deletes existing canonical files for this exact ascent bucket before
                 // rewriting them fresh, so a player who left doesn't leave a stale file
                 // behind. Matches the original's own gap exactly: only the per-ascent
                 // bucket is cleaned, never the CustomRun bucket - not our bug to fix here
@@ -67,10 +59,10 @@ namespace PEAKQuickResume
                 {
                     try
                     {
-                        string coopDiagDir = Path.GetDirectoryName(OwnSavePaths.ForDiagnosticCapture(target, offline: false, userId: "x"))!;
-                        if (Directory.Exists(coopDiagDir))
+                        string coopDir = Path.GetDirectoryName(OwnSavePaths.For(target, offline: false, userId: "x"))!;
+                        if (Directory.Exists(coopDir))
                         {
-                            foreach (string file in Directory.GetFiles(coopDiagDir))
+                            foreach (string file in Directory.GetFiles(coopDir))
                             {
                                 if (file.Contains($"peak_save_{target.Ascent}_"))
                                     File.Delete(file);
@@ -79,7 +71,7 @@ namespace PEAKQuickResume
                     }
                     catch (Exception e)
                     {
-                        log?.LogError($"OwnSaveCapture.SavePlayerCoop: error while deleting stale diagnostic files: {e}");
+                        log?.LogError($"OwnSaveCapture.SavePlayerCoop: error while deleting stale save files: {e}");
                     }
                 }
 
@@ -99,7 +91,7 @@ namespace PEAKQuickResume
                     }
 
                     string userId = NetworkingUtilities.GetUserId(player);
-                    string path = OwnSavePaths.ForDiagnosticCapture(target, offline: false, userId: userId);
+                    string path = OwnSavePaths.For(target, offline: false, userId: userId);
 
                     Character character = player.character;
                     Vector3 pos = character != null ? character.Head : player.transform.position;
@@ -166,8 +158,16 @@ namespace PEAKQuickResume
                         + $"Pos: {pos} Scene: {sceneName}, Items: {inventoryStates.Count}.");
                 }
 
-                // Mirrors decompile line 4586: RpcTarget.Others, "Saved game progress"
+                // Mirrors decompile lines 4585-4586: local ShowMessage on the host, then
+                // RpcTarget.Others so every client sees it too
+                network?.MessageOverlay?.Show("Saved game progress", new Color(0.5f, 1f, 0.5f, 1f), 4f);
                 network?.SendMessageOthers("Saved game progress", "success", 4f);
+
+                // Phase 8 M9: our own capture is now the canonical writer, so it has to
+                // independently trigger the same two steps SavePatch's postfix used to
+                // apply only when the checkpoint mod's own save methods were called
+                BackpackSaveMitigation.ApplyPendingRestores(offline: false, log);
+                SaveArchive.Sync(offline: false, log);
             }
             catch (Exception e)
             {
@@ -188,12 +188,9 @@ namespace PEAKQuickResume
                 }
 
                 // Matches GetPlayerSaveFile exactly: custom runs save to their own file
-                // regardless of ascent, read live off RunSettings.IsCustomRun. Written to
-                // a NON-canonical diagnostic path for now (see OwnSavePaths.ForDiagnosticCapture) -
-                // this milestone proves we CAN produce an equivalent file, it does not yet
-                // replace the checkpoint mod as the live save-file writer
+                // regardless of ascent, read live off RunSettings.IsCustomRun
                 SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
-                string path = OwnSavePaths.ForDiagnosticCapture(target, offline: true, userId: "");
+                string path = OwnSavePaths.For(target, offline: true, userId: "");
 
                 Character localCharacter = Character.localCharacter;
                 Vector3 pos = localCharacter != null ? localCharacter.Head : localPlayer.transform.position;
@@ -261,6 +258,14 @@ namespace PEAKQuickResume
                 File.WriteAllText(path, JsonConvert.SerializeObject(data, Formatting.Indented));
 
                 log?.LogInfo($"OwnSaveCapture: position + inventory saved. Pos: {pos} Scene: {sceneName}, Items: {inventoryStates.Count}.");
+
+                // Phase 8 M9: our own capture is now the canonical writer, so it has to
+                // independently trigger the same two steps SavePatch's postfix used to
+                // apply only when the checkpoint mod's own save methods were called.
+                // Matches the original SavePlayerOffline exactly: no on-screen message
+                // for a solo autosave (silent), unlike SavePlayerCoop's above
+                BackpackSaveMitigation.ApplyPendingRestores(offline: true, log);
+                SaveArchive.Sync(offline: true, log);
             }
             catch (Exception e)
             {

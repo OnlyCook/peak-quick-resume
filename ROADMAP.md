@@ -41,8 +41,20 @@ genuine behavioral fix (not a literal port) - coop now hardcodes
 activation, since only the former actually syncs the new segment/biome to
 clients. Maintainer confirmed: solo unaffected, coop loading now works
 perfectly (host + client, multiple loads each).** M8 (cut over Phase 6
-mitigations + F7/F1 UI to our own types, drop `TeleportConfigOverride`'s
-now-provably-broken Shift/Alt no-op) is next.**
+mitigations + F7/F1 UI to our own types) is **DONE (session 15)**: Shift/Alt
+teleport override and the kiln-workaround config retired entirely (maintainer
+decision, not deferred to M9), boarding-pass island-toggle button (Phase 7)
+also removed entirely (separate maintainer decision, same session) - see
+below. **M9 (drop the checkpoint mod as a runtime requirement) got its code
+side done session 16, 2026-07-10: own message overlay (replacing
+`CheckpointInterop.TryShowMessage` everywhere), `OwnSaveCapture` cut over to
+the canonical save path with its own archive/backpack-mitigation triggers,
+`BackpackSaveMitigation` off checkpoint-mod reflection, F1's own key
+listener, `[BepInDependency]` Hard→Soft - builds clean, deployed,
+packaging/manifest/README deliberately UNTOUCHED per maintainer request (code
+independence first). NOT YET IN-GAME TESTED with the checkpoint mod actually
+uninstalled** — see the M9 writeup below for the full list and what still
+needs testing.
 **Last updated:** 2026-07-10 (session 15).
 
 ## Phase 7 — boarding-pass island-toggle button (session 10, REMOVED session 15)
@@ -934,6 +946,99 @@ Milestones below), and only gets deleted once nothing calls into it anymore
     for anything (loot/prop layout determinism, matching old saves, etc.)
     before this uninstall step** - don't assume it's safe to lose by default,
     since nobody has ever tested this mod (or the game) without it in effect.
+
+  **Session 16 (2026-07-10) — the actual code-independence work done
+  (packaging/manifest/README deliberately NOT touched yet, per maintainer
+  request - code only, so the maintainer can test running without the
+  checkpoint mod installed at all):**
+  1. **`OwnMessageOverlay.cs` (new):** our own top-of-screen transient
+     message overlay (own Canvas, `SavePicker.FindGameFont()`, word-wrap
+     baked in from the start) replacing `CheckpointInterop.TryShowMessage`
+     everywhere - `Plugin.cs`, `ResumeOrchestrator.cs`, `RestartOrchestrator.cs`,
+     `TeleportWatchdog.cs`, `OwnNetworkRpc.RPC_SendMessage`. Every on-screen
+     message this mod shows now works with zero checkpoint-mod involvement.
+     `CheckpointInterop.TryShowMessage`/`_showMessage` deleted (fully dead
+     once nothing called it - `SavegameLoadedMessagePatch`/`MessageOverlayWrapPatch`
+     patch the checkpoint mod's OWN `ShowMessage` independently via
+     `AccessTools.Method`, unaffected).
+  2. **`ResumeOrchestrator.RequestResume`'s hard gate fixed:** it used to
+     refuse to run AT ALL if `!_checkpoint.IsAvailable`, even though the
+     entire restore path had been our own code since M7. Now only refuses if
+     BOTH `_ownLoadEntryPoints` and the checkpoint interop are unavailable.
+  3. **`OwnSaveCapture` is now the CANONICAL save writer**, not a diagnostic-
+     only one (`OwnSavePaths.For` instead of the now-deleted
+     `ForDiagnosticCapture`/`OwnCapture` folder). Since `SaveArchive.Sync`/
+     `BackpackSaveMitigation.ApplyPendingRestores` used to only run from
+     `SavePatch`'s postfix on the CHECKPOINT MOD's own save methods, our own
+     capture now calls both directly right after writing - the F7 picker's
+     archive and the dropped-backpack mitigation both work with zero
+     checkpoint-mod involvement. `SavePlayerCoop` also gained the local
+     "Saved game progress" message the decompile's own host-side call showed
+     (a gap from the original M7 port - only the RPC-to-Others half was
+     ported, the host itself never saw its own confirmation).
+  4. **`BackpackSaveMitigation` repointed off `CheckpointInterop.ReadItemStateValues`**
+     onto a new `OwnItemStateIO.ReadItemStateValues` (direct game-type
+     reflection, matching every other read/write helper in that file) -
+     its own Harmony hooks were already vanilla-only (`CharacterItems.DropItemRpc`/
+     `Campfire.Light_Rpc`), so it's unconditionally applied now instead of
+     checkpoint-gated.
+  5. **`CampfireAutoSavePatch` gained its own cook-vs-light duplicate-save
+     fix** (the reliable `currentlyCookingItem`-field check `CampfireCookSaveFixPatch`
+     already used for the checkpoint mod's OWN trigger) - needed independently
+     since our own trigger is now authoritative for the canonical file, not
+     just an additive diagnostic observer.
+  6. **`HelpScreen` (F1) got its own independent key listener** in
+     `Plugin.Update()` (mirrors the F7 resume-key handling) - it used to only
+     ever open via `TutorialPatch` riding on the checkpoint mod's OWN F1 key
+     detection, which stopped working the moment the checkpoint mod became
+     optional.
+  7. **`[BepInDependency]` changed from `HardDependency` to `SoftDependency`** -
+     BepInEx no longer refuses to load Quick Resume at all when the
+     checkpoint mod isn't installed (the doc comment on
+     `PluginInfo.CheckpointSaveGuid` already claimed "soft dependency" for
+     sessions - the attribute itself just hadn't matched it until now).
+  8. **`HelpScreenContent`** now conditionally hides the "Native load: press
+     F6" line and the whole teleport-bug-workaround section when the
+     checkpoint mod isn't installed (no native F6 to explain; the bug that
+     section describes was also the checkpoint mod's own segment-sync issue,
+     already fixed on our own path since M7's root-cause fix). `SavePicker`'s
+     now-fully-unused `CheckpointInterop` field/param removed too (its last
+     use, the footer indicator, was removed in M8).
+  9. Confirmed harmless as still-checkpoint-gated, correctly unchanged:
+     `TutorialPatch`/`SavePatch`/`CampfireCookSaveFixPatch`/`LoadingScreenPatch`/
+     `SavegameLoadedMessagePatch`/`MessageOverlayWrapPatch` all still only
+     apply `if (_checkpoint.CheckpointType != null)` - each is either purely
+     cosmetic (localizing the checkpoint mod's OWN native-F6 UI) or already
+     redundant with our own independent equivalent (watchdog arming, save
+     archiving). `CampfireRelightFix` also stays checkpoint-gated correctly -
+     it fixes a bug specific to the checkpoint mod's own native F6 path; our
+     own path has always folded its own relight fix directly into
+     `OwnTeleportSequence` (M3).
+  10. Full sweep confirmed `RunLauncher.cs`, `SaveArchive.cs`, `SaveDiscovery.cs`,
+      and every other file with zero remaining `CheckpointInterop` references
+      have no hidden dependency - the only files that still reference it at
+      all (`Plugin.cs`, `ResumeOrchestrator.cs`, `HelpScreen.cs`/`HelpScreenContent.cs`,
+      `CampfireRelightFix.cs`) do so behind a null/`IsAvailable` check.
+
+  **One known, deliberately-not-fixed consequence, worth knowing:** since
+  `OwnSaveCapture` now writes the canonical file unconditionally, if the
+  checkpoint mod IS STILL installed its own autosave patch fires on the same
+  campfire-light event too - both write the same file moments apart, which
+  can produce two near-duplicate entries in the F7 picker's archive for what
+  is really one save event (each write gets its own timestamp,
+  `SaveArchive.Sync`'s de-dup keys off exact write-time). Not addressed
+  because the maintainer's actual goal this session is testing WITHOUT the
+  checkpoint mod installed, where this never happens (only one writer). Flag
+  for a future session if the checkpoint mod is ever kept installed
+  side-by-side again for real.
+
+  Builds clean (`dotnet build -c Release -p:DeployToProfile=true`, zero
+  warnings/errors), deployed. **Not yet in-game tested** - needs the
+  maintainer to actually try running with the checkpoint mod uninstalled:
+  solo F7 save/load, F1 help screen, on-screen messages (including error
+  cases like "no save found"), and ideally a coop session too (autosave +
+  resume) to confirm `SavePlayerCoop`'s canonical write path and the F7
+  picker's archive both work with no checkpoint mod present at all.
 
 ### Attribution
 

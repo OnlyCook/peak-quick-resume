@@ -4,7 +4,7 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// Translations for every on-screen message OUR code triggers via
-    /// <see cref="CheckpointInterop.TryShowMessage"/> (from <see cref="Plugin"/>,
+    /// <see cref="OwnMessageOverlay.Show"/> (from <see cref="Plugin"/>,
     /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>), plus two
     /// that override the checkpoint mod's own English-only strings at their point of
     /// use: <see cref="MsgKey.LoadingSavegame"/> ("Loading savegame..." on its loading

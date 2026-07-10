@@ -42,7 +42,7 @@ namespace PEAKQuickResume
     {
         private ManualLogSource _log;
         private PluginConfig _cfg;
-        private CheckpointInterop _checkpoint;
+        private OwnMessageOverlay _messageOverlay;
         private Coroutine _running;
         private Vector3? _pendingTargetPos;
         private bool _loadInProgress;
@@ -79,11 +79,11 @@ namespace PEAKQuickResume
         /// <summary>Set once when the current/most recent watch window flags a bad teleport; null otherwise</summary>
         public (float time, Vector3 targetPos)? LastFlaggedTeleport { get; private set; }
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint)
+        public void Init(ManualLogSource log, PluginConfig cfg, OwnMessageOverlay messageOverlay)
         {
             _log = log;
             _cfg = cfg;
-            _checkpoint = checkpoint;
+            _messageOverlay = messageOverlay;
         }
 
         /// <summary>
@@ -405,11 +405,11 @@ namespace PEAKQuickResume
             string text = MessagesLocalization.Get(MsgKey.TeleportBugHint);
             var color = new Color(1f, 0.7f, 0.2f, 1f);
 
-            _checkpoint?.TryShowMessage(text, color, 6f);
+            _messageOverlay?.Show(text, color, 6f);
             yield return new WaitForSeconds(2f);
-            _checkpoint?.TryShowMessage(text, color, 6f);
+            _messageOverlay?.Show(text, color, 6f);
             yield return new WaitForSeconds(3f);
-            _checkpoint?.TryShowMessage(text, color, 6f);
+            _messageOverlay?.Show(text, color, 6f);
         }
     }
 }

@@ -46,7 +46,6 @@ namespace PEAKQuickResume
         private MethodInfo _preStartSetSegment;
         private MethodInfo _loadPlayerOffline;
         private MethodInfo _loadPlayerCoop;
-        private MethodInfo _showMessage; // optional (on-screen feedback only)
         private MethodInfo _checkReadyStatus; // optional (coop readiness gate)
         private FieldInfo _readyCheckConfigField; // optional (ConfigEntry<bool>)
 
@@ -122,9 +121,6 @@ namespace PEAKQuickResume
                 _preStartSetSegment   = AccessTools.Method(_pluginType, "PreStartSetSegment");
                 _loadPlayerOffline    = AccessTools.Method(_pluginType, "LoadPlayerOffline");
                 _loadPlayerCoop       = AccessTools.Method(_pluginType, "LoadPlayerCoop");
-                // ShowMessage(string text, Color color, float duration, bool disableMessage)
-                _showMessage          = AccessTools.Method(_pluginType, "ShowMessage",
-                                            new[] { typeof(string), typeof(UnityEngine.Color), typeof(float), typeof(bool) });
                 // Coop readiness gate, LoadPlayerCoop refuses until this is true
                 _checkReadyStatus     = AccessTools.Method(_pluginType, "CheckReadyStatusForPlayers");
                 _readyCheckConfigField = AccessTools.Field(_pluginType, "configAdvancedEnableClientReadyStatusCheck");
@@ -152,7 +148,6 @@ namespace PEAKQuickResume
                 _log.LogInfo($"  PreStartSetSegment ... {(_preStartSetSegment != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  LoadPlayerOffline .... {(_loadPlayerOffline != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  LoadPlayerCoop ....... {(_loadPlayerCoop != null ? "OK" : "MISSING")}");
-                _log.LogInfo($"  ShowMessage .......... {(_showMessage != null ? "OK" : "MISSING (non-fatal, on-screen text only)")}");
                 _log.LogInfo($"  CheckReadyStatus ..... {(_checkReadyStatus != null ? "OK" : "MISSING (non-fatal, coop readiness)")}");
                 _log.LogInfo($"  readyStatusConfig .... {(_readyCheckConfigField != null ? "OK" : "MISSING (non-fatal, coop readiness)")}");
                 _log.LogInfo($"  teleportJumpLogic .... {(_teleportJumpLogicField != null ? "OK" : "MISSING (non-fatal, campfire-relight fix unavailable)")}");
@@ -275,21 +270,6 @@ namespace PEAKQuickResume
                 return result is bool b ? b : true;
             }
             catch (Exception e) { _log.LogWarning($"AllClientsReady failed (assuming ready): {e.Message}"); return true; }
-        }
-
-        /// <summary>
-        /// Best-effort on-screen message using the checkpoint mod's own overlay so it
-        /// looks/behaves like its F6 prompts. Never throws; a failure just means no text
-        /// </summary>
-        public void TryShowMessage(string text, UnityEngine.Color color, float duration = 2.5f)
-        {
-            try
-            {
-                var inst = Instance;
-                if (inst == null || _showMessage == null) return;
-                _showMessage.Invoke(inst, new object[] { text, color, duration, false });
-            }
-            catch (Exception e) { _log.LogWarning($"TryShowMessage failed (non-fatal): {e.Message}"); }
         }
 
         /// <summary>
