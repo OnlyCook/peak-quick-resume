@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using BepInEx.Logging;
 using Newtonsoft.Json;
+using Peak.Network;
+using Photon.Pun;
 using UnityEngine;
 
 namespace PEAKQuickResume
@@ -37,6 +39,141 @@ namespace PEAKQuickResume
         // Matches ItemStateKeyNames entries whose exclusion is checked against
         // ExcludedItemIds when capturing (decompile: only these two)
         private static readonly HashSet<string> ExcludableKeys = new HashSet<string> { "ItemUses", "UseRemainingPercentage" };
+
+        /// <summary>
+        /// Mirrors SavePlayerCoop exactly (decompile 4139-4603). Unlike
+        /// <see cref="SavePlayerOffline"/> (one local player), this saves EVERY
+        /// connected player's own file in one pass - only ever actually invoked on the
+        /// master client at its call sites (<see cref="CampfireAutoSavePatch"/>'s
+        /// master branch, <see cref="OwnNetworkRpc.RPC_RequestSave"/>'s master-only
+        /// guard), matching the original's own call-site-gated (not internally
+        /// guarded) shape exactly - no internal IsMasterClient check added here either
+        ///
+        /// Writes to the same NON-canonical diagnostic path as <see cref="SavePlayerOffline"/>
+        /// (see its own remarks) - not a live cutover yet, M7 scope matches M6's
+        /// </summary>
+        public static void SavePlayerCoop(PluginConfig cfg, ManualLogSource log, OwnNetwork network)
+        {
+            try
+            {
+                SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
+
+                // Mirrors the original's own stale-coop-file cleanup (decompile 4201-4228):
+                // deletes existing DIAGNOSTIC captures for this exact ascent bucket before
+                // rewriting them fresh, so a player who left doesn't leave a stale file
+                // behind. Matches the original's own gap exactly: only the per-ascent
+                // bucket is cleaned, never the CustomRun bucket - not our bug to fix here
+                if (PhotonNetwork.IsMasterClient && !target.IsCustom)
+                {
+                    try
+                    {
+                        string coopDiagDir = Path.GetDirectoryName(OwnSavePaths.ForDiagnosticCapture(target, offline: false, userId: "x"))!;
+                        if (Directory.Exists(coopDiagDir))
+                        {
+                            foreach (string file in Directory.GetFiles(coopDiagDir))
+                            {
+                                if (file.Contains($"peak_save_{target.Ascent}_"))
+                                    File.Delete(file);
+                            }
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogError($"OwnSaveCapture.SavePlayerCoop: error while deleting stale diagnostic files: {e}");
+                    }
+                }
+
+                var playerNames = new List<string>();
+                Player[] allPlayers = UnityEngine.Object.FindObjectsByType<Player>(UnityEngine.FindObjectsSortMode.None);
+                foreach (Player p in allPlayers)
+                {
+                    if (p != null) playerNames.Add(p.character.characterName);
+                }
+
+                foreach (Player player in allPlayers)
+                {
+                    if (player == null)
+                    {
+                        log?.LogError("OwnSaveCapture.SavePlayerCoop: no Player found - cannot save progress.");
+                        continue;
+                    }
+
+                    string userId = NetworkingUtilities.GetUserId(player);
+                    string path = OwnSavePaths.ForDiagnosticCapture(target, offline: false, userId: userId);
+
+                    Character character = player.character;
+                    Vector3 pos = character != null ? character.Head : player.transform.position;
+                    if (character == null)
+                        log?.LogWarning("OwnSaveCapture.SavePlayerCoop: Character is null - used player.transform as fallback.");
+
+                    string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+
+                    List<OwnSavedItemState> inventoryStates = CaptureInventory(player, cfg, log);
+                    List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(player, cfg, log);
+
+                    CharacterAfflictions afflictions = character.refs.afflictions;
+                    float[] currentStatuses = afflictions.currentStatuses.ToArray();
+                    float extraStamina = character.GetTotalStamina() - (1f - currentStatuses.Sum());
+                    extraStamina = Mathf.Clamp(extraStamina, 0f, 1f);
+                    extraStamina = (float)Math.Round(extraStamina, 2);
+
+                    RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
+                    float timePlayed = (float)Math.Round(runManager.timeSinceRunStarted, 3);
+
+                    DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
+                    float timeOfDay = (float)Math.Round(dayNight.timeOfDay, 3);
+
+                    MapHandler mapHandler = UnityEngine.Object.FindFirstObjectByType<MapHandler>();
+                    Segment currentSegment = mapHandler != null ? mapHandler.GetCurrentSegment() : Segment.Beach;
+                    string campfireName = currentSegment.ToString();
+
+                    var biomeNames = new List<string>();
+                    foreach (Biome.BiomeType biome in mapHandler.biomes)
+                    {
+                        biomeNames.Add(biome.ToString());
+                        if (biome == Biome.BiomeType.Roots && currentSegment == Segment.Tropics) campfireName = biome.ToString();
+                        else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
+                    }
+
+                    var data = new OwnSaveData
+                    {
+                        settingsVersion = 6,
+                        posX = pos.x,
+                        posY = pos.y,
+                        posZ = pos.z,
+                        saveDate = DateTime.Now.ToString("dd.MM.yyyy | HH:mm:ss"),
+                        playerNames = playerNames,
+                        campfireName = campfireName,
+                        timePlayed = timePlayed,
+                        timeOfDay = timeOfDay,
+                        sceneName = sceneName,
+                        biomes = mapHandler.biomes,
+                        biome_names = biomeNames,
+                        segment = currentSegment,
+                        hasBackpack = player.backpackSlot != null && player.backpackSlot.hasBackpack,
+                        isSkeleton = character.data.isSkeleton,
+                        inventoryItemStates = inventoryStates,
+                        backpackItemStates = backpackStates,
+                        afflictions_current = currentStatuses,
+                        extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                        extModsPeakapaloozaPEAKTOBEACH = false,
+                    };
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                    File.WriteAllText(path, JsonConvert.SerializeObject(data, Formatting.Indented));
+
+                    log?.LogInfo($"OwnSaveCapture.SavePlayerCoop: position + inventory saved for {userId}. "
+                        + $"Pos: {pos} Scene: {sceneName}, Items: {inventoryStates.Count}.");
+                }
+
+                // Mirrors decompile line 4586: RpcTarget.Others, "Saved game progress"
+                network?.SendMessageOthers("Saved game progress", "success", 4f);
+            }
+            catch (Exception e)
+            {
+                log?.LogError($"OwnSaveCapture.SavePlayerCoop failed: {e}");
+            }
+        }
 
         /// <summary>Mirrors SavePlayerOffline exactly (decompile 3715-4137)</summary>
         public static void SavePlayerOffline(PluginConfig cfg, ManualLogSource log)

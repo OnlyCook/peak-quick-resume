@@ -13,11 +13,23 @@ namespace PEAKQuickResume
     /// <c>CheckpointNetwork</c> (decompile 461-695) + <c>CreatePhotonView</c> (961-1003)
     /// + <c>CheckReadyStatusForPlayers</c>/<c>SendReadyStatusToMaster</c> (1005-1054)
     ///
-    /// M1 scope only: the readiness-gate RPC (client -> host "I'm ready"). The
-    /// remaining RPCs (save request, message relay, loading screen, hero title,
-    /// endscreen close, afflictions) are ported in M7 alongside the rest of the coop
-    /// path - see ROADMAP.md Phase 8. Not wired into <see cref="ResumeOrchestrator"/>
-    /// yet; this milestone only proves the channel itself works
+    /// M7 adds the rest of the RPC surface needed for coop:
+    /// <c>RPC_RequestSave</c>, <c>RPC_RecentlyLitCampfire</c>,
+    /// <c>RPC_RequestFalldamageProtection</c>, <c>RPC_SendMessage</c>,
+    /// <c>RPC_Loadingscreen</c>, <c>RPC_CloseEndscreen</c>, <c>RPC_ApplyAfflictions</c>
+    /// (decompile 507-682). <c>RPC_SendModVersionToMaster</c>/<c>RPC_SetHeroTitle</c>/
+    /// <c>RPC_SyncMapVisuals</c> are deliberately NOT ported (see ROADMAP.md Phase 8:
+    /// mod-version check unused, hero-title banner is cosmetic, PEAKapalooza-only)
+    ///
+    /// <c>RPC_Loadingscreen</c> is repurposed here: the checkpoint mod's own "Loading
+    /// savegame..."/"Save game loaded!" UI captions are deliberately not ported (M3/M5,
+    /// purely cosmetic), but that same pair of moments is also the ONLY signal that
+    /// arms <see cref="TeleportWatchdog"/>'s load window on every machine
+    /// (<see cref="LoadingScreenPatch"/>/<see cref="SavegameLoadedMessagePatch"/> hook
+    /// the checkpoint mod's OWN methods for this, which our own path never calls) - so
+    /// <c>RPC_Loadingscreen</c>'s receiver here drives the watchdog directly instead of
+    /// showing a caption, keeping that Phase 6 mitigation alive for our own path in
+    /// coop (see ROADMAP.md Phase 8 M7 / Phase 6)
     ///
     /// Uses a distinct <c>ViewID</c> (69420) from the checkpoint mod's own hardcoded
     /// 19420 (decompile line 992) since both mods' PhotonViews coexist during the
@@ -33,6 +45,9 @@ namespace PEAKQuickResume
 
         private ManualLogSource _log;
         private PluginConfig _cfg;
+        internal CheckpointInterop Checkpoint { get; private set; }
+        internal TeleportWatchdog Watchdog { get; private set; }
+        internal OwnLoadEntryPoints EntryPoints { get; private set; }
 
         private GameObject _networkGo;
         private PhotonView _pv;
@@ -48,6 +63,19 @@ namespace PEAKQuickResume
             _log = log;
             _cfg = cfg;
             CreatePhotonView();
+        }
+
+        /// <summary>
+        /// M7: wires the dependencies the rest of the RPC surface needs, set after
+        /// construction since <see cref="OwnLoadEntryPoints"/> is created after this
+        /// object in <c>Plugin.Awake</c> (mirrors <see cref="Init"/>'s own late-binding
+        /// shape rather than restructuring construction order)
+        /// </summary>
+        internal void AttachDependencies(CheckpointInterop checkpoint, TeleportWatchdog watchdog, OwnLoadEntryPoints entryPoints)
+        {
+            Checkpoint = checkpoint;
+            Watchdog = watchdog;
+            EntryPoints = entryPoints;
         }
 
         private void CreatePhotonView()
@@ -172,6 +200,70 @@ namespace PEAKQuickResume
                 return true;
             }
         }
+
+        // --- M7: outbound RPC senders, host-called (mirrors each original call site's
+        // own RpcTarget exactly - see decompile line references on each) ---
+
+        /// <summary>Mirrors decompile line 2280: RpcTarget.All (0), so the host arms its own window too</summary>
+        public void RequestFalldamageProtectionAll(int seconds)
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_RequestFalldamageProtection), RpcTarget.All, seconds); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.RequestFalldamageProtectionAll failed: {e.Message}"); }
+        }
+
+        /// <summary>Mirrors decompile line 2292: RpcTarget.Others (1)</summary>
+        public void CloseEndscreenOthers()
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_CloseEndscreen), RpcTarget.Others); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.CloseEndscreenOthers failed: {e.Message}"); }
+        }
+
+        /// <summary>Mirrors decompile lines 2973/4586: RpcTarget.Others (1)</summary>
+        public void SendMessageOthers(string message, string colorKey, float seconds)
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_SendMessage), RpcTarget.Others, message, colorKey, seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.SendMessageOthers failed: {e.Message}"); }
+        }
+
+        /// <summary>
+        /// Mirrors decompile lines 2274/2964's RpcTarget.Others (1), repurposed to drive
+        /// TeleportWatchdog on each client instead of showing a caption - see class remarks
+        /// </summary>
+        public void LoadingScreenOthers(bool enable)
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_Loadingscreen), RpcTarget.Others, enable ? "true" : "false", ""); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.LoadingScreenOthers failed: {e.Message}"); }
+        }
+
+        /// <summary>Mirrors decompile line 2909: targeted at the specific player's owner</summary>
+        public void ApplyAfflictionsTo(PhotonView playerView, string userId, float[] statuses, float extraStamina)
+        {
+            try
+            {
+                if (playerView == null || playerView.Owner == null) return;
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_ApplyAfflictions), playerView.Owner, userId, statuses, extraStamina);
+            }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.ApplyAfflictionsTo failed: {e.Message}"); }
+        }
+
+        /// <summary>Mirrors decompile line 162: RpcTarget.Others (1), sent by whichever machine actually saved</summary>
+        public void RecentlyLitCampfireOthers()
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_RecentlyLitCampfire), RpcTarget.Others); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.RecentlyLitCampfireOthers failed: {e.Message}"); }
+        }
+
+        /// <summary>Mirrors decompile line 167: RpcTarget.MasterClient (2), client -> host</summary>
+        public void RequestSaveToMaster()
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_RequestSave), RpcTarget.MasterClient); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.RequestSaveToMaster failed: {e.Message}"); }
+        }
+
+        /// <summary>Called by <see cref="OwnNetworkRpc.RPC_RequestSave"/> on the master client</summary>
+        internal void SavePlayerCoopFromRpc() => OwnSaveCapture.SavePlayerCoop(_cfg, _log, this);
+
+        internal void LogError(string message) => _log?.LogError(message);
     }
 
     /// <summary>
@@ -187,6 +279,103 @@ namespace PEAKQuickResume
         public void RPC_SendReadyStatusToMaster(string userId, string userName)
         {
             Owner?.OnClientReportedReady(userId, userName);
+        }
+
+        /// <summary>Mirrors RPC_RequestSave exactly (decompile 507-516): master-only</summary>
+        [PunRPC]
+        public void RPC_RequestSave()
+        {
+            try
+            {
+                if (!PhotonNetwork.IsMasterClient) return;
+                Owner?.SavePlayerCoopFromRpc();
+                Owner?.EntryPoints?.ArmRecentlyLitCampfireCooldown(32f);
+            }
+            catch { /* mirrors the original's own lack of a try/catch here being harmless - kept safe regardless */ }
+        }
+
+        /// <summary>Mirrors RPC_RecentlyLitCampfire exactly (decompile 518-525): non-master only</summary>
+        [PunRPC]
+        public void RPC_RecentlyLitCampfire()
+        {
+            if (PhotonNetwork.IsMasterClient) return;
+            Owner?.EntryPoints?.ArmRecentlyLitCampfireCooldown(32f);
+        }
+
+        /// <summary>Mirrors RPC_RequestFalldamageProtection exactly (decompile 527-536)</summary>
+        [PunRPC]
+        public void RPC_RequestFalldamageProtection(int seconds)
+        {
+            OwnFallDamageProtection.Activate(seconds);
+        }
+
+        /// <summary>
+        /// Mirrors RPC_SendMessage's dispatch shape (decompile 538-563), colors reduced to
+        /// our own known set (only ever sent by our own code, not an open text channel) -
+        /// reuses the checkpoint mod's own overlay via <see cref="CheckpointInterop.TryShowMessage"/>
+        /// so it looks identical to every other message this mod shows
+        /// </summary>
+        [PunRPC]
+        public void RPC_SendMessage(string message, string colorKey, string seconds)
+        {
+            float duration = 4f;
+            float.TryParse(seconds, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out duration);
+
+            Color color = colorKey switch
+            {
+                "error" => new Color(1f, 0.5f, 0.5f, 1f),
+                "success" => new Color(0.5f, 1f, 0.5f, 1f),
+                "warning" => new Color(1f, 0.8f, 0.4f, 1f),
+                _ => new Color(0.6f, 0.8f, 1f, 1f),
+            };
+            Owner?.Checkpoint?.TryShowMessage(message, color, duration);
+        }
+
+        /// <summary>
+        /// Repurposed - see <see cref="OwnNetwork"/>'s class remarks: no caption, drives
+        /// <see cref="TeleportWatchdog"/>'s load window on this (client) machine instead
+        /// </summary>
+        [PunRPC]
+        public void RPC_Loadingscreen(string enable, string _unusedMessage)
+        {
+            if (enable == "true") Owner?.Watchdog?.BeginLoadWindow();
+            else Owner?.Watchdog?.ArmPendingWatch();
+        }
+
+        /// <summary>Mirrors RPC_CloseEndscreen exactly (decompile 595-610)</summary>
+        [PunRPC]
+        public void RPC_CloseEndscreen()
+        {
+            try
+            {
+                EndScreen endScreen = UnityEngine.Object.FindFirstObjectByType<EndScreen>();
+                if (endScreen != null && endScreen.isOpen)
+                    HarmonyLib.AccessTools.Method(typeof(MenuWindow), "Close")?.Invoke(endScreen, null);
+            }
+            catch { /* matches the original's own swallow */ }
+        }
+
+        /// <summary>Mirrors RPC_ApplyAfflictions exactly (decompile 612-682)</summary>
+        [PunRPC]
+        public void RPC_ApplyAfflictions(string userId, float[] statuses, float extraStamina)
+        {
+            try
+            {
+                Character localCharacter = Character.localCharacter;
+                if (localCharacter == null) return;
+                if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
+
+                CharacterAfflictions afflictions = localCharacter.refs.afflictions;
+                if (statuses != null && afflictions.currentStatuses != null && afflictions.currentStatuses.Length == statuses.Length)
+                    Array.Copy(statuses, afflictions.currentStatuses, afflictions.currentStatuses.Length);
+
+                try { localCharacter.SetExtraStamina(extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f); }
+                catch { /* matches the original's own swallow */ }
+            }
+            catch (Exception e)
+            {
+                Owner?.LogError($"RPC_ApplyAfflictions error: {e}");
+            }
         }
     }
 }

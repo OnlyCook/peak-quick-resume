@@ -42,6 +42,9 @@ namespace PEAKQuickResume
 
         public bool CurrentlyLoading { get; private set; }
 
+        /// <summary>Exposes the shared <see cref="OwnNetwork"/> channel (RPCs, watchdog/checkpoint refs attached to it) to <see cref="OwnTeleportSequence"/>/<see cref="OwnInventoryRestore"/></summary>
+        internal OwnNetwork Network => _network;
+
         /// <summary>
         /// Mirrors the checkpoint mod's own <c>loadedSaveFileThisRound</c> (decompile
         /// field ~833): false for the FIRST load after a fresh run start, true for any

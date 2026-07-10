@@ -168,12 +168,17 @@ namespace PEAKQuickResume
 
             bool offline = PhotonNetwork.OfflineMode;
 
-            if (offline && _ownLoadEntryPoints != null)
+            if (_ownLoadEntryPoints != null)
             {
-                // Phase 8 M3: solo now resolves entirely through our own port - no
-                // checkpoint-mod calls needed for this step (our own MapBakerLevelOverridePatch
-                // doesn't need an equivalent "use saved island" toggle, see its own remarks)
-                if (!_ownLoadEntryPoints.TryPreStartSetSegment(target, offline: true, userId: ""))
+                // Phase 8 M3 (solo) / M7 (coop): resolves entirely through our own port -
+                // no checkpoint-mod calls needed for this step (our own
+                // MapBakerLevelOverridePatch doesn't need an equivalent "use saved
+                // island" toggle, see its own remarks). Coop uses the LOCAL (host's own)
+                // userId, matching PreStartSetSegment's own behavior exactly (decompile
+                // 914-954: always the CALLER's own save file, host-only since only the
+                // host ever reaches this call at all - see RequestResume's IsHost guard)
+                string userId = offline ? "" : OwnSavePaths.LocalUserId();
+                if (!_ownLoadEntryPoints.TryPreStartSetSegment(target, offline, userId))
                 {
                     Fail($"No checkpoint save found for {target} (TryPreStartSetSegment returned false)");
                     Msg(target.IsCustom
@@ -250,32 +255,44 @@ namespace PEAKQuickResume
 
             // Coop: LoadPlayerCoop refuses ("Please wait until everybody is ready!")
             // until every client has reported ready. Clients auto-report once they're
-            // in the level, so wait that out here instead of firing a doomed load
-            if (!PhotonNetwork.OfflineMode && _checkpoint.ReadyCheckEnabled())
+            // in the level, so wait that out here instead of firing a doomed load.
+            // Phase 8 M7: our own path uses OwnNetwork's own readiness gate instead of
+            // the checkpoint mod's (same shape, see OwnNetwork.CheckReadyStatusForPlayers)
+            if (!PhotonNetwork.OfflineMode)
             {
-                _log.LogInfo("[stage] Coop: waiting for all clients to report ready...");
-                Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
-                yield return WaitFor(() => _checkpoint.AllClientsReady(), timeout, "all clients ready");
-                if (!_lastWaitOk)
+                bool readyCheckEnabled = _ownLoadEntryPoints != null
+                    ? _cfg.OwnEnableClientReadyStatusCheck.Value
+                    : _checkpoint.ReadyCheckEnabled();
+                if (readyCheckEnabled)
                 {
-                    Fail("Timed out waiting for all clients to be ready (some players may still be loading)");
-                    Msg(MessagesLocalization.Get(MsgKey.PlayersTimedOut), MsgError);
-                    yield break;
+                    _log.LogInfo("[stage] Coop: waiting for all clients to report ready...");
+                    Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
+                    Func<bool> allReady = _ownLoadEntryPoints != null
+                        ? (Func<bool>)(() => _ownLoadEntryPoints.Network.CheckReadyStatusForPlayers())
+                        : _checkpoint.AllClientsReady;
+                    yield return WaitFor(allReady, timeout, "all clients ready");
+                    if (!_lastWaitOk)
+                    {
+                        Fail("Timed out waiting for all clients to be ready (some players may still be loading)");
+                        Msg(MessagesLocalization.Get(MsgKey.PlayersTimedOut), MsgError);
+                        yield break;
+                    }
+                    _log.LogInfo("[stage] Coop: all clients ready.");
                 }
-                _log.LogInfo("[stage] Coop: all clients ready.");
             }
 
             bool loadOk;
-            if (offline && _ownLoadEntryPoints != null)
+            if (_ownLoadEntryPoints != null)
             {
-                // Phase 8 M3: solo loads go through our own restore path. No busy-wait
-                // guard needed yet (nothing concurrent can trigger it), and no Shift/Alt
-                // override applied - TeleportConfigOverride still only affects the
-                // checkpoint mod's own config, which our own path no longer consults;
-                // this is an explicit, temporary limitation until M8 repoints it onto our
-                // own PluginConfig entries. See ROADMAP.md Phase 8 M3
+                // Phase 8 M3 (solo) / M7 (coop): loads go through our own restore path.
+                // No busy-wait guard needed yet (nothing concurrent can trigger it), and
+                // no Shift/Alt override applied - TeleportConfigOverride still only
+                // affects the checkpoint mod's own config, which our own path no longer
+                // consults; this is an explicit, temporary limitation until M8 repoints
+                // it onto our own PluginConfig entries. See ROADMAP.md Phase 8 M3
                 _log.LogInfo("[stage] Triggering our own restore (Phase 8).");
-                loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline: true, userId: "");
+                string userId = offline ? "" : OwnSavePaths.LocalUserId();
+                loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline, userId);
             }
             else
             {

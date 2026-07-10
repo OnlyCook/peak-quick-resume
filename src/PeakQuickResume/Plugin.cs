@@ -104,6 +104,13 @@ namespace PEAKQuickResume
             _ownLoadEntryPoints.Init(Logger, _cfg, _ownNetwork, ownTeleportSequence);
             ownTeleportSequence.Init(Logger, _cfg, _ownLoadEntryPoints);
 
+            // Phase 8 M7: now that _watchdog/_checkpoint/_ownLoadEntryPoints all exist,
+            // wire them onto the channel so its RPC handlers (RPC_Loadingscreen ->
+            // TeleportWatchdog, RPC_SendMessage -> the checkpoint mod's own overlay,
+            // RPC_RequestSave/RPC_RecentlyLitCampfire -> OwnLoadEntryPoints' cooldowns)
+            // can reach them - see OwnNetwork.AttachDependencies
+            _ownNetwork.AttachDependencies(_checkpoint, _watchdog, _ownLoadEntryPoints);
+
             // Now that _ownLoadEntryPoints exists, wire the orchestrator (Phase 8 M3:
             // its SOLO path calls _ownLoadEntryPoints directly; coop is unchanged, still
             // via _checkpoint - see ResumeOrchestrator.cs)
@@ -123,7 +130,7 @@ namespace PEAKQuickResume
             // checkpoint mod's own still-active autosave patch. Writes to a NON-canonical
             // diagnostic path only (see OwnSaveCapture.cs) - does not touch the live
             // save file the checkpoint mod still writes and our own restore path still reads
-            CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, Logger);
+            CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, _ownNetwork, Logger);
 
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)

@@ -8,8 +8,9 @@ namespace PEAKQuickResume
     /// <summary>
     /// Our own copy of the checkpoint mod's <c>Campfire_AutoSave_Patch</c> (decompile
     /// 123-172): a Harmony postfix on <c>Campfire.Interact_CastFinished</c> that
-    /// triggers a save capture when a campfire is lit. Solo-only for now (M6); coop's
-    /// branch (host's own `SavePlayerCoop`/RPC_RequestSave relay) is M7's job.
+    /// triggers a save capture when a campfire is lit. M7 adds the coop branch (host's
+    /// own <c>SavePlayerCoop</c> + <c>RPC_RecentlyLitCampfire</c> relay, or a client's
+    /// <c>RPC_RequestSave</c> to the host), mirroring decompile 156-169 exactly.
     /// PEAKapalooza's branches are not ported (maintainer decision, see ROADMAP.md)
     ///
     /// **Runs ADDITIONALLY, alongside the checkpoint mod's own still-active patch on
@@ -23,7 +24,7 @@ namespace PEAKQuickResume
     /// </summary>
     public static class CampfireAutoSavePatch
     {
-        public static void Apply(Harmony harmony, PluginConfig cfg, OwnLoadEntryPoints entryPoints, ManualLogSource log)
+        public static void Apply(Harmony harmony, PluginConfig cfg, OwnLoadEntryPoints entryPoints, OwnNetwork network, ManualLogSource log)
         {
             try
             {
@@ -33,6 +34,7 @@ namespace PEAKQuickResume
 
                 _cfg = cfg;
                 _entryPoints = entryPoints;
+                _network = network;
                 _log = log;
             }
             catch (Exception e)
@@ -43,6 +45,7 @@ namespace PEAKQuickResume
 
         private static PluginConfig _cfg;
         private static OwnLoadEntryPoints _entryPoints;
+        private static OwnNetwork _network;
         private static ManualLogSource _log;
 
         // Mirrors AutoSaveOnCampfire's own (non-PEAKapalooza) guard/arm/dispatch shape
@@ -61,8 +64,18 @@ namespace PEAKQuickResume
                 _log?.LogInfo("CampfireAutoSavePatch: campfire lit -> diagnostic capture triggered.");
 
                 if (PhotonNetwork.OfflineMode)
+                {
                     OwnSaveCapture.SavePlayerOffline(_cfg, _log);
-                // Coop: M7's job (host's own capture / RPC_RequestSave-equivalent relay)
+                }
+                else if (PhotonNetwork.IsMasterClient)
+                {
+                    _network?.RecentlyLitCampfireOthers();
+                    OwnSaveCapture.SavePlayerCoop(_cfg, _log, _network);
+                }
+                else
+                {
+                    _network?.RequestSaveToMaster();
+                }
             }
             catch (Exception e)
             {

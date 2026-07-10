@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using Peak.Network;
 using Photon.Pun;
 using UnityEngine;
+using Zorro.Core.Serizalization;
 
 namespace PEAKQuickResume
 {
@@ -91,9 +92,13 @@ namespace PEAKQuickResume
                         LoadBackpackFromSave(ch.player, data, cfg, log);
                 }
 
-                // M5: afflictions/skeleton/extra-stamina restore (decompile 2845-2934).
-                // Solo-only branch ported; the coop (RPC_ApplyAfflictions) branch is
-                // M7's job, same as everywhere else coop-specific in this port
+                // M5/M7: afflictions/skeleton/extra-stamina restore (decompile 2845-2934).
+                // Offline: applied directly to the (only) local character. Coop: the
+                // host can't write another client's Character fields locally in any way
+                // that's actually visible to that client, so it RPCs RPC_ApplyAfflictions
+                // to that player's own owner instead (decompile 2889-2933) - the skeleton
+                // flag is the one exception, applied directly here since it's master-
+                // authoritative networked state, not local-only Character data
                 if (cfg.OwnAfflictions.Value && data != null && offline)
                 {
                     try
@@ -113,9 +118,45 @@ namespace PEAKQuickResume
                     }
                     catch { /* matches the original's own outer swallow */ }
                 }
+                else if (cfg.OwnAfflictions.Value && data != null && !offline && PhotonNetwork.IsMasterClient && data.afflictions_current != null)
+                {
+                    try { ch.data.SetSkeleton(data.isSkeleton); }
+                    catch { /* matches the original's own swallow */ }
 
-                // M5: decompile 2935-2946 (SendSyncInventory is coop-only, M7's job)
+                    try
+                    {
+                        if (playerView != null)
+                            entryPoints?.Network?.ApplyAfflictionsTo(playerView, userId, data.afflictions_current, data.extraStamina);
+                        else
+                            log?.LogWarning("OwnInventoryRestore: Player has no PhotonView, cannot send afflictions RPC.");
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"OwnInventoryRestore: failed to send afflictions RPC: {e.Message}");
+                    }
+                }
+
+                // Mirrors decompile 2939-2942 (SendSyncInventory, coop-only): a vanilla
+                // game RPC on the player's own PhotonView, no checkpoint-mod/OwnNetwork
+                // dependency - resyncs the inventory writes above (made authoritatively
+                // by the host, possibly onto ANOTHER player's slots) to that player's
+                // own client and everyone else's view of them
                 for (int k = 0; k < 20; k++) yield return null;
+                if (!offline)
+                {
+                    try
+                    {
+                        if (playerView != null)
+                        {
+                            var syncData = new InventorySyncData(ch.player.itemSlots, ch.player.backpackSlot, ch.player.tempFullSlot);
+                            playerView.RPC("SyncInventoryRPC", RpcTarget.Others, IBinarySerializable.ToManagedArray(syncData), true);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"OwnInventoryRestore: SendSyncInventory failed: {e.Message}");
+                    }
+                }
                 for (int k = 0; k < 20; k++) yield return null;
 
                 // M5: time-played sync (decompile 2947-2955)
@@ -131,12 +172,18 @@ namespace PEAKQuickResume
                 }
             }
 
-            // M5: post-loop cleanup (decompile 2957-2969; LoadingScreen(false)/
-            // RPC_Loadingscreen are the cosmetic caption skipped since M3, not ported)
+            // M5/M7: post-loop cleanup (decompile 2957-2969). The "Loading savegame..."/
+            // "Save game loaded!" captions themselves stay skipped (cosmetic, see M3/M5),
+            // but that same moment is also the ONLY signal that ends TeleportWatchdog's
+            // load window on every machine (see OwnNetwork's RPC_Loadingscreen remarks) -
+            // ArmPendingWatch() is a direct local call since RpcTarget.Others never
+            // reaches the sender itself
             for (int i = 0; i < 30; i++) yield return null;
             entryPoints?.MarkNotCurrentlyLoading();
             entryPoints?.ArmRecentlyLoadedCooldown(10f);
             entryPoints?.ArmRecentlyLitCampfireCooldown(32f);
+            entryPoints?.Network?.Watchdog?.ArmPendingWatch();
+            entryPoints?.Network?.LoadingScreenOthers(false);
             log?.LogInfo("OwnInventoryRestore: restore sequence complete.");
         }
 

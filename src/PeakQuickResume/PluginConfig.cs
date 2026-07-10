@@ -102,7 +102,6 @@ namespace PEAKQuickResume
         // (TeleportConfigOverride) still only reads/writes the checkpoint mod's OWN
         // config and has no effect on these yet (that repoint is M8's job); see
         // ROADMAP.md Phase 8 M3 for the exact, temporary consequence of this
-        public readonly ConfigEntry<int> OwnTeleportJumpLogic;
         public readonly ConfigEntry<int> OwnTeleportFramesToWait;
         public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
         public readonly ConfigEntry<bool> OwnTeleportTheKilnWorkaround;
@@ -362,11 +361,6 @@ namespace PEAKQuickResume
                 "COOP ONLY (Phase 8): if enabled, our own save/load restore waits until every connected client has "
                 + "reported itself ready (in a Level scene) before proceeding, same behavior and default as the "
                 + "checkpoint mod's own equivalent setting.");
-
-            OwnTeleportJumpLogic = cfg.Bind("Own-Teleport", "teleport-jump-logic", 0,
-                "Phase 8: our own base teleport-jump-logic setting for saves loaded through our own restore path "
-                + "(0 = SetSegmentOnSpawn, 1 = JumpToSegment, 2 = GoToSegment). Same meaning/default as the "
-                + "checkpoint mod's own configTeleportJumpLogic. Not yet affected by Shift/Alt overrides (M8).");
 
             OwnTeleportFramesToWait = cfg.Bind("Own-Teleport", "teleport-frames-to-wait", 30,
                 "Phase 8: frames to wait between teleport-correction tries in our own restore path (advanced).");

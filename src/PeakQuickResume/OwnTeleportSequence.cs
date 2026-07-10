@@ -63,8 +63,18 @@ namespace PEAKQuickResume
 
             _log?.LogInfo($"OwnTeleportSequence: executing custom jump to: {finalSegment}");
 
+            // Mirrors decompile 2271-2274 (LoadingScreen(true) + RPC_Loadingscreen to
+            // Others): repurposed here (see OwnNetwork's class remarks) to arm
+            // TeleportWatchdog's load window on every machine, not to show a caption -
+            // BeginLoadWindow() is a direct local call since RpcTarget.Others never
+            // reaches the sender itself
+            _entryPoints.Network?.Watchdog?.BeginLoadWindow();
+            _entryPoints.Network?.LoadingScreenOthers(true);
+
             yield return new WaitForSeconds(waitTime);
-            OwnFallDamageProtection.Activate(30f);
+            // Mirrors decompile line 2280: RpcTarget.All, so this also arms fall-damage
+            // protection on the host's own machine (no separate local call needed)
+            _entryPoints.Network?.RequestFalldamageProtectionAll(30);
 
             yield return new WaitForSeconds(waitTime);
             ReviveDeadPlayers(savedPos + new Vector3(0f, 4f, 0f));
@@ -86,19 +96,23 @@ namespace PEAKQuickResume
                 finalSegment = (Segment)3;
             }
 
-            switch (_cfg.OwnTeleportJumpLogic.Value)
-            {
-                case 0: MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment); break;
-                case 1: MapHandler.JumpToSegment(finalSegment); break;
-                case 2:
-                    if (mh != null) mh.GoToSegment(finalSegment);
-                    else MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment);
-                    break;
-                default: MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment); break;
-            }
+            // Hardcoded by connection mode, NOT configurable (session 15 fix, first real
+            // deviation from a literal port - see ROADMAP.md Phase 8 M7 follow-up):
+            // MapHandler.SetSegmentOnSpawn (the checkpoint mod's own default, "jump logic
+            // 0") hardcodes playersToTeleport to the CALLER'S OWN seat only and never
+            // sends anything over the network (docs/RESEARCH.md), so it's correct for
+            // solo (the only player) but leaves every coop CLIENT stuck in the old
+            // segment - the host teleports fine, but clients never get told to activate
+            // the new segment/biome at all. MapHandler.JumpToSegment ("jump logic 1") is
+            // the one that actually RPCs every player's position AND syncs the segment/
+            // biome activation to every client (docs/RESEARCH.md), so that's the one
+            // coop needs. Solo keeps using the simpler SetSegmentOnSpawn path since it's
+            // already proven solid across M3-M6 and has no client to leave behind
+            if (offline) MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment);
+            else MapHandler.JumpToSegment(finalSegment);
 
             // Solo-only relight fix, folded in here - see class remarks
-            if (PhotonNetwork.OfflineMode && _cfg.OwnTeleportJumpLogic.Value == 0)
+            if (offline)
             {
                 Campfire previousCampfire = MapHandler.PreviousCampfire;
                 if (previousCampfire != null && !previousCampfire.Lit)
@@ -222,7 +236,12 @@ namespace PEAKQuickResume
             {
                 EndScreen endScreen = UnityEngine.Object.FindFirstObjectByType<EndScreen>();
                 if (endScreen != null && endScreen.isOpen)
+                {
                     AccessTools.Method(typeof(MenuWindow), "Close")?.Invoke(endScreen, null);
+                    // Mirrors decompile line 2292: RpcTarget.Others, only sent when we
+                    // actually found and closed one locally
+                    _entryPoints.Network?.CloseEndscreenOthers();
+                }
             }
             catch (Exception e)
             {
