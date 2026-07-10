@@ -37,6 +37,18 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> OwnCampfireReset;
         public readonly ConfigEntry<bool> OwnDaytime;
 
+        // Solo-only speed-up: collapse the per-step waits between the map/campfire warp
+        // and the final precise teleport (see OwnTeleportSequence). Off = the original,
+        // slower, more conservative cadence
+        public readonly ConfigEntry<bool> OwnFastSoloTeleport;
+
+        // Coop client-warp anti-spam (see OwnTeleportSequence.TeleportClientsToHost): the
+        // host re-warps a client off its own network-lagged view of that client's position,
+        // so on a slow connection it can fire dozens of redundant safety warps before the
+        // client's teleport ever round-trips back. These bound and pace those re-sends
+        public readonly ConfigEntry<int> OwnMaxClientWarpResends;
+        public readonly ConfigEntry<float> OwnClientWarpResendGraceSeconds;
+
         // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
         // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
         // checkpoint mod's instance
@@ -184,6 +196,30 @@ namespace PEAKQuickResume
 
             OwnDaytime = cfg.Bind("Teleport", "daytime", true,
                 "If enabled, restores the saved in-game time of day.");
+
+            OwnFastSoloTeleport = cfg.Bind("Teleport", "fast-solo-teleport", true,
+                "SOLO ONLY: once the map has loaded and you've been warped to the campfire, skip the extra "
+                + "per-step waits before the final precise teleport. Those waits only matter in co-op, where "
+                + "they give other players time to catch the segment/biome activation and warps over the network "
+                + "before the host teleports - in solo there is nobody to keep in sync, so they are just dead time "
+                + "you watch after the map has already visibly loaded. Cuts a few seconds off a solo resume. "
+                + "Disable to restore the original slower, more conservative cadence. Has no effect in co-op.");
+
+            OwnMaxClientWarpResends = cfg.Bind("Teleport", "max-client-warp-resends", 10,
+                "COOP ONLY: the maximum number of EXTRA 'safety' teleport RPCs the host will send a single "
+                + "client after the first one, if the host still doesn't see that client near the target. The "
+                + "host judges this from its own network-lagged view of the client, so a client on a slow "
+                + "connection (whose teleport hasn't reported back yet) could otherwise be spammed with warps it "
+                + "has already acted on. Once this cap is hit the host stops re-warping that client and leaves the "
+                + "rest to the client's own teleport watchdog / position recovery. Set to 0 to send only the "
+                + "initial warp and never re-send (advanced).");
+
+            OwnClientWarpResendGraceSeconds = cfg.Bind("Teleport", "client-warp-resend-grace-seconds", 1.5f,
+                "COOP ONLY: minimum seconds the host waits after warping a client before it may re-send that "
+                + "client another safety warp. Gives the client's teleport time to actually take effect AND "
+                + "propagate back over the network before the host decides it 'didn't work' and fires again - the "
+                + "direct fix for a slow-connection client being re-warped faster than a round trip can complete "
+                + "(advanced).");
 
             OwnInventory = cfg.Bind("Teleport", "inventory", true,
                 "If enabled, restores saved inventory and backpack items.");
