@@ -495,7 +495,7 @@ namespace PEAKQuickResume
                 _root.transform.SetParent(transform, false);
                 var canvas = _root.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 30000; // above the checkpoint mod's own loading overlay (9999)
+                canvas.sortingOrder = 30000; // well above the game's own in-world/HUD canvases
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_root.transform, false);

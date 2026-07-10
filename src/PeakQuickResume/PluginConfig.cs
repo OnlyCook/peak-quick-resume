@@ -79,8 +79,6 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> EnablePositionRecovery;
         public readonly ConfigEntry<float> PositionRecoveryDelaySeconds;
         public readonly ConfigEntry<float> PositionRecoveryDistanceThreshold;
-        public readonly ConfigEntry<bool> EnableWarpSuppression;
-        public readonly ConfigEntry<float> WarpSuppressionExtraSeconds;
 
         // Native-feeling wake-up + loading-screen crossfade around the teleport step of
         // our own restore path (OwnWakeUpEffect.cs / OwnLoadingScreen.cs), replacing the
@@ -120,17 +118,9 @@ namespace PEAKQuickResume
                 + "you keep accidentally loading a save while trying to close the picker with it.");
 
             // Same plain-KeyCode reasoning as resume-key above (ModConfig only renders a
-            // rebind widget for KeyCode, not KeyboardShortcut). This isn't just OUR key:
-            // it's also pushed onto PEAK Checkpoint Save's own configTutorialKey (see
-            // CheckpointInterop.TrySetTutorialKey / Plugin.Awake), which is otherwise
-            // stuck as a KeyboardShortcut with no ModConfig rebind widget of its own.
-            // Overriding it (when the checkpoint mod is installed) keeps its own tutorial-
-            // key detection (which HelpScreen/TutorialPatch ride on) and its footer prompt
-            // in sync with whatever key is actually configured here
+            // rebind widget for KeyCode, not KeyboardShortcut)
             HelpKey = cfg.Bind("General", "help-key", KeyCode.F2,
-                "Opens the help screen (Quick Resume controls + the teleport-bug workaround). If PEAK Checkpoint "
-                + "Save is installed, also overrides its own tutorial/help key to match, so its own key detection "
-                + "and footer prompt stay in sync with whatever you set here.");
+                "Opens the help screen (Quick Resume controls).");
 
             // Default of B (not the more obvious S): while the F7 picker is open, key
             // input still reaches the character underneath it (it's an overlay, not a
@@ -235,9 +225,10 @@ namespace PEAKQuickResume
                 + "reported itself ready (in a Level scene) before proceeding.");
 
             EnableTeleportWatchdog = cfg.Bind("Teleport-Mitigation", "enable-teleport-watchdog", true,
-                "Watches every teleport (a checkpoint-mod F6 load, if installed, or ours) for the known "
-                + "intermittent bad-teleport symptoms: warp-loop glitching or falling through the world. When "
-                + "detected, shows an on-screen hint pointing at the help screen (help-key). Disable to turn off "
+                "Watches every resume teleport for the known intermittent bad-teleport symptoms: warp-loop "
+                + "glitching, falling through the world, or never being moved at all. When detected, shows an "
+                + "on-screen hint pointing at the help screen (help-key) and (see the auto-fix settings below) "
+                + "can refund the resulting fall damage and force you to the correct spot. Disable to turn off "
                 + "all teleport-bug detection.");
 
             WatchdogWindowSeconds = cfg.Bind("Teleport-Mitigation", "watchdog-window-seconds", 30f,
@@ -245,36 +236,18 @@ namespace PEAKQuickResume
 
             FallDistanceThreshold = cfg.Bind("Teleport-Mitigation", "fall-distance-threshold", 150f,
                 "How far below the actual teleport target (in meters) counts as \"falling through the world\". "
-                + "Measured against the fixed teleport target, not a rolling peak, since the checkpoint mod's "
-                + "own re-teleport corrections would otherwise keep resetting a rolling peak upward (advanced).");
+                + "Measured against the fixed teleport target, not a rolling peak, since a re-teleport correction "
+                + "would otherwise keep resetting a rolling peak upward (advanced).");
 
             GlitchOscillationCount = cfg.Bind("Teleport-Mitigation", "glitch-oscillation-count", 4,
-                "How many times the checkpoint mod re-warps you within a few seconds AFTER a load already "
-                + "reported itself done counts as the up/down warp-loop glitch (advanced).");
+                "How many times you get re-warped within a few seconds AFTER a load already reported itself "
+                + "done counts as the up/down warp-loop glitch (advanced).");
 
             NeverTeleportedDistanceThreshold = cfg.Bind("Teleport-Mitigation", "never-teleported-distance-threshold", 200f,
                 "Checked once right after a load finishes: if you're still this many meters (or more) from the "
                 + "save's teleport target, you were never actually moved there. The nearest campfire to spawn is "
                 + "~500m out and you can't light one (which is what creates a save) unless everyone is within 30m "
                 + "of it, so this threshold has a wide safety buffer under a real miss (advanced).");
-
-            EnableWarpSuppression = cfg.Bind("Teleport-Mitigation", "enable-warp-suppression", true,
-                "Once the checkpoint mod reports the load done (\"Save game loaded!\"), cancels every further "
-                + "WarpPlayerRPC it sends you for the rest of watchdog-window-seconds. Root-caused from real "
-                + "session logs: the checkpoint mod's own TeleportClientsToHost keeps re-warping a client whenever "
-                + "ITS view of your position looks too far off, but checks so infrequently (teleportFramesToWait "
-                + "frames apart) that ordinary gravity pulls you back out of tolerance between checks nearly every "
-                + "time - so it can loop 30+ times fighting its own retry cadence instead of converging, each snap "
-                + "briefly hoisting you back into the air and re-accumulating fall damage on the way back down. "
-                + "Cancelling everything after the load already reported itself done leaves you wherever the "
-                + "first, legitimate warp already put you; position-recovery (below) is the fallback if that "
-                + "wasn't actually close enough.");
-
-            WarpSuppressionExtraSeconds = cfg.Bind("Teleport-Mitigation", "warp-suppression-extra-seconds", 2f,
-                "Extra seconds added on top of watchdog-window-seconds before warp suppression above lifts. The "
-                + "checkpoint mod's own retry loop times out on its own ~30s clock, started at a slightly "
-                + "different moment than ours - this buffer avoids a straggler correction sneaking through right "
-                + "at the boundary right as suppression lifts (advanced).");
 
             EnableFallDamageRevert = cfg.Bind("Teleport-Mitigation", "enable-fall-damage-revert", true,
                 "When the watchdog flags a bad teleport, snapshots your Injury status and, after "
@@ -290,8 +263,8 @@ namespace PEAKQuickResume
             EnablePositionRecovery = cfg.Bind("Teleport-Mitigation", "enable-position-recovery", true,
                 "When the watchdog flags a bad teleport, checks again after position-recovery-delay-seconds and, "
                 + "if you're still more than position-recovery-distance-threshold meters from where the save "
-                + "actually intended to put you, forces you there directly - cuts a warp-loop glitch short instead "
-                + "of waiting for the checkpoint mod's own correction loop to eventually sort itself out.");
+                + "actually intended to put you, forces you there directly - the last-resort backstop if the "
+                + "resume teleport somehow didn't land you at the checkpoint.");
 
             PositionRecoveryDelaySeconds = cfg.Bind("Teleport-Mitigation", "position-recovery-delay-seconds", 5f,
                 "Seconds after a flagged bad teleport before checking whether a forced position recovery is "

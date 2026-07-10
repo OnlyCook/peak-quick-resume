@@ -15,12 +15,11 @@ namespace PEAKQuickResume
     }
 
     /// <summary>
-    /// Our own copy of the checkpoint mod's item "extra stat" (per-item-type
-    /// key/value) IO helpers, ported field-for-field from the decompile
-    /// (3258-3480, 3417-3442, plus the static fields at 869-893). All reflect into
-    /// vanilla <c>ItemInstanceData</c>/<c>DataEntryKey</c> directly - zero dependency
-    /// on the checkpoint mod's own instance or types, unlike the wrapper-method
-    /// reflection <see cref="CheckpointInterop.ReadItemStateValues"/> currently uses
+    /// Our own item "extra stat" (per-item-type key/value) IO helpers, ported
+    /// field-for-field from the original save format (decompile 3258-3480, 3417-3442,
+    /// plus the static fields at 869-893). All reflect into vanilla
+    /// <c>ItemInstanceData</c>/<c>DataEntryKey</c> directly - zero dependency on any
+    /// external mod's own instance or types
     ///
     /// Split by direction:
     ///  - Read side (<see cref="TryGetEntryObject"/>/<see cref="TryReadEntryNumeric"/>/

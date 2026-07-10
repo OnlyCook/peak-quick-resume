@@ -12,13 +12,11 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// Our own port of <c>SavePlayerOffline</c>/<c>SavePlayerCoop</c> (decompile
-    /// 3715-4603, ported M6/M7). Phase 8 M9: now the CANONICAL save-file writer -
-    /// writes directly to <see cref="OwnSavePaths.For"/> (not a diagnostic path
-    /// anymore) and independently triggers <see cref="BackpackSaveMitigation.ApplyPendingRestores"/>
-    /// + <see cref="SaveArchive.Sync"/> right after writing, the same two steps
-    /// <see cref="SavePatch"/>'s postfix used to apply only when the CHECKPOINT MOD's
-    /// own save methods were called - our own capture needed the same trigger since
-    /// it can now run with no checkpoint mod involved at all
+    /// 3715-4603, ported M6/M7). The CANONICAL save-file writer - writes directly to
+    /// <see cref="OwnSavePaths.For"/> and triggers
+    /// <see cref="BackpackSaveMitigation.ApplyPendingRestores"/> +
+    /// <see cref="SaveArchive.Sync"/> right after writing (the two steps that patch the
+    /// just-written file for dropped-backpack restores and copy it into the F7 archive)
     ///
     /// The 13 repeated per-key blocks in the original (one `if (TryGetKey(...) &amp;&amp;
     /// TryGetEntryObject(...) &amp;&amp; TryReadEntryNumeric(...))` per key, identical
@@ -163,9 +161,8 @@ namespace PEAKQuickResume
                 network?.MessageOverlay?.Show("Saved game progress", new Color(0.5f, 1f, 0.5f, 1f), 4f);
                 network?.SendMessageOthers("Saved game progress", "success", 4f);
 
-                // Phase 8 M9: our own capture is now the canonical writer, so it has to
-                // independently trigger the same two steps SavePatch's postfix used to
-                // apply only when the checkpoint mod's own save methods were called
+                // As the canonical writer, patch the just-written file for any pending
+                // dropped-backpack restores, then copy it into the F7 archive
                 BackpackSaveMitigation.ApplyPendingRestores(offline: false, log);
                 SaveArchive.Sync(offline: false, log);
             }
@@ -259,9 +256,8 @@ namespace PEAKQuickResume
 
                 log?.LogInfo($"OwnSaveCapture: position + inventory saved. Pos: {pos} Scene: {sceneName}, Items: {inventoryStates.Count}.");
 
-                // Phase 8 M9: our own capture is now the canonical writer, so it has to
-                // independently trigger the same two steps SavePatch's postfix used to
-                // apply only when the checkpoint mod's own save methods were called.
+                // As the canonical writer, patch the just-written file for any pending
+                // dropped-backpack restores, then copy it into the F7 archive.
                 // Matches the original SavePlayerOffline exactly: no on-screen message
                 // for a solo autosave (silent), unlike SavePlayerCoop's above
                 BackpackSaveMitigation.ApplyPendingRestores(offline: true, log);

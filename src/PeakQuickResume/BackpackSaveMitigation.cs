@@ -51,11 +51,11 @@ namespace PEAKQuickResume
         private static readonly Dictionary<int, TrackedDrop> _tracked = new Dictionary<int, TrackedDrop>();
 
         // Restorations decided the instant a watched campfire lights, but not yet
-        // written to disk: the checkpoint mod's own autosave only runs AFTER
-        // Interact_CastFinished (and the Light_Rpc call it makes) fully returns, so
-        // there's no save file to patch yet at the point we make this decision.
-        // SaveArchive.PatchCanonicalFileForUser (called from SavePatch's postfix, right
-        // after the file actually exists) is what applies these
+        // written to disk: our own autosave only runs AFTER Interact_CastFinished (and
+        // the Light_Rpc call it makes) fully returns, so there's no save file to patch
+        // yet at the point we make this decision. SaveArchive.PatchCanonicalFileForUser
+        // (called from OwnSaveCapture right after the file actually exists) is what
+        // applies these
         private class PendingRestore
         {
             public string UserId;
@@ -168,9 +168,9 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Applies any pending backpack restorations queued by OnLightRpc to the
-        /// canonical save file(s) the checkpoint mod just wrote for this category,
-        /// BEFORE SaveArchive.Sync copies them into the archive. Called from SavePatch's
-        /// postfix; a no-op when nothing is pending
+        /// canonical save file(s) our own save just wrote for this category, BEFORE
+        /// SaveArchive.Sync copies them into the archive. Called from OwnSaveCapture right
+        /// after the save is written; a no-op when nothing is pending
         /// </summary>
         public static void ApplyPendingRestores(bool offline, ManualLogSource log)
         {

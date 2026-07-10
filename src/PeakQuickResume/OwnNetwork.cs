@@ -21,22 +21,16 @@ namespace PEAKQuickResume
     /// <c>RPC_SyncMapVisuals</c> are deliberately NOT ported (see ROADMAP.md Phase 8:
     /// mod-version check unused, hero-title banner is cosmetic, PEAKapalooza-only)
     ///
-    /// <c>RPC_Loadingscreen</c> is repurposed here: the checkpoint mod's own "Loading
-    /// savegame..."/"Save game loaded!" UI captions are deliberately not ported (M3/M5,
-    /// purely cosmetic), but that same pair of moments is also the ONLY signal that
-    /// arms <see cref="TeleportWatchdog"/>'s load window on every machine
-    /// (<see cref="LoadingScreenPatch"/>/<see cref="SavegameLoadedMessagePatch"/> hook
-    /// the checkpoint mod's OWN methods for this, which our own path never calls) - so
-    /// <c>RPC_Loadingscreen</c>'s receiver here drives the watchdog directly instead of
-    /// showing a caption, keeping that Phase 6 mitigation alive for our own path in
-    /// coop (see ROADMAP.md Phase 8 M7 / Phase 6)
+    /// <c>RPC_Loadingscreen</c> is named after the original's "Loading savegame..." UI
+    /// caption (which we don't port - purely cosmetic), but is repurposed: the load-begin
+    /// and load-done moments are the signal that arms/disarms
+    /// <see cref="TeleportWatchdog"/>'s load window on every machine, so this RPC's
+    /// receiver drives the watchdog directly instead of showing a caption, keeping that
+    /// mitigation alive for our own path in coop (see ROADMAP.md Phase 6)
     ///
-    /// Uses a distinct <c>ViewID</c> (69420) from the checkpoint mod's own hardcoded
-    /// 19420 (decompile line 992) since both mods' PhotonViews coexist during the
-    /// Phase 8 transition window (checkpoint mod stays installed for diffing, see
-    /// ROADMAP.md decision 2). Safe from Photon's auto-allocated range: PEAK caps
-    /// rooms at 4 players (<c>NetworkingUtilities.MAX_PLAYERS</c>, decompile line
-    /// 89482), so with PUN's default 1000 auto-IDs per actor, nothing auto-assigned
+    /// Uses a fixed <c>ViewID</c> (69420) well clear of Photon's auto-allocated range:
+    /// PEAK caps rooms at 4 players (<c>NetworkingUtilities.MAX_PLAYERS</c>, decompile
+    /// line 89482), so with PUN's default 1000 auto-IDs per actor, nothing auto-assigned
     /// ever gets remotely close to 69420
     /// </summary>
     public class OwnNetwork : MonoBehaviour
@@ -327,12 +321,40 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Mirrors decompile lines 2274/2964's RpcTarget.Others (1), repurposed to drive
-        /// TeleportWatchdog on each client instead of showing a caption - see class remarks
+        /// TeleportWatchdog on each client instead of showing a caption - see class remarks.
+        /// The originally-unused second string param now carries the host's real teleport
+        /// <paramref name="target"/> (on the enable=false "load done" call) so a client that
+        /// never received a warp can still recover to it - see RPC_Loadingscreen
         /// </summary>
-        public void LoadingScreenOthers(bool enable)
+        public void LoadingScreenOthers(bool enable, Vector3? target = null)
         {
-            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_Loadingscreen), RpcTarget.Others, enable ? "true" : "false", ""); }
+            try
+            {
+                string payload = target.HasValue ? FormatVector(target.Value) : "";
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_Loadingscreen), RpcTarget.Others, enable ? "true" : "false", payload);
+            }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.LoadingScreenOthers failed: {e.Message}"); }
+        }
+
+        // Invariant-culture "x|y|z" so the target round-trips identically regardless of the
+        // sender's or receiver's locale (a comma decimal separator would otherwise corrupt it)
+        private static string FormatVector(Vector3 v)
+        {
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            return $"{v.x.ToString(c)}|{v.y.ToString(c)}|{v.z.ToString(c)}";
+        }
+
+        internal static Vector3? ParseVector(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return null;
+            var parts = s.Split('|');
+            if (parts.Length != 3) return null;
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            if (float.TryParse(parts[0], System.Globalization.NumberStyles.Float, c, out float x)
+                && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, c, out float y)
+                && float.TryParse(parts[2], System.Globalization.NumberStyles.Float, c, out float z))
+                return new Vector3(x, y, z);
+            return null;
         }
 
         /// <summary>Mirrors decompile line 2909: targeted at the specific player's owner</summary>
@@ -475,10 +497,18 @@ namespace PEAKQuickResume
         /// <see cref="TeleportWatchdog"/>'s load window on this (client) machine instead
         /// </summary>
         [PunRPC]
-        public void RPC_Loadingscreen(string enable, string _unusedMessage)
+        public void RPC_Loadingscreen(string enable, string targetPayload)
         {
-            if (enable == "true") Owner?.Watchdog?.BeginLoadWindow();
-            else Owner?.Watchdog?.ArmPendingWatch();
+            if (enable == "true")
+            {
+                Owner?.Watchdog?.BeginLoadWindow();
+            }
+            else
+            {
+                // End the window, passing the host-forwarded real target so a client that
+                // never got warped can still recover to it - see OwnNetwork.LoadingScreenOthers
+                Owner?.Watchdog?.ArmPendingWatch(OwnNetwork.ParseVector(targetPayload));
+            }
         }
 
         /// <summary>Mirrors RPC_CloseEndscreen exactly (decompile 595-610)</summary>

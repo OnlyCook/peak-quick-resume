@@ -7,25 +7,20 @@ using Photon.Pun;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own copy of the checkpoint mod's <c>Campfire_AutoSave_Patch</c> (decompile
-    /// 123-172): a Harmony postfix on <c>Campfire.Interact_CastFinished</c> that
-    /// triggers a save capture when a campfire is lit. Coop branches (host's own
+    /// A Harmony postfix on <c>Campfire.Interact_CastFinished</c> that triggers a save
+    /// capture when a campfire is lit (ported from the original save format's own
+    /// <c>Campfire_AutoSave_Patch</c>, decompile 123-172). Coop branches (host's own
     /// <c>SavePlayerCoop</c> + <c>RPC_RecentlyLitCampfire</c> relay, or a client's
     /// <c>RPC_RequestSave</c> to the host) mirror decompile 156-169 exactly.
     /// PEAKapalooza's branches are not ported (maintainer decision, see ROADMAP.md)
     ///
-    /// Phase 8 M9: this is now the PRIMARY (and, once the checkpoint mod is no longer
-    /// installed, only) autosave trigger - <see cref="OwnSaveCapture"/> writes the
-    /// CANONICAL save file directly. Runs additively alongside the checkpoint mod's own
-    /// still-active autosave patch when it IS installed (harmless - both write the same
-    /// file with the same content)
+    /// This is the autosave trigger - <see cref="OwnSaveCapture"/> writes the CANONICAL
+    /// save file directly
     ///
-    /// Uses the reliable <c>currentlyCookingItem</c>-field check (see
-    /// <see cref="CampfireCookSaveFixPatch"/>'s own remarks for the full reasoning) to
-    /// skip a cook finishing on an already-lit campfire, rather than the checkpoint
-    /// mod's own <c>beenBurningFor > 2f</c> timing guess - our own trigger needed the
-    /// same fix independently since it's no longer just observing the checkpoint mod's
-    /// autosave, it's authoritative for the canonical file now
+    /// Uses the reliable <c>currentlyCookingItem</c>-field check (rather than the
+    /// original's <c>beenBurningFor > 2f</c> timing guess) to skip a cook finishing on an
+    /// already-lit campfire - a fix folded in here directly since this trigger is
+    /// authoritative for the canonical file
     /// </summary>
     public static class CampfireAutoSavePatch
     {

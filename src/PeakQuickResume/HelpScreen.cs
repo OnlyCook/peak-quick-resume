@@ -7,12 +7,11 @@ using UnityEngine.UI;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// The F1 help screen: a real small menu built from the SAME visual primitives as
+    /// The help screen: a real small menu built from the SAME visual primitives as
     /// the F7 save picker (<see cref="SavePicker"/>) - the rounded/bordered blue panel
     /// sprite (including its animated jagged-edge cycling), the game's own font, the
     /// gold key badges - rather than a plain screen-wide TMP text block. Opened/closed
-    /// by <see cref="TutorialPatch"/>, which suppresses the checkpoint mod's own
-    /// tutorial overlay and drives this instead
+    /// by the help-key listener in <see cref="Plugin"/>
     ///
     /// Deliberately simple compared to SavePicker: no row list/navigation, just a
     /// title, a word-wrapped body (auto-sized to its content height, so the panel
@@ -26,7 +25,6 @@ namespace PEAKQuickResume
     {
         private ManualLogSource _log;
         private PluginConfig _cfg;
-        private CheckpointInterop _checkpoint;
 
         public bool IsOpen { get; private set; }
 
@@ -62,11 +60,10 @@ namespace PEAKQuickResume
         private const float FooterGap = 14f;
         private const float TitleBodyGap = 10f;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint)
+        public void Init(ManualLogSource log, PluginConfig cfg)
         {
             _log = log;
             _cfg = cfg;
-            _checkpoint = checkpoint;
         }
 
         public void Open()
@@ -145,7 +142,6 @@ namespace PEAKQuickResume
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 Close();
-                _checkpoint?.TryCloseTutorial();
                 PauseSuppressPatch.SuppressNextOpen();
                 return;
             }
@@ -210,7 +206,7 @@ namespace PEAKQuickResume
                 _root.transform.SetParent(transform, false);
                 var canvas = _root.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 30001; // above the F7 picker (30000) and the checkpoint mod's own overlays
+                canvas.sortingOrder = 30001; // above the F7 picker (30000)
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_root.transform, false);
@@ -363,10 +359,10 @@ namespace PEAKQuickResume
             if (_root == null) return;
             try
             {
-                string tutorialKey = _checkpoint?.TryGetTutorialKeyText() ?? _cfg?.HelpKey.Value.ToString() ?? "F2";
+                string tutorialKey = _cfg?.HelpKey.Value.ToString() ?? "F2";
 
                 _titleText.text = $"Quick Resume {HelpScreenLocalization.Get(HelpText.HelpTitleWord)}";
-                _bodyText.text = HelpScreenContent.Build(_checkpoint, _cfg);
+                _bodyText.text = HelpScreenContent.Build(_cfg);
                 _footerKeyText.text = $"{tutorialKey} / Esc";
                 _footerLabelText.text = HelpScreenLocalization.Get(HelpText.Close);
 

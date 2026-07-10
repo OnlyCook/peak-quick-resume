@@ -27,14 +27,9 @@ namespace PEAKQuickResume
     /// elsewhere, no reflection needed for this one
     ///
     /// Gated by <see cref="TeleportWatchdog"/>'s own "load in progress" flag (set by
-    /// <see cref="LoadingScreenPatch"/>), so unrelated vanilla warps (falling into the
-    /// void recovery, other mods, boss abilities, etc.) outside of a checkpoint-mod
-    /// load are ignored
-    ///
-    /// Also carries a prefix (Phase 6 warp suppression, see <see cref="TeleportWatchdog.ShouldSuppressWarp"/>)
-    /// that can cancel the call outright once the checkpoint mod already reported the
-    /// load done - the same repeat corrections the postfix below detects turn out to
-    /// be directly cancellable rather than just something to react to afterward
+    /// <see cref="OwnTeleportSequence"/>), so unrelated vanilla warps (falling into the
+    /// void recovery, other mods, boss abilities, etc.) outside of one of our loads are
+    /// ignored
     /// </summary>
     public static class TeleportWatchdogPatch
     {
@@ -55,34 +50,14 @@ namespace PEAKQuickResume
                     return;
                 }
 
-                var prefix = new HarmonyMethod(typeof(TeleportWatchdogPatch), nameof(Prefix));
                 var postfix = new HarmonyMethod(typeof(TeleportWatchdogPatch), nameof(Postfix));
-                harmony.Patch(target, prefix: prefix, postfix: postfix);
+                harmony.Patch(target, postfix: postfix);
                 log.LogInfo("TeleportWatchdogPatch: patched Character.WarpPlayerRPC (bad-teleport detection armed).");
             }
             catch (Exception e)
             {
                 log.LogError($"TeleportWatchdogPatch.Apply failed (non-fatal): {e}");
             }
-        }
-
-        private static bool Prefix(Character __instance)
-        {
-            try
-            {
-                if (__instance == null || __instance != Character.localCharacter) return true;
-                if (_watchdog != null && _watchdog.ShouldSuppressWarp())
-                {
-                    _log?.LogInfo("TeleportWatchdogPatch: suppressed a WarpPlayerRPC - the load already "
-                        + "reported itself done.");
-                    return false; // skip the original call entirely, cancelling this correction
-                }
-            }
-            catch (Exception e)
-            {
-                _log?.LogWarning($"TeleportWatchdogPatch.Prefix failed (non-fatal): {e.Message}");
-            }
-            return true;
         }
 
         private static void Postfix(Character __instance, Vector3 position)

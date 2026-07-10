@@ -6,39 +6,36 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// PEAK Quick Resume, press one key to start a fresh run of your saved
-    /// difficulty and immediately load your "PEAK Checkpoint Save" checkpoint,
-    /// instead of doing it all by hand
+    /// difficulty and immediately load your latest checkpoint, instead of doing it
+    /// all by hand
     ///
-    /// This plugin contains NO save/load logic of its own; it orchestrates the
-    /// vanilla "start run" flow (<see cref="RunLauncher"/>) and dominik0207's
-    /// checkpoint mod (<see cref="CheckpointInterop"/>)
+    /// Fully self-contained: orchestrates the vanilla "start run" flow
+    /// (<see cref="RunLauncher"/>) and drives its own independent save/load/teleport
+    /// (<see cref="OwnLoadEntryPoints"/> / <see cref="OwnTeleportSequence"/> / etc.).
+    /// The save file format is still compatible with dominik0207's "PEAK Checkpoint
+    /// Save", which this mod was originally built around, but that mod is no longer
+    /// required, referenced, or integrated with in any way
     /// </summary>
     [BepInPlugin(PluginInfo.Guid, PluginInfo.Name, PluginInfo.Version)]
-    [BepInDependency(PluginInfo.CheckpointSaveGuid, BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
     {
         internal static Plugin Instance { get; private set; }
 
         private PluginConfig _cfg;
-        private CheckpointInterop _checkpoint;
         private ResumeOrchestrator _orchestrator;
         private RestartOrchestrator _restart;
         private SavePicker _picker;
         private HelpScreen _helpScreen;
         private TeleportWatchdog _watchdog;
 
-        // Phase 8 M9: our own on-screen message overlay, replacing
-        // CheckpointInterop.TryShowMessage (unusable once the checkpoint mod is no
-        // longer a hard dependency) - see OwnMessageOverlay.cs
+        // Our own on-screen message overlay (see OwnMessageOverlay.cs)
         private OwnMessageOverlay _messageOverlay;
 
-        // Phase 8 M1: our own PhotonView/RPC channel, standing up alongside the
-        // checkpoint mod's (if installed) rather than replacing anything yet -
-        // see OwnNetwork.cs / ROADMAP.md Phase 8
+        // Our own PhotonView/RPC channel (see OwnNetwork.cs)
         private OwnNetwork _ownNetwork;
 
-        // Phase 8 M2: our own PreStartSetSegment/LoadPlayerOffline/LoadPlayerCoop
-        // guard chain, not wired into ResumeOrchestrator yet - see OwnLoadEntryPoints.cs
+        // Our own PreStartSetSegment/LoadPlayerOffline/LoadPlayerCoop guard chain,
+        // driving OwnTeleportSequence (see OwnLoadEntryPoints.cs)
         private OwnLoadEntryPoints _ownLoadEntryPoints;
 
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
@@ -48,15 +45,6 @@ namespace PEAKQuickResume
         {
             Instance = this;
             _cfg = new PluginConfig(Config);
-
-            _checkpoint = new CheckpointInterop(Logger);
-            _checkpoint.Probe();
-
-            // Override PEAK Checkpoint Save's own tutorial/help key to match ours (see
-            // PluginConfig.HelpKey / CheckpointInterop.TrySetTutorialKey), applied now for
-            // the default and again live whenever it's changed via ModConfig
-            _checkpoint.TrySetTutorialKey(_cfg.HelpKey.Value);
-            _cfg.HelpKey.SettingChanged += (_, __) => _checkpoint.TrySetTutorialKey(_cfg.HelpKey.Value);
 
             var harmony = new Harmony(PluginInfo.Guid);
 
@@ -70,9 +58,9 @@ namespace PEAKQuickResume
             _messageOverlay = go.AddComponent<OwnMessageOverlay>();
             _messageOverlay.Init(Logger);
 
-            // Phase 6: detect the checkpoint mod's intermittent bad-teleport bug
-            // (see ROADMAP.md); no-ops if its members can't be found. Created before
-            // the Harmony patches below since several of them need a reference to it
+            // Detect the intermittent bad-teleport symptoms after a resume (see
+            // TeleportWatchdog / ROADMAP.md Phase 6). Created before the Harmony patches
+            // below since TeleportWatchdogPatch needs a reference to it
             _watchdog = go.AddComponent<TeleportWatchdog>();
             _watchdog.Init(Logger, _cfg, _messageOverlay);
 
@@ -82,14 +70,12 @@ namespace PEAKQuickResume
             _picker = go.AddComponent<SavePicker>();
             _picker.Init(Logger, _cfg);
 
-            // Phase 6 step 3: the F1 help screen, a small menu built from the same
-            // visual primitives as the picker above. Created before TutorialPatch.Apply
-            // below, which needs a reference to it
+            // The help screen (help-key), a small menu built from the same visual
+            // primitives as the picker above
             _helpScreen = go.AddComponent<HelpScreen>();
-            _helpScreen.Init(Logger, _cfg, _checkpoint);
+            _helpScreen.Init(Logger, _cfg);
 
-            // Phase 8 M1: stands up our own PhotonView/RPC channel (separate GameObject,
-            // own ViewID) purely to prove it resolves/works; nothing reads from it yet
+            // Our own PhotonView/RPC channel (separate GameObject, own ViewID)
             _ownNetwork = go.AddComponent<OwnNetwork>();
             _ownNetwork.Init(Logger, _cfg);
 
@@ -119,55 +105,27 @@ namespace PEAKQuickResume
             // RPC_ClientPresentation can mirror the host's own presentation on this machine too
             _ownNetwork.AttachDependencies(_messageOverlay, _watchdog, _ownLoadEntryPoints, ownWakeUpEffect, ownLoadingScreen);
 
-            // Now that _ownLoadEntryPoints exists, wire the orchestrator (Phase 8 M3:
-            // its SOLO path calls _ownLoadEntryPoints directly; M7: coop too - see
-            // ResumeOrchestrator.cs. _checkpoint stays as a fallback for when our own
-            // path is somehow unavailable, e.g. our own components failing to init)
-            _orchestrator.Init(Logger, _cfg, _checkpoint, _messageOverlay, _ownLoadEntryPoints, _watchdog);
+            // Now that _ownLoadEntryPoints exists, wire the orchestrator - it drives the
+            // whole resume through our own load path, solo and coop (see ResumeOrchestrator.cs)
+            _orchestrator.Init(Logger, _cfg, _messageOverlay, _ownLoadEntryPoints, _watchdog);
 
             // Phase 8 M3: our own copy of the checkpoint mod's fall/lava-damage
             // protection window, armed from OwnTeleportSequence (see OwnFallDamageProtection.cs)
             OwnFallDamageProtection.Apply(harmony, Logger);
 
-            // Phase 8 M2: our own copy of the checkpoint mod's MapBaker.GetLevel prefix.
-            // No checkpoint-mod dependency - see MapBakerLevelOverridePatch.cs
+            // Our own MapBaker.GetLevel prefix (forces the saved island - see MapBakerLevelOverridePatch.cs)
             MapBakerLevelOverridePatch.Apply(harmony, Logger);
 
-            // Phase 8 M9: our own save-capture port is now the primary/canonical save
-            // writer (see OwnSaveCapture.cs) - runs regardless of whether the checkpoint
-            // mod is installed. If it IS still installed, its own autosave patch (below,
-            // checkpoint-gated) still runs too, additively - harmless, same file
+            // Our own save-capture port, the canonical save writer (see OwnSaveCapture.cs)
             CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, _ownNetwork, Logger);
 
-            // No checkpoint-mod dependency (vanilla CharacterItems/Campfire hooks only) -
-            // reads item state via OwnItemStateIO now, not CheckpointInterop reflection
+            // Vanilla CharacterItems/Campfire hooks only; reads item state via OwnItemStateIO
             BackpackSaveMitigation.Apply(harmony, Logger);
 
-            // Harmony patches against the checkpoint mod, only meaningful (and only
-            // applied) when it's actually installed - everything our own F7/F1 flow
-            // needs works without any of these:
-            //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)
-            //  - archive every save it writes so the F7 picker can browse past checkpoints
-            //  - fix a duplicate-save bug in ITS OWN autosave trigger (ours has its own copy, unconditional)
-            //  - localize its "Loading savegame..." caption (also arms the teleport watchdog's load window)
-            //  - localize its "Save game loaded!" message (and arm the teleport watchdog's watch window)
-            if (_checkpoint.CheckpointType != null)
-            {
-                TutorialPatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _helpScreen);
-                SavePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
-                CampfireCookSaveFixPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
-                LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog);
-                SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _checkpoint);
-                MessageOverlayWrapPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
-            }
-
             // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
-            // target for the watchdog above. No checkpoint-mod dependency at all (Character
-            // is a vanilla type) - previously only applied alongside the checkpoint mod's
-            // own hooks above since THEY were the only thing that ever armed a load window,
-            // but since Phase 8 M7 our own OwnTeleportSequence/OwnInventoryRestore arm it
-            // directly for loads through our own path (solo AND coop) regardless of whether
-            // the checkpoint mod is even installed - so this patch is applied unconditionally now
+            // target for the watchdog above (Character is a vanilla type). Our own
+            // OwnTeleportSequence/OwnInventoryRestore arm the watchdog's load window
+            // directly for every resume through our own path (solo AND coop)
             TeleportWatchdogPatch.Apply(harmony, Logger, _watchdog);
 
             // Miscellaneous QoL, no dependency on the checkpoint mod: injects Restart /
@@ -183,10 +141,7 @@ namespace PEAKQuickResume
             PauseSuppressPatch.Apply(harmony, Logger);
 
             Logger.LogInfo($"{PluginInfo.Name} {PluginInfo.Version} loaded. "
-                + $"Resume key: {_cfg.ResumeKey.Value}. PEAK Checkpoint Save: "
-                + (_checkpoint.IsAvailable
-                    ? "installed (its own save files stay compatible; some legacy QoL patches active)"
-                    : "not installed (fully independent - this is a supported, normal setup)"));
+                + $"Resume key: {_cfg.ResumeKey.Value}.");
         }
 
         private void Update()
@@ -202,13 +157,8 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Phase 8 M9: our own independent F1 key listener. Previously HelpScreen only
-            // ever opened via TutorialPatch riding on the checkpoint mod's OWN F1
-            // detection (its Update()) - that stopped working the moment the checkpoint
-            // mod became optional, so it needs its own key handling now, same shape as
-            // the resume key below. TutorialPatch (when the checkpoint mod IS installed)
-            // still independently closes/hides ITS OWN tutorial overlay so the two never
-            // show at once - toggling _helpScreen here is safe either way
+            // Our own help-key listener, toggling the help screen (same shape as the
+            // resume key below)
             if (_helpScreen != null && Input.GetKeyDown(_cfg.HelpKey.Value))
             {
                 if (_helpScreen.IsOpen) _helpScreen.Close();
