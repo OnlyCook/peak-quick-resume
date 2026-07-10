@@ -38,6 +38,25 @@ namespace PEAKQuickResume
         // driving OwnTeleportSequence (see OwnLoadEntryPoints.cs)
         private OwnLoadEntryPoints _ownLoadEntryPoints;
 
+        // BepInEx GUID of the old PEAK Checkpoint Save mod. We no longer depend on,
+        // reference, or integrate with it, but if it's STILL installed alongside us both
+        // mods run their own campfire-autosave + logging independently, so the player sees
+        // duplicate save messages and log lines. Purely cosmetic (both write the same file,
+        // no logic conflict) - we just detect it to warn the player, see Update / HelpScreen
+        private const string CheckpointSaveGuid = "PEAK_Checkpoint_Save";
+        private bool _dupWarningShown;
+
+        /// <summary>
+        /// Whether PEAK Checkpoint Save is loaded alongside us. Queried lazily (NOT cached at
+        /// Awake): with the soft dependency gone there's no load-order guarantee, and
+        /// <c>Chainloader.PluginInfos</c> only lists plugins loaded so far - at our Awake the
+        /// checkpoint mod may not be in it yet. Every caller here runs well after all plugins
+        /// have finished loading (in a game scene / on opening the help screen), when the list
+        /// is complete, so the lookup is reliable there
+        /// </summary>
+        internal bool CheckpointModInstalled =>
+            BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(CheckpointSaveGuid);
+
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
         internal string ResumeKeyText => _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
 
@@ -147,6 +166,29 @@ namespace PEAKQuickResume
         private void Update()
         {
             if (_cfg == null) return;
+
+            // One-time heads-up when PEAK Checkpoint Save is still installed (see
+            // CheckpointModInstalled's remarks for why this is checked here, in-game, and
+            // not at Awake). Deferred until the player is actually in a game scene (Airport
+            // or a level) so the overlay is on-screen and seen, rather than firing over the
+            // title - and so Chainloader.PluginInfos is fully populated by now
+            if (!_dupWarningShown && _messageOverlay != null
+                && (RunLauncher.InAirport || RunLauncher.InLevel))
+            {
+                _dupWarningShown = true;
+                if (CheckpointModInstalled)
+                {
+                    // Full detail goes to the log (persists) and the help screen (re-viewable);
+                    // the one-time popup stays brief and just points at the help screen
+                    Logger.LogWarning("PEAK Checkpoint Save is still installed. Quick Resume no longer needs it and "
+                        + "runs fully on its own; both mods will save/log independently, so expect duplicate log "
+                        + "messages and saves appearing. This is harmless (no logic conflict), but uninstall PEAK "
+                        + "Checkpoint Save to remove the duplicates.");
+                    _messageOverlay.Show(
+                        MessagesLocalization.Get(MsgKey.CheckpointModStillInstalledShort, _cfg.HelpKey.Value.ToString()),
+                        new Color(1f, 0.8f, 0.4f, 1f), 7f);
+                }
+            }
 
             // While the picker is open, Enter is an alternative "load selected"; the
             // picker itself handles arrows / Delete / Escape
