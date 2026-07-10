@@ -4,7 +4,7 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// Translations for every on-screen message OUR code triggers via
-    /// <see cref="CheckpointInterop.TryShowMessage"/> (from <see cref="Plugin"/>,
+    /// <see cref="OwnMessageOverlay.Show"/> (from <see cref="Plugin"/>,
     /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>), plus two
     /// that override the checkpoint mod's own English-only strings at their point of
     /// use: <see cref="MsgKey.LoadingSavegame"/> ("Loading savegame..." on its loading
@@ -356,21 +356,21 @@ namespace PEAKQuickResume
             },
             [MsgKey.TeleportBugHint] = new[]
             {
-                "Did something go wrong? If yes, press F1 to open the help screen.",
-                "Un problème est survenu ? Si oui, appuyez sur F1 pour ouvrir l'écran d'aide.",
-                "Qualcosa è andato storto? Se sì, premi F1 per aprire la schermata di aiuto.",
-                "Ist etwas schiefgelaufen? Falls ja, drücke F1, um den Hilfebildschirm zu öffnen.",
-                "¿Ha ido algo mal? Si es así, pulsa F1 para abrir la pantalla de ayuda.",
-                "¿Salió algo mal? Si es así, presiona F1 para abrir la pantalla de ayuda.",
-                "Algo deu errado? Se sim, pressione F1 para abrir a tela de ajuda.",
-                "Что-то пошло не так? Если да, нажмите F1, чтобы открыть экран помощи.",
-                "Щось пішло не так? Якщо так, натисніть F1, щоб відкрити екран довідки.",
-                "出了什么问题吗？如果是的话，按 F1 打开帮助界面。",
+                "Did something go wrong? If yes, press {0} to open the help screen.",
+                "Un problème est survenu ? Si oui, appuyez sur {0} pour ouvrir l'écran d'aide.",
+                "Qualcosa è andato storto? Se sì, premi {0} per aprire la schermata di aiuto.",
+                "Ist etwas schiefgelaufen? Falls ja, drücke {0}, um den Hilfebildschirm zu öffnen.",
+                "¿Ha ido algo mal? Si es así, pulsa {0} para abrir la pantalla de ayuda.",
+                "¿Salió algo mal? Si es así, presiona {0} para abrir la pantalla de ayuda.",
+                "Algo deu errado? Se sim, pressione {0} para abrir a tela de ajuda.",
+                "Что-то пошло не так? Если да, нажмите {0}, чтобы открыть экран помощи.",
+                "Щось пішло не так? Якщо так, натисніть {0}, щоб відкрити екран довідки.",
+                "出了什么问题吗？如果是的话，按 {0} 打开帮助界面。",
                 "",
-                "何か問題が起きましたか？もしそうなら、F1を押してヘルプ画面を開いてください。",
-                "무언가 잘못되었나요? 그렇다면 F1을 눌러 도움말 화면을 열어보세요.",
-                "Czy coś poszło nie tak? Jeśli tak, naciśnij F1, aby otworzyć ekran pomocy.",
-                "Bir şeyler mi ters gitti? Öyleyse, yardım ekranını açmak için F1 tuşuna basın.",
+                "何か問題が起きましたか？もしそうなら、{0}を押してヘルプ画面を開いてください。",
+                "무언가 잘못되었나요? 그렇다면 {0}을 눌러 도움말 화면을 열어보세요.",
+                "Czy coś poszło nie tak? Jeśli tak, naciśnij {0}, aby otworzyć ekran pomocy.",
+                "Bir şeyler mi ters gitti? Öyleyse, yardım ekranını açmak için {0} tuşuna basın.",
             },
         };
 

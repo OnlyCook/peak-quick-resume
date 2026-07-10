@@ -37,7 +37,6 @@ namespace PEAKQuickResume
         private const float WatchRadius = 100f;
 
         private static ManualLogSource _log;
-        private static CheckpointInterop _checkpoint;
 
         private class TrackedDrop
         {
@@ -65,10 +64,9 @@ namespace PEAKQuickResume
         }
         private static readonly List<PendingRestore> _pending = new List<PendingRestore>();
 
-        public static void Apply(Harmony harmony, CheckpointInterop checkpoint, ManualLogSource log)
+        public static void Apply(Harmony harmony, ManualLogSource log)
         {
             _log = log;
-            _checkpoint = checkpoint;
             try
             {
                 var dropTarget = AccessTools.Method(typeof(CharacterItems), "DropItemRpc");
@@ -209,7 +207,7 @@ namespace PEAKQuickResume
                     if (itemSlot == null || itemSlot.IsEmpty() || itemSlot.prefab == null || itemSlot.data == null) continue;
 
                     var values = new JObject();
-                    foreach (var kv in _checkpoint.ReadItemStateValues(itemSlot.data, itemSlot.prefab.itemID))
+                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(itemSlot.data, itemSlot.prefab.itemID))
                         values[kv.Key] = new JObject { ["type"] = kv.Value.TypeName, ["value"] = kv.Value.Value };
 
                     states.Add(new JObject

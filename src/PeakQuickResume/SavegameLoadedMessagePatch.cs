@@ -29,12 +29,6 @@ namespace PEAKQuickResume
     /// spawns next to an unlit campfire). Postfixes see the final (already-localized)
     /// parameter value, so matching against <see cref="MessagesLocalization.Get(MsgKey)"/>
     /// here works regardless of patch ordering with the prefix below
-    ///
-    /// Also appends a subtle "(1)"/"(2)" suffix when a Phase 6 step 2 Shift/Alt
-    /// teleport-config override is currently active (<see cref="TeleportConfigOverride.LastAppliedOverride"/>),
-    /// nothing appended for the base default. The postfix's text match is a
-    /// <c>StartsWith</c> rather than exact equality to still recognize the message
-    /// once that suffix is appended
     /// </summary>
     public static class SavegameLoadedMessagePatch
     {
@@ -42,15 +36,13 @@ namespace PEAKQuickResume
 
         private static ManualLogSource _log;
         private static TeleportWatchdog _watchdog;
-        private static TeleportConfigOverride _teleportOverride;
         private static CheckpointInterop _checkpoint;
 
         public static void Apply(Harmony harmony, Type checkpointType, ManualLogSource log, TeleportWatchdog watchdog = null,
-            TeleportConfigOverride teleportOverride = null, CheckpointInterop checkpoint = null)
+            CheckpointInterop checkpoint = null)
         {
             _log = log;
             _watchdog = watchdog;
-            _teleportOverride = teleportOverride;
             _checkpoint = checkpoint;
             try
             {
@@ -80,8 +72,7 @@ namespace PEAKQuickResume
             try
             {
                 if (!string.Equals(text, DefaultMessage, StringComparison.Ordinal)) return;
-                text = MessagesLocalization.Get(MsgKey.SavegameLoaded)
-                    + TeleportConfigOverride.FormatIndicator(_teleportOverride?.LastAppliedOverride);
+                text = MessagesLocalization.Get(MsgKey.SavegameLoaded);
             }
             catch (Exception e)
             {

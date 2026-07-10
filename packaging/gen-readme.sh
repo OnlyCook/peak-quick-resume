@@ -22,7 +22,7 @@ for f in "$SRC" "$EXTRA"; do
 done
 
 {
-  echo "<!-- GENERATED FILE — do not edit by hand."
+  echo "<!-- GENERATED FILE - do not edit by hand."
   echo "     Source: packaging/README.md + packaging/README.github-extra.md"
   echo "     Regenerate with: bash packaging/gen-readme.sh -->"
   echo

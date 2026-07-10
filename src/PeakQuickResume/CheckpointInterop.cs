@@ -46,7 +46,6 @@ namespace PEAKQuickResume
         private MethodInfo _preStartSetSegment;
         private MethodInfo _loadPlayerOffline;
         private MethodInfo _loadPlayerCoop;
-        private MethodInfo _showMessage; // optional (on-screen feedback only)
         private MethodInfo _checkReadyStatus; // optional (coop readiness gate)
         private FieldInfo _readyCheckConfigField; // optional (ConfigEntry<bool>)
 
@@ -61,14 +60,6 @@ namespace PEAKQuickResume
         private FieldInfo _loadKeyField;
         private FieldInfo _tutorialKeyField;
         private MethodInfo _showTutorialMessage; // optional (ShowTutorialMessage(bool, string))
-
-        // Phase 7 (boarding-pass island-load toggle button), optional:
-        // private UnityEngine.UI.Toggle _boardingToggle - the checkpoint mod's own tiny
-        // "use saved island / new island" checkbox next to its boarding-pass overlay text.
-        // Toggle is a real UnityEngine.UI type (not something of the checkpoint mod's own
-        // assembly), so once we have the Component itself no further reflection is needed
-        // to read/flip it, see IslandToggleButton
-        private FieldInfo _boardingToggleField;
 
         // The checkpoint mod's own "enableLoadLevelScene" config (ConfigEntry<bool>):
         // whether MapBaker.GetLevel gets force-overridden to the saved sceneName instead
@@ -130,9 +121,6 @@ namespace PEAKQuickResume
                 _preStartSetSegment   = AccessTools.Method(_pluginType, "PreStartSetSegment");
                 _loadPlayerOffline    = AccessTools.Method(_pluginType, "LoadPlayerOffline");
                 _loadPlayerCoop       = AccessTools.Method(_pluginType, "LoadPlayerCoop");
-                // ShowMessage(string text, Color color, float duration, bool disableMessage)
-                _showMessage          = AccessTools.Method(_pluginType, "ShowMessage",
-                                            new[] { typeof(string), typeof(UnityEngine.Color), typeof(float), typeof(bool) });
                 // Coop readiness gate, LoadPlayerCoop refuses until this is true
                 _checkReadyStatus     = AccessTools.Method(_pluginType, "CheckReadyStatusForPlayers");
                 _readyCheckConfigField = AccessTools.Field(_pluginType, "configAdvancedEnableClientReadyStatusCheck");
@@ -146,7 +134,6 @@ namespace PEAKQuickResume
                 _showTutorialMessage = AccessTools.Method(_pluginType, "ShowTutorialMessage",
                     new[] { typeof(bool), typeof(string) });
 
-                _boardingToggleField = AccessTools.Field(_pluginType, "_boardingToggle");
                 _useLevelSceneField = AccessTools.Field(_pluginType, "configLoadLevelScene");
 
                 _tryGetKeyMethod = AccessTools.Method(_pluginType, "TryGetKey");
@@ -161,15 +148,13 @@ namespace PEAKQuickResume
                 _log.LogInfo($"  PreStartSetSegment ... {(_preStartSetSegment != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  LoadPlayerOffline .... {(_loadPlayerOffline != null ? "OK" : "MISSING")}");
                 _log.LogInfo($"  LoadPlayerCoop ....... {(_loadPlayerCoop != null ? "OK" : "MISSING")}");
-                _log.LogInfo($"  ShowMessage .......... {(_showMessage != null ? "OK" : "MISSING (non-fatal, on-screen text only)")}");
                 _log.LogInfo($"  CheckReadyStatus ..... {(_checkReadyStatus != null ? "OK" : "MISSING (non-fatal, coop readiness)")}");
                 _log.LogInfo($"  readyStatusConfig .... {(_readyCheckConfigField != null ? "OK" : "MISSING (non-fatal, coop readiness)")}");
-                _log.LogInfo($"  teleportJumpLogic .... {(_teleportJumpLogicField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
-                _log.LogInfo($"  teleportFramesToWait . {(_teleportFramesToWaitField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
-                _log.LogInfo($"  jumpLogicWaitTime .... {(_teleportWaitTimeField != null ? "OK" : "MISSING (non-fatal, Shift/Alt override unavailable)")}");
+                _log.LogInfo($"  teleportJumpLogic .... {(_teleportJumpLogicField != null ? "OK" : "MISSING (non-fatal, campfire-relight fix unavailable)")}");
+                _log.LogInfo($"  teleportFramesToWait . {(_teleportFramesToWaitField != null ? "OK" : "MISSING (non-fatal)")}");
+                _log.LogInfo($"  jumpLogicWaitTime .... {(_teleportWaitTimeField != null ? "OK" : "MISSING (non-fatal)")}");
                 _log.LogInfo($"  loadKey/tutorialKey .. {(_loadKeyField != null && _tutorialKeyField != null ? "OK" : "MISSING (non-fatal, F1 screen falls back to defaults)")}");
                 _log.LogInfo($"  ShowTutorialMessage .. {(_showTutorialMessage != null ? "OK" : "MISSING (non-fatal, closing F1 with Escape may need a second F1 press to reopen)")}");
-                _log.LogInfo($"  _boardingToggle ...... {(_boardingToggleField != null ? "OK" : "MISSING (non-fatal, our own island-toggle button unavailable)")}");
                 _log.LogInfo($"  configLoadLevelScene . {(_useLevelSceneField != null ? "OK" : "MISSING (non-fatal, resumed saves may load today's island instead of the saved one)")}");
                 _log.LogInfo($"  item-state helpers ... {(_tryGetKeyMethod != null && _tryGetEntryObjectMethod != null && _tryReadEntryNumericMethod != null ? "OK" : "MISSING (non-fatal, dropped-backpack save mitigation unavailable)")}");
 
@@ -288,28 +273,11 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Best-effort on-screen message using the checkpoint mod's own overlay so it
-        /// looks/behaves like its F6 prompts. Never throws; a failure just means no text
-        /// </summary>
-        public void TryShowMessage(string text, UnityEngine.Color color, float duration = 2.5f)
-        {
-            try
-            {
-                var inst = Instance;
-                if (inst == null || _showMessage == null) return;
-                _showMessage.Invoke(inst, new object[] { text, color, duration, false });
-            }
-            catch (Exception e) { _log.LogWarning($"TryShowMessage failed (non-fatal): {e.Message}"); }
-        }
-
-        /// <summary>
         /// Reads the checkpoint mod's current teleport-config values (its own
         /// `teleportJumpLogic` / `teleportFramesToWait` / `jumpLogicWaitTime` settings),
-        /// live off its ConfigEntry objects, not a cached copy - so this always reflects
-        /// whatever's ACTUALLY in effect right now, including a still-active override
-        /// from <see cref="TrySetTeleportConfig"/> or a change made via ModConfig.
-        /// Used both by the Shift/Alt override (Phase 6 step 2) and the save picker's
-        /// live footer indicator
+        /// live off its ConfigEntry objects, not a cached copy. Used by
+        /// <see cref="CampfireRelightFix"/> to check whether the native (F6) load path
+        /// is using jumpLogic 0, the only value with the unlit-campfire gap it fixes
         /// </summary>
         public bool TryGetTeleportConfig(out int jumpLogic, out int framesToWait, out float waitTime)
         {
@@ -327,24 +295,6 @@ namespace PEAKQuickResume
                 return true;
             }
             catch (Exception e) { _log.LogWarning($"TryGetTeleportConfig failed (non-fatal): {e.Message}"); return false; }
-        }
-
-        /// <summary>Writes all three teleport-config values at once (see <see cref="TryGetTeleportConfig"/>)</summary>
-        public bool TrySetTeleportConfig(int jumpLogic, int framesToWait, float waitTime)
-        {
-            try
-            {
-                if (_teleportJumpLogicField == null || _teleportFramesToWaitField == null || _teleportWaitTimeField == null)
-                    return false;
-                var inst = Instance;
-                if (inst == null) return false;
-
-                SetConfigEntryValue(_teleportJumpLogicField, inst, jumpLogic);
-                SetConfigEntryValue(_teleportFramesToWaitField, inst, framesToWait);
-                SetConfigEntryValue(_teleportWaitTimeField, inst, waitTime);
-                return true;
-            }
-            catch (Exception e) { _log.LogWarning($"TrySetTeleportConfig failed (non-fatal): {e.Message}"); return false; }
         }
 
         /// <summary>The checkpoint mod's own native load key (default F6), as displayed text (e.g. "F6"), or null if unavailable</summary>
@@ -391,27 +341,6 @@ namespace PEAKQuickResume
                 _showTutorialMessage.Invoke(inst, new object[] { false, "" });
             }
             catch (Exception e) { _log.LogWarning($"TryCloseTutorial failed (non-fatal): {e.Message}"); }
-        }
-
-        /// <summary>
-        /// The checkpoint mod's own private "use saved island / new island" checkbox
-        /// (a real Component, next to its boarding-pass overlay text), or null if it
-        /// hasn't been created yet (before the boarding pass has been opened once with
-        /// a savefile present) or the field wasn't found. Toggling its <c>isOn</c>
-        /// setter fires the checkpoint mod's own listener exactly like a real click on
-        /// it would (persists the config, refreshes its own overlay text), so this is
-        /// the only touch point <see cref="IslandToggleButton"/> needs
-        /// </summary>
-        public UnityEngine.UI.Toggle TryGetBoardingToggle()
-        {
-            try
-            {
-                if (_boardingToggleField == null) return null;
-                var inst = Instance;
-                if (inst == null) return null;
-                return _boardingToggleField.GetValue(inst) as UnityEngine.UI.Toggle;
-            }
-            catch (Exception e) { _log.LogWarning($"TryGetBoardingToggle failed (non-fatal): {e.Message}"); return null; }
         }
 
         /// <summary>

@@ -27,7 +27,6 @@ namespace PEAKQuickResume
         private ManualLogSource _log;
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
-        private TeleportConfigOverride _teleportOverride;
 
         public bool IsOpen { get; private set; }
 
@@ -63,13 +62,11 @@ namespace PEAKQuickResume
         private const float FooterGap = 14f;
         private const float TitleBodyGap = 10f;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint,
-            TeleportConfigOverride teleportOverride = null)
+        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
-            _teleportOverride = teleportOverride;
         }
 
         public void Open()
@@ -366,10 +363,10 @@ namespace PEAKQuickResume
             if (_root == null) return;
             try
             {
-                string tutorialKey = _checkpoint?.TryGetTutorialKeyText() ?? "F1";
+                string tutorialKey = _checkpoint?.TryGetTutorialKeyText() ?? _cfg?.HelpKey.Value.ToString() ?? "F2";
 
                 _titleText.text = $"Quick Resume {HelpScreenLocalization.Get(HelpText.HelpTitleWord)}";
-                _bodyText.text = HelpScreenContent.Build(_checkpoint, _cfg, _teleportOverride);
+                _bodyText.text = HelpScreenContent.Build(_checkpoint, _cfg);
                 _footerKeyText.text = $"{tutorialKey} / Esc";
                 _footerLabelText.text = HelpScreenLocalization.Get(HelpText.Close);
 

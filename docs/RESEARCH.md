@@ -157,4 +157,77 @@ file selection. Auto-detecting the ascent from disk is a possible future nicety.
 - Coop: does driving `kiosk.StartGame`/`ReturnToAirport` from a non-UI path replicate
   the RPC handshake correctly for clients? Start single-player, then test coop.
 - Custom runs (`RunSettings.IsCustomRun`) — is that flag still set after death?
+
+## `teleportJumpLogic` (checkpoint mod 0.4.7) — why 0/1/2 behave so differently
+
+All three values are switched on inside `Plugin.CustomJumpToSegment()`, which only ever
+runs as a coroutine on **whichever machine calls `LoadPlayerOffline()`/`LoadPlayerCoop()`**
+— i.e. only the host in coop. Nothing re-runs this coroutine on clients. So whether a
+client is affected at all depends entirely on whether the chosen branch itself talks to
+the network.
+
+- **`0` = `MapHandler.SetSegmentOnSpawn(segment, lastRevivedSegment)`.** Internally calls
+  `JumpToSegmentLogic(segment, playersToTeleport: { NetCode.Session.SeatNumber }, sendToEveryone: false)`.
+  `playersToTeleport` is hardcoded to **the caller's own seat only**, and
+  `sendToEveryone: false` means the segment/campfire/wall `GameObject.SetActive` calls
+  (not networked in themselves) never get propagated anywhere. Nothing is sent over the
+  network at all. Solo: caller = only player, works perfectly. Coop: only the host
+  teleports and only the host's local scene activates the new segment; every client is
+  left in the old segment with no idea anything happened. This is not a Linux/Proton
+  thing — nothing in this path touches platform-specific code, it's a pure C#/Unity/Photon
+  call graph. Confirmed identical behavior on a native Windows 11 VM. It reads like the
+  method was written for the vanilla single-player "restore my last segment on scene load"
+  case and reused here as the mod's default without accounting for coop.
+- **`1` = `MapHandler.JumpToSegment(segment)`** (static). On the master client (the host,
+  since only the host calls this) it takes the `if (PhotonNetwork.IsMasterClient)` branch:
+  `playersToTeleport` = every player's actor number, and
+  `sendToEveryone: !NetCode.Session.IsOffline` (true whenever online). Two real network
+  effects follow: (1) the per-player teleport inside `JumpToSegmentLogic` is a genuine
+  Photon RPC — `photonView.RPC("WarpPlayerRPC", RpcTarget.All, vector, false)` — so
+  everyone's position actually moves on every machine; (2) because `sendToEveryone` is
+  true, it also does `CustomCommands.SendPackage(new SyncMapHandlerDebugCommandPackage(...), ReceiverGroup.Others)`,
+  which every client receives in `OnPackageHandle` and uses to re-run
+  `JumpToSegmentLogic(..., sendToEveryone: false)` **locally on their own machine**,
+  replicating the segment/campfire/wall activation there too. This is the only one of
+  the three that both moves everyone's position over the network *and* syncs the local
+  scene state to every client — matches our validated finding that `1` is the value that
+  actually works host+client (see `PluginConfig.OptimizedCoopJumpLogic`, default `1`).
+- **`2` = `mh.GoToSegment(segment)`** (instance method). This is the *vanilla* "walk from
+  one campfire to the next" transition, not a teleport primitive: it has a hard guard
+  `if ((int)s <= currentSegment) { LogError(...); return; }` (a no-op on a freshly loaded
+  level where `currentSegment` starts at `0` unless the target segment is strictly
+  greater), it is entirely local/non-networked (no RPC, no `CustomCommands` package,
+  ever), and critically **it never calls `WarpPlayerRPC` or moves the player's position at
+  all** — it only flips which segment's GameObjects are active and lets the player walk
+  into the newly-revealed area. It cannot function as a teleport in either solo or coop;
+  best case it silently re-activates a segment around a player who doesn't move, worst
+  case the guard makes it a no-op. Nothing here supports it as a usable multiplayer
+  teleport workaround (our own `AltTeleportJumpLogic` currently defaults to `2` for the
+  Alt-hold override — worth revisiting given this).
+
+## Scene "saving"/loading and whether old daily islands get cleared
+
+The checkpoint mod does not save a level scene — there's nothing bespoke to save. All
+possible islands are a **fixed, permanent array baked into the game build**:
+`MapBaker.ScenePaths`, indexed via `GetLevel(levelIndex) => ScenePaths[levelIndex % ScenePaths.Length]`.
+The "daily island" is just an integer, `NextLevelService.NextLevelData.CurrentLevelIndex`
+(sourced from the server's `LoginResponse.LevelIndex` on login), selecting into this
+always-present, always-shipped array — it is not procedurally generated or downloaded
+per day.
+
+The checkpoint mod records whichever scene name was active at save time
+(`sceneName = SceneManager.GetActiveScene().name`, e.g. `"Level_3"`), then on load
+Harmony-prefixes `MapBaker.GetLevel`:
+```csharp
+[HarmonyPatch(typeof(MapBaker), "GetLevel")]
+Prefix: if (Instance.selectedLevel is set) { __result = Instance.selectedLevel; return false; }
+```
+forcing that exact scene name regardless of what today's server-assigned index says.
+
+**Conclusion: old islands are never cleared.** `Level_3` is exactly as permanent as every
+other entry in the pool — shipped game content, not ephemeral per-day data. A save
+referencing an old `Level_N` stays loadable indefinitely, unless a future PEAK update
+restructures/renames/removes that entry from `MapBaker.ScenePaths` (a compatibility break
+on the game's side, not a cleanup mechanism). Matches our own live testing: cross-loading
+between two different daily islands across full runs worked flawlessly on v1.1.0.
 ```
