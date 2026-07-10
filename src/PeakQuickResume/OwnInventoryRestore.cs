@@ -182,8 +182,12 @@ namespace PEAKQuickResume
             entryPoints?.MarkNotCurrentlyLoading();
             entryPoints?.ArmRecentlyLoadedCooldown(10f);
             entryPoints?.ArmRecentlyLitCampfireCooldown(32f);
-            entryPoints?.Network?.Watchdog?.ArmPendingWatch();
-            entryPoints?.Network?.LoadingScreenOthers(false);
+            // End the watch window and forward the host's real teleport target to clients so
+            // a client that never got warped can still recover to it rather than only seeing
+            // the on-screen hint (see TeleportWatchdog.ArmPendingWatch)
+            var watchdog = entryPoints?.Network?.Watchdog;
+            watchdog?.ArmPendingWatch();
+            entryPoints?.Network?.LoadingScreenOthers(false, watchdog?.KnownTarget);
             log?.LogInfo("OwnInventoryRestore: restore sequence complete.");
         }
 

@@ -20,34 +20,18 @@ namespace PEAKQuickResume
 
         private static string Key(string k) => $"<color={Accent}>({k})</color>";
 
-        public static string Build(CheckpointInterop checkpoint, PluginConfig cfg)
+        public static string Build(PluginConfig cfg)
         {
-            bool checkpointInstalled = checkpoint != null && checkpoint.IsAvailable;
             string resumeKey = Plugin.Instance?.ResumeKeyText ?? "F7";
 
             var sb = new StringBuilder();
             sb.Append(HelpScreenLocalization.Get(HelpText.Intro1)).Append('\n');
 
-            // "Native load" (F6) and the teleport-bug warning both only apply when the
-            // checkpoint mod is actually installed - Phase 8 M9: our own restore path
-            // has no native-key equivalent and, since the M7 root-cause fix, no longer
-            // has the segment-sync bug this warning describes either
-            if (checkpointInstalled)
-            {
-                string loadKey = checkpoint.TryGetLoadKeyText() ?? "F6";
-                sb.Append(HelpScreenLocalization.Get(HelpText.NativeLoadFormat, Key(loadKey))).Append('\n');
-            }
+            // The old "native load" (F6) line and the teleport-bug warning were only ever
+            // shown alongside the external checkpoint mod; our own restore path has no
+            // native-key equivalent and no longer has the segment-sync bug that warning
+            // described, so both are gone
             sb.Append(HelpScreenLocalization.Get(HelpText.QuickResumeFormat, Key(resumeKey))).Append("\n\n");
-
-            if (checkpointInstalled)
-            {
-                sb.Append($"<color={Accent}>{HelpScreenLocalization.Get(HelpText.BugTitle)}</color> ")
-                    .Append(HelpScreenLocalization.Get(HelpText.BugSymptoms)).Append('\n');
-                sb.Append(HelpScreenLocalization.Get(HelpText.BugExplain)).Append("\n\n");
-
-                sb.Append($"<color={Accent}>{HelpScreenLocalization.Get(HelpText.RestartFirstTitle)}</color> ")
-                    .Append(HelpScreenLocalization.Get(HelpText.RestartFirstNote)).Append("\n\n");
-            }
 
             sb.Append(HelpScreenLocalization.Get(HelpText.AchievementsNote));
 

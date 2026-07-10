@@ -34,11 +34,8 @@ namespace PEAKQuickResume
     ///    scene override is active, which has no equivalent toggle in our own flow
     ///    (see <see cref="MapBakerLevelOverridePatch"/> - we always force the saved-
     ///    island override on), so this branch can never trigger for us
-    ///  - The solo unlit-campfire-after-jumpLogic-0 fix (previously
-    ///    <see cref="CampfireRelightFix"/>, hooked off the checkpoint mod's own
-    ///    "Save game loaded!" message) is folded in HERE directly, right after
-    ///    segment activation - the actual root cause location - rather than at a
-    ///    later message-timing hook we no longer have for our own path
+    ///  - The solo unlit-campfire-after-jumpLogic-0 fix is folded in HERE directly,
+    ///    right after segment activation - the actual root cause location
     /// </summary>
     public class OwnTeleportSequence : MonoBehaviour
     {
@@ -362,6 +359,13 @@ namespace PEAKQuickResume
             if (Character.localCharacter == null) yield break;
 
             Vector3 warpPos = pos + new Vector3(0f, 0.5f, 0f);
+
+            // Hand the watchdog the real target up front (see TeleportWatchdog.SetKnownTarget):
+            // the host also forwards this to clients when it ends the load window, so a client
+            // that never receives a warp can still recover here instead of only being warned.
+            // This is the same warpPos every client is sent below via TeleportClientsToHost
+            _entryPoints.Network?.Watchdog?.SetKnownTarget(warpPos);
+
             Character.localCharacter.photonView.RPC("WarpPlayerRPC", RpcTarget.MasterClient, warpPos, false);
 
             float startTime = Time.time;

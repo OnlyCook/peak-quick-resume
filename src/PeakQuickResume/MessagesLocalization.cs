@@ -5,16 +5,7 @@ namespace PEAKQuickResume
     /// <summary>
     /// Translations for every on-screen message OUR code triggers via
     /// <see cref="OwnMessageOverlay.Show"/> (from <see cref="Plugin"/>,
-    /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>), plus two
-    /// that override the checkpoint mod's own English-only strings at their point of
-    /// use: <see cref="MsgKey.LoadingSavegame"/> ("Loading savegame..." on its loading
-    /// screen, see <see cref="LoadingScreenPatch"/>) and <see cref="MsgKey.SavegameLoaded"/>
-    /// ("Save game loaded!" once a load finishes, see <see cref="SavegameLoadedMessagePatch"/>)
-    ///
-    /// We localize those two because they fire as a direct result of our own load/resume
-    /// flow just as often as the checkpoint mod's own F6 key, so leaving them English-only
-    /// would be a jarring language switch mid-flow. We do NOT localize anything else in
-    /// the checkpoint mod, only these two shared overlays
+    /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>)
     ///
     /// Same indexing/fallback rule as <see cref="PauseMenuLocalization"/> and
     /// <see cref="SavePickerLocalization"/>
@@ -36,8 +27,6 @@ namespace PEAKQuickResume
         RestartFailed,
         NoSavesSolo,
         NoSavesCoop,
-        LoadingSavegame,
-        SavegameLoaded,
         TeleportBugHint,
         LoadingSaveScreen, // ALL CAPS, base text for OwnLoadingScreen's cycling "LOADING SAVE..." caption
     }
@@ -318,42 +307,6 @@ namespace PEAKQuickResume
                 "아직 협동 저장 파일이 없습니다.",
                 "Nie znaleziono jeszcze żadnych zapisów kooperacji.",
                 "Henüz co-op kayıt bulunamadı.",
-            },
-            [MsgKey.LoadingSavegame] = new[]
-            {
-                "Loading savegame...",
-                "Chargement de la sauvegarde...",
-                "Caricamento del salvataggio...",
-                "Speicherstand wird geladen...",
-                "Cargando partida guardada...",
-                "Cargando partida guardada...",
-                "Carregando save...",
-                "Загрузка сохранения...",
-                "Завантаження збереження...",
-                "正在加载存档...",
-                "",
-                "セーブデータを読み込み中...",
-                "저장 파일을 불러오는 중...",
-                "Wczytywanie zapisu...",
-                "Kayıt yükleniyor...",
-            },
-            [MsgKey.SavegameLoaded] = new[]
-            {
-                "Save game loaded!",
-                "Sauvegarde chargée !",
-                "Partita salvata caricata!",
-                "Spielstand geladen!",
-                "¡Partida guardada cargada!",
-                "¡Partida guardada cargada!",
-                "Save carregado!",
-                "Сохранение загружено!",
-                "Збереження завантажено!",
-                "存档加载完成!",
-                "",
-                "セーブデータを読み込みました!",
-                "저장 파일을 불러왔습니다!",
-                "Zapis wczytany!",
-                "Kayıt yüklendi!",
             },
             [MsgKey.TeleportBugHint] = new[]
             {

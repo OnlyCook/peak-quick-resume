@@ -6,23 +6,17 @@ using UnityEngine.UI;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Phase 8 M9: our own top-of-screen transient message overlay, replacing
-    /// <c>CheckpointInterop.TryShowMessage</c> (which reflects into the checkpoint mod's
-    /// own overlay - unusable once the mod runs without it installed). Every on-screen
-    /// message this mod shows (resume status, errors, teleport-bug hints, save
-    /// confirmations, etc.) now goes through <see cref="Show"/> instead
+    /// Our own top-of-screen transient message overlay. Every on-screen message this
+    /// mod shows (resume status, errors, teleport-bug hints, save confirmations, etc.)
+    /// goes through <see cref="Show"/>
     ///
     /// Deliberately simple: single text, no queue - a new call immediately replaces
-    /// whatever's showing and resets its timer, matching the checkpoint mod's own
-    /// ShowMessage semantics exactly (several existing call sites, e.g.
-    /// <see cref="TeleportWatchdog.ShowMessageResiliently"/>'s repeated re-shows to win a
-    /// race against a later message, were already written assuming this "last call wins"
-    /// behavior)
+    /// whatever's showing and resets its timer ("last call wins"). Several call sites
+    /// rely on this, e.g. <see cref="TeleportWatchdog.ShowMessageResiliently"/>'s repeated
+    /// re-shows to win a race against a later message
     ///
     /// Built from the same primitives as <see cref="SavePicker"/>/<see cref="HelpScreen"/>
     /// (own Canvas, <see cref="SavePicker.FindGameFont"/>), word-wrapped from the start
-    /// (no separate wrap-fix patch needed, unlike <c>MessageOverlayWrapPatch</c> which
-    /// only ever fixed the checkpoint mod's own overlay)
     /// </summary>
     public class OwnMessageOverlay : MonoBehaviour
     {
@@ -43,7 +37,7 @@ namespace PEAKQuickResume
             _log = log;
         }
 
-        /// <summary>Shows (or replaces) the current message. Mirrors CheckpointInterop.TryShowMessage's own signature</summary>
+        /// <summary>Shows (or replaces) the current message</summary>
         public void Show(string text, Color color, float duration = 4f)
         {
             try

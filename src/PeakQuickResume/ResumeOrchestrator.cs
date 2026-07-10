@@ -25,25 +25,23 @@ namespace PEAKQuickResume
     {
         private ManualLogSource _log;
         private PluginConfig _cfg;
-        private CheckpointInterop _checkpoint;
         private OwnMessageOverlay _messageOverlay;
         private OwnLoadEntryPoints _ownLoadEntryPoints;
         private TeleportWatchdog _watchdog;
         private bool _running;
         private bool _lastWaitOk;
 
-        // When set, resume this specific archived save (restore it over the checkpoint
-        // mod's canonical file before starting). Null = auto (current run / latest on disk)
+        // When set, resume this specific archived save (restore it over the canonical
+        // file before starting). Null = auto (current run / latest on disk)
         private ArchivedSave _chosen;
 
         public bool IsRunning => _running;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint, OwnMessageOverlay messageOverlay,
-            OwnLoadEntryPoints ownLoadEntryPoints = null, TeleportWatchdog watchdog = null)
+        public void Init(ManualLogSource log, PluginConfig cfg, OwnMessageOverlay messageOverlay,
+            OwnLoadEntryPoints ownLoadEntryPoints, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
-            _checkpoint = checkpoint;
             _messageOverlay = messageOverlay;
             _ownLoadEntryPoints = ownLoadEntryPoints;
             _watchdog = watchdog;
@@ -54,8 +52,8 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Kick off the resume sequence. When <paramref name="chosen"/> is set, that
-        /// specific archived checkpoint is restored over the checkpoint mod's canonical
-        /// file before the run starts, so an OLDER checkpoint can be loaded on demand
+        /// specific archived checkpoint is restored over the canonical save file before
+        /// the run starts, so an OLDER checkpoint can be loaded on demand
         /// </summary>
         public void RequestResume(ArchivedSave chosen)
         {
@@ -67,13 +65,9 @@ namespace PEAKQuickResume
 
             _chosen = chosen;
 
-            // Phase 8 M9: our own restore path (_ownLoadEntryPoints) works completely
-            // independently of the checkpoint mod - only refuse outright if NEITHER path
-            // is available (e.g. our own components somehow failed to initialize AND the
-            // checkpoint mod isn't installed either)
-            if (_ownLoadEntryPoints == null && !_checkpoint.IsAvailable)
+            if (_ownLoadEntryPoints == null)
             {
-                _log.LogError("Cannot resume: neither our own restore path nor the checkpoint mod interop is available.");
+                _log.LogError("Cannot resume: our own restore path is unavailable (components failed to initialize).");
                 return;
             }
 
@@ -148,56 +142,31 @@ namespace PEAKQuickResume
             if (!_lastWaitOk) { Fail("Timed out waiting for the check-in kiosk"); yield break; }
             _log.LogInfo("[stage] Found check-in kiosk.");
 
-            // --- 3. Point the checkpoint mod at the saved run & start it ---
-            // If a specific archived checkpoint was chosen, copy it over the checkpoint
-            // mod's canonical file now (before it reads it in PreStartSetSegment/load)
+            // --- 3. Point our own loader at the saved run & start it ---
+            // If a specific archived checkpoint was chosen, copy it over the canonical
+            // save file now (before we read it in PreStartSetSegment/load)
             if (_chosen != null && !SaveArchive.Restore(_chosen, _log))
             { Fail("Could not restore the chosen save over the checkpoint file"); yield break; }
 
-            // The checkpoint mod picks its save-file name off RunSettings.IsCustomRun,
-            // so set that FIRST (both ways), otherwise a stale flag resumes the wrong
-            // save, or PreStartSetSegment looks in the wrong file
+            // The save-file name is picked off RunSettings.IsCustomRun, so set that FIRST
+            // (both ways), otherwise a stale flag resumes the wrong save, or
+            // PreStartSetSegment looks in the wrong file
             if (!RunLauncher.TrySetCustomRun(target.IsCustom, _log))
             { Fail("Could not set custom-run flag before starting"); yield break; }
 
             bool offline = PhotonNetwork.OfflineMode;
 
-            if (_ownLoadEntryPoints != null)
             {
-                // Phase 8 M3 (solo) / M7 (coop): resolves entirely through our own port -
-                // no checkpoint-mod calls needed for this step (our own
-                // MapBakerLevelOverridePatch doesn't need an equivalent "use saved
-                // island" toggle, see its own remarks). Coop uses the LOCAL (host's own)
-                // userId, matching PreStartSetSegment's own behavior exactly (decompile
-                // 914-954: always the CALLER's own save file, host-only since only the
-                // host ever reaches this call at all - see RequestResume's IsHost guard)
+                // Resolves entirely through our own port (our own MapBakerLevelOverridePatch
+                // always forces the saved island, so there's no separate "use saved island"
+                // toggle to set here - see its own remarks). Coop uses the LOCAL (host's own)
+                // userId, matching PreStartSetSegment's own behavior exactly (always the
+                // CALLER's own save file, host-only since only the host ever reaches this
+                // call at all - see RequestResume's IsHost guard)
                 string userId = offline ? "" : OwnSavePaths.LocalUserId();
                 if (!_ownLoadEntryPoints.TryPreStartSetSegment(target, offline, userId))
                 {
                     Fail($"No checkpoint save found for {target} (TryPreStartSetSegment returned false)");
-                    Msg(target.IsCustom
-                        ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
-                        : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
-                    yield break;
-                }
-            }
-            else
-            {
-                if (!_checkpoint.TrySetSelectedAscent(ascent)) { Fail("Could not set selected ascent on checkpoint mod"); yield break; }
-
-                // Force "use saved island" on regardless of the checkpoint mod's own
-                // checkbox state: Quick Resume's whole point is reproducing the exact run
-                // you saved, biomes included (biome layout is baked per scene, not random -
-                // see docs/RESEARCH.md), so silently falling back to today's daily rotation
-                // scene here would defeat that. Doesn't touch the checkbox for vanilla F6/
-                // manual boarding-pass loads, only forces it for the moment THIS load starts
-                if (!_checkpoint.TrySetUseSavedLevel(true))
-                    _log.LogWarning("[stage] Could not force 'use saved island' on; resumed run may load today's "
-                        + "daily island instead of the saved one if the checkbox is off.");
-
-                if (!_checkpoint.TryPreStartSetSegment())
-                {
-                    Fail($"No checkpoint save found for {target} (PreStartSetSegment returned false)");
                     Msg(target.IsCustom
                         ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
                         : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
@@ -249,21 +218,15 @@ namespace PEAKQuickResume
 
             // Coop: LoadPlayerCoop refuses ("Please wait until everybody is ready!")
             // until every client has reported ready. Clients auto-report once they're
-            // in the level, so wait that out here instead of firing a doomed load.
-            // Phase 8 M7: our own path uses OwnNetwork's own readiness gate instead of
-            // the checkpoint mod's (same shape, see OwnNetwork.CheckReadyStatusForPlayers)
+            // in the level, so wait that out here instead of firing a doomed load - using
+            // OwnNetwork's own readiness gate (see OwnNetwork.CheckReadyStatusForPlayers)
             if (!PhotonNetwork.OfflineMode)
             {
-                bool readyCheckEnabled = _ownLoadEntryPoints != null
-                    ? _cfg.OwnEnableClientReadyStatusCheck.Value
-                    : _checkpoint.ReadyCheckEnabled();
-                if (readyCheckEnabled)
+                if (_cfg.OwnEnableClientReadyStatusCheck.Value)
                 {
                     _log.LogInfo("[stage] Coop: waiting for all clients to report ready...");
                     Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
-                    Func<bool> allReady = _ownLoadEntryPoints != null
-                        ? (Func<bool>)(() => _ownLoadEntryPoints.Network.CheckReadyStatusForPlayers())
-                        : _checkpoint.AllClientsReady;
+                    Func<bool> allReady = () => _ownLoadEntryPoints.Network.CheckReadyStatusForPlayers();
                     yield return WaitFor(allReady, timeout, "all clients ready");
                     if (!_lastWaitOk)
                     {
@@ -275,41 +238,21 @@ namespace PEAKQuickResume
                 }
             }
 
-            bool loadOk;
-            if (_ownLoadEntryPoints != null)
-            {
-                // Phase 8 M3 (solo) / M7 (coop): loads go through our own restore path
-                _log.LogInfo("[stage] Triggering our own restore (Phase 8).");
-                string userId = offline ? "" : OwnSavePaths.LocalUserId();
-                loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline, userId);
-            }
-            else
-            {
-                // Don't fight the checkpoint mod if it's mid-load for some reason
-                float guard = 0f;
-                while (_checkpoint.IsCurrentlyLoading && guard < timeout)
-                {
-                    guard += Time.deltaTime;
-                    yield return null;
-                }
-
-                _log.LogInfo("[stage] Triggering checkpoint restore.");
-                loadOk = _checkpoint.TryLoadPlayer();
-            }
+            // Loads go through our own restore path
+            _log.LogInfo("[stage] Triggering our own restore.");
+            string loadUserId = offline ? "" : OwnSavePaths.LocalUserId();
+            bool loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline, loadUserId);
             if (!loadOk) { Fail("Load call failed"); yield break; }
 
-            // Own path only: TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's
-            // coroutine and returns immediately), so wait for the ENTIRE sequence - including its
-            // wake-up + loading-screen presentation at the end - to actually finish before
-            // declaring success. Showing the message right after TryLoadPlayer returns would print
-            // it well before the player has even seen the loading screen appear. Don't hard-fail on
-            // a timeout here (the load itself already succeeded); just show the message anyway
-            if (_ownLoadEntryPoints != null)
-            {
-                yield return WaitFor(() => !_ownLoadEntryPoints.TeleportInProgress, timeout, "teleport + wake-up sequence to finish");
-                if (!_lastWaitOk)
-                    _log.LogWarning("[stage] Teleport sequence didn't report done in time; showing the completion message anyway.");
-            }
+            // TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's coroutine and
+            // returns immediately), so wait for the ENTIRE sequence - including its wake-up +
+            // loading-screen presentation at the end - to actually finish before declaring
+            // success. Showing the message right after TryLoadPlayer returns would print it
+            // well before the player has even seen the loading screen appear. Don't hard-fail
+            // on a timeout here (the load itself already succeeded); just show the message anyway
+            yield return WaitFor(() => !_ownLoadEntryPoints.TeleportInProgress, timeout, "teleport + wake-up sequence to finish");
+            if (!_lastWaitOk)
+                _log.LogWarning("[stage] Teleport sequence didn't report done in time; showing the completion message anyway.");
 
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
             Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);
