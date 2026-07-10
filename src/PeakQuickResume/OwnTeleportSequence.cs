@@ -101,10 +101,8 @@ namespace PEAKQuickResume
             // (a few lines down) - ReviveDeadPlayers unconditionally clears passedOut/fullyPassedOut
             // (plus afflictions) for ANY character it finds flagged that way, including our own
             // fake collapse, undoing it within a couple of seconds and long before the intended
-            // reveal. An earlier version collapsed here and could never be woken up visibly during
-            // a REAL resume (confirmed via the F10 debug tool: the beat worked perfectly in
-            // isolation, since standalone testing never runs ReviveDeadPlayers at all) - moving the
-            // collapse to after everything else runs (right before FadeOut) sidesteps this entirely
+            // reveal. Collapsing here made the beat impossible to see during a real resume - moving
+            // the collapse to after everything else runs (right before FadeOut) sidesteps this entirely
             bool wakeUpEnabled = _cfg.OwnWakeUpAnimationEnabled.Value;
             // Debug-only escape hatch: skips just the loading-screen overlay (FadeIn/FadeOut)
             // while leaving the wake-up beat and every other Wake-Up timing setting untouched -

@@ -10,10 +10,8 @@ namespace PEAKQuickResume
     /// into the passed-out pose while <see cref="OwnLoadingScreen"/> covers the actual teleport
     /// work, then revealed already lying down and visibly stands back up once the loading screen
     /// clears - so the whole sequence reads as "you're waking up at your last checkpoint" instead
-    /// of "a mod is doing something to you". Session-confirmed via the F10 debug tool
-    /// (<see cref="OwnWakeUpDebugTool"/>): the collapse/stand-up IS visible when triggered in
-    /// isolation, including mid-air, so the mechanism itself works - the caller (OwnTeleportSequence)
-    /// controls exactly when <see cref="Collapse"/>/<see cref="Wake"/> fire relative to the fade
+    /// of "a mod is doing something to you". The caller (OwnTeleportSequence) controls exactly
+    /// when <see cref="Collapse"/>/<see cref="Wake"/> fire relative to the loading-screen fade
     ///
     /// Deliberately reuses the game's own pass-out/revive systems instead of building a custom
     /// animation: <c>CharacterData.GetTargetRagdollControll()</c> reads <c>data.passedOut</c> every
@@ -69,15 +67,13 @@ namespace PEAKQuickResume
 
             _log?.LogInfo("OwnWakeUpEffect: collapsing into the passed-out pose.");
             SnapPassOut(character, true);
-            LogState(character, "immediately after Collapse");
         }
 
         /// <summary>
         /// Clears the passed-out pose (starting the native ~1.5-2s stand-up recovery) and waits
-        /// for it to play out, logging character state periodically so a session log shows whether
-        /// the values actually stick frame to frame. Meant to be called right after
-        /// <see cref="OwnLoadingScreen.FadeOut"/> reveals the player already lying at the new
-        /// position, so the stand-up itself is what the player sees first
+        /// for it to play out. Meant to be called right after <see cref="OwnLoadingScreen.FadeOut"/>
+        /// reveals the player already lying at the new position, so the stand-up itself is what
+        /// the player sees first
         /// </summary>
         public IEnumerator Wake(float standTime)
         {
@@ -87,36 +83,7 @@ namespace PEAKQuickResume
             _log?.LogInfo("OwnWakeUpEffect: waking up (starting the native stand-up recovery).");
             SnapPassOut(character, false);
 
-            float elapsed = 0f;
-            standTime = Mathf.Max(0f, standTime);
-            while (elapsed < standTime)
-            {
-                LogState(character, "wake tick");
-                float step = Mathf.Min(0.2f, standTime - elapsed);
-                yield return new WaitForSeconds(step);
-                elapsed += step;
-            }
-
-            LogState(character, "wake-up beat complete");
-        }
-
-        /// <summary>
-        /// Diagnostic checkpoint callers can sprinkle at key points (right after Collapse, right
-        /// after the segment jump, right after the real warp, right before FadeOut, ...) to build
-        /// a log trail showing whether passedOut/currentRagdollControll actually hold steady
-        /// through the rest of the teleport sequence, or get reset by something else along the way
-        /// </summary>
-        public void LogSnapshot(string label)
-        {
-            Character character = null;
-            try { character = Character.localCharacter; } catch { /* logged as null below */ }
-
-            if (character == null)
-            {
-                _log?.LogInfo($"OwnWakeUpEffect: ({label}) Character.localCharacter is NULL.");
-                return;
-            }
-            LogState(character, label);
+            yield return new WaitForSeconds(Mathf.Max(0f, standTime));
         }
 
         private Character ResolveCharacter(string caller)
@@ -152,21 +119,6 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 _log?.LogWarning($"OwnWakeUpEffect.SnapPassOut({value}) failed (non-fatal): {e.Message}");
-            }
-        }
-
-        private void LogState(Character character, string label)
-        {
-            try
-            {
-                _log?.LogInfo($"OwnWakeUpEffect: ({label}) passedOut={character.data.passedOut} "
-                    + $"fullyPassedOut={character.data.fullyPassedOut} "
-                    + $"currentRagdollControll={character.data.currentRagdollControll:F2} "
-                    + $"warping={character.warping} headY={character.Head.y:F2}");
-            }
-            catch (Exception e)
-            {
-                _log?.LogWarning($"OwnWakeUpEffect.LogState failed: {e.Message}");
             }
         }
     }
