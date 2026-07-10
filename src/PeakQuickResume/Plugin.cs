@@ -101,11 +101,6 @@ namespace PEAKQuickResume
             var ownLoadingScreen = go.AddComponent<OwnLoadingScreen>();
             ownLoadingScreen.Init(Logger);
 
-            // TEMPORARY (remove once the wake-up beat is confirmed working end to end):
-            // F10 manually triggers the wake-up + loading-screen presentation in isolation
-            var ownWakeUpDebugTool = go.AddComponent<OwnWakeUpDebugTool>();
-            ownWakeUpDebugTool.Init(Logger, _cfg, ownWakeUpEffect, ownLoadingScreen);
-
             // Phase 8 M3: our own literal port of CustomJumpToSegment/TeleportToPosition/
             // TeleportClientsToHost/ReviveDeadPlayers (see OwnTeleportSequence.cs)
             var ownTeleportSequence = go.AddComponent<OwnTeleportSequence>();
