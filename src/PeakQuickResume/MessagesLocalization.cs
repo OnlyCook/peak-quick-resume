@@ -29,6 +29,7 @@ namespace PEAKQuickResume
         NoSavesCoop,
         TeleportBugHint,
         LoadingSaveScreen, // ALL CAPS, base text for OwnLoadingScreen's cycling "LOADING SAVE..." caption
+        CheckpointModStillInstalled,
     }
 
     internal static class MessagesLocalization
@@ -343,6 +344,25 @@ namespace PEAKQuickResume
                 "저장 파일 로딩 중",
                 "WCZYTYWANIE ZAPISU",
                 "KAYIT YÜKLENİYOR",
+            },
+            // "PEAK Checkpoint Save" and "Quick Resume" are left untranslated (mod names)
+            [MsgKey.CheckpointModStillInstalled] = new[]
+            {
+                "PEAK Checkpoint Save is still installed. Quick Resume no longer needs it and runs fully on its own; both mods will save/log independently, so expect duplicate log messages and saves appearing. This is harmless (no logic conflict), but uninstall PEAK Checkpoint Save to remove the duplicates.",
+                "PEAK Checkpoint Save est toujours installé. Quick Resume n'en a plus besoin et fonctionne entièrement seul ; les deux mods sauvegardent et écrivent leurs logs indépendamment, attendez-vous donc à des messages de log et des sauvegardes en double. C'est sans danger (aucun conflit de logique), mais désinstallez PEAK Checkpoint Save pour supprimer les doublons.",
+                "PEAK Checkpoint Save è ancora installato. Quick Resume non ne ha più bisogno e funziona in modo del tutto autonomo; entrambe le mod salvano e registrano i log in modo indipendente, quindi aspettati messaggi di log e salvataggi duplicati. È innocuo (nessun conflitto logico), ma disinstalla PEAK Checkpoint Save per eliminare i duplicati.",
+                "PEAK Checkpoint Save ist noch installiert. Quick Resume benötigt es nicht mehr und funktioniert völlig eigenständig; beide Mods speichern und loggen unabhängig voneinander, erwarte also doppelte Log-Meldungen und doppelte Speicherungen. Das ist harmlos (kein Logikkonflikt), aber deinstalliere PEAK Checkpoint Save, um die Duplikate zu entfernen.",
+                "PEAK Checkpoint Save sigue instalado. Quick Resume ya no lo necesita y funciona completamente por su cuenta; ambos mods guardan y registran de forma independiente, así que espera mensajes de registro y guardados duplicados. Es inofensivo (sin conflicto de lógica), pero desinstala PEAK Checkpoint Save para eliminar los duplicados.",
+                "PEAK Checkpoint Save sigue instalado. Quick Resume ya no lo necesita y funciona completamente por su cuenta; ambos mods guardan y registran de forma independiente, así que espera mensajes de registro y guardados duplicados. Es inofensivo (sin conflicto de lógica), pero desinstala PEAK Checkpoint Save para eliminar los duplicados.",
+                "PEAK Checkpoint Save ainda está instalado. O Quick Resume não precisa mais dele e funciona totalmente sozinho; os dois mods salvam e registram logs de forma independente, então espere mensagens de log e saves duplicados. Isso é inofensivo (nenhum conflito de lógica), mas desinstale o PEAK Checkpoint Save para remover os duplicados.",
+                "PEAK Checkpoint Save всё ещё установлен. Quick Resume больше в нём не нуждается и работает полностью самостоятельно; оба мода сохраняют и пишут логи независимо, поэтому ожидайте дублирующиеся сообщения в логе и сохранения. Это безвредно (нет конфликта логики), но удалите PEAK Checkpoint Save, чтобы убрать дубликаты.",
+                "PEAK Checkpoint Save усе ще встановлений. Quick Resume більше його не потребує й працює повністю самостійно; обидва моди зберігають і пишуть логи незалежно, тож очікуйте дубльовані повідомлення в лозі та збереження. Це безпечно (немає конфлікту логіки), але видаліть PEAK Checkpoint Save, щоб прибрати дублікати.",
+                "PEAK Checkpoint Save 仍已安装。Quick Resume 不再需要它，可以完全独立运行；两个模组会各自独立保存和记录日志，因此你会看到重复的日志消息和存档。这没有危害（不会产生逻辑冲突），但卸载 PEAK Checkpoint Save 即可消除这些重复。",
+                "",
+                "PEAK Checkpoint Save がまだインストールされています。Quick Resume はもう必要とせず、完全に単独で動作します。両方のModがそれぞれ独立してセーブとログ記録を行うため、ログメッセージとセーブが重複して表示されます。これは無害です（ロジックの競合はありません）が、重複をなくすには PEAK Checkpoint Save をアンインストールしてください。",
+                "PEAK Checkpoint Save가 아직 설치되어 있습니다. Quick Resume는 더 이상 이것이 필요 없으며 완전히 독립적으로 작동합니다. 두 모드가 각각 독립적으로 저장하고 로그를 기록하므로 로그 메시지와 저장이 중복되어 나타납니다. 이는 무해하지만(로직 충돌 없음), 중복을 없애려면 PEAK Checkpoint Save를 제거하세요.",
+                "PEAK Checkpoint Save jest nadal zainstalowany. Quick Resume już go nie potrzebuje i działa całkowicie samodzielnie; oba mody zapisują i logują niezależnie, więc spodziewaj się zduplikowanych komunikatów w logu i zapisów. Jest to nieszkodliwe (brak konfliktu logiki), ale odinstaluj PEAK Checkpoint Save, aby usunąć duplikaty.",
+                "PEAK Checkpoint Save hâlâ yüklü. Quick Resume artık ona ihtiyaç duymuyor ve tamamen kendi başına çalışıyor; her iki mod da bağımsız olarak kaydediyor ve log tutuyor, bu yüzden yinelenen log mesajları ve kayıtlar görmeyi bekleyin. Bu zararsızdır (mantık çakışması yok), ancak yinelenenleri kaldırmak için PEAK Checkpoint Save'i kaldırın.",
             },
         };
 

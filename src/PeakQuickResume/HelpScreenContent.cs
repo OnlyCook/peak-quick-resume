@@ -27,11 +27,26 @@ namespace PEAKQuickResume
             var sb = new StringBuilder();
             sb.Append(HelpScreenLocalization.Get(HelpText.Intro1)).Append('\n');
 
-            // The old "native load" (F6) line and the teleport-bug warning were only ever
-            // shown alongside the external checkpoint mod; our own restore path has no
-            // native-key equivalent and no longer has the segment-sync bug that warning
-            // described, so both are gone
+            // The old "native load" (F6) line and the checkpoint-mod-specific teleport-bug
+            // warning are gone (our own restore path has no native-key equivalent). The
+            // restart tip below is kept regardless: quitting/rejoining still fixes most
+            // load or teleport hiccups, whatever their source (possibly even vanilla ones)
             sb.Append(HelpScreenLocalization.Get(HelpText.QuickResumeFormat, Key(resumeKey))).Append("\n\n");
+
+            // Accent-color just the tip's opening question, matching the gold key badges
+            // (same treatment the old BugTitle line had). The question ends where the
+            // parenthetical symptom list begins - split on the opening paren ('(' or the
+            // fullwidth '（' the CJK translations use) rather than the \n (which comes only
+            // after the parenthetical) so the symptoms stay in the normal body color.
+            // Substring(question.Length) keeps whatever spacing was between them exactly as-is
+            string tip = HelpScreenLocalization.Get(HelpText.RestartTip);
+            int paren = tip.IndexOfAny(new[] { '(', '（' });
+            if (paren > 0)
+            {
+                string question = tip.Substring(0, paren).TrimEnd();
+                tip = $"<color={Accent}>{question}</color>{tip.Substring(question.Length)}";
+            }
+            sb.Append(tip).Append("\n\n");
 
             sb.Append(HelpScreenLocalization.Get(HelpText.AchievementsNote));
 

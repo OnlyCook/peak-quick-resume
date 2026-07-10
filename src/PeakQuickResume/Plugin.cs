@@ -38,6 +38,15 @@ namespace PEAKQuickResume
         // driving OwnTeleportSequence (see OwnLoadEntryPoints.cs)
         private OwnLoadEntryPoints _ownLoadEntryPoints;
 
+        // BepInEx GUID of the old PEAK Checkpoint Save mod. We no longer depend on,
+        // reference, or integrate with it, but if it's STILL installed alongside us both
+        // mods run their own campfire-autosave + logging independently, so the player sees
+        // duplicate "Saved!" messages and log lines. Purely cosmetic (both write the same
+        // file, no logic conflict) - we just detect it to warn the player once, see Update
+        private const string CheckpointSaveGuid = "PEAK_Checkpoint_Save";
+        private bool _checkpointModInstalled;
+        private bool _dupWarningShown;
+
         /// <summary>Display string for the configured resume key (e.g. "F7"), for UI text</summary>
         internal string ResumeKeyText => _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
 
@@ -140,6 +149,15 @@ namespace PEAKQuickResume
             // behind the F7 save picker closing (see PauseSuppressPatch for why)
             PauseSuppressPatch.Apply(harmony, Logger);
 
+            // Detect (but do NOT integrate with) a still-installed PEAK Checkpoint Save,
+            // so Update can warn the player once about the harmless duplicate saves/logs
+            _checkpointModInstalled = BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(CheckpointSaveGuid);
+            if (_checkpointModInstalled)
+                Logger.LogWarning("PEAK Checkpoint Save is still installed. Quick Resume no longer needs it and "
+                    + "runs fully on its own; both mods will save/log independently, so expect duplicate log "
+                    + "messages and saves appearing. This is harmless (no logic conflict), but uninstall PEAK "
+                    + "Checkpoint Save to remove the duplicates.");
+
             Logger.LogInfo($"{PluginInfo.Name} {PluginInfo.Version} loaded. "
                 + $"Resume key: {_cfg.ResumeKey.Value}.");
         }
@@ -147,6 +165,17 @@ namespace PEAKQuickResume
         private void Update()
         {
             if (_cfg == null) return;
+
+            // One-time heads-up when PEAK Checkpoint Save is still installed (see the field
+            // remarks). Deferred until the player is actually in a game scene (Airport or a
+            // level) so the overlay is on-screen and seen, rather than firing over the title
+            if (_checkpointModInstalled && !_dupWarningShown && _messageOverlay != null
+                && (RunLauncher.InAirport || RunLauncher.InLevel))
+            {
+                _dupWarningShown = true;
+                _messageOverlay.Show(MessagesLocalization.Get(MsgKey.CheckpointModStillInstalled),
+                    new Color(1f, 0.8f, 0.4f, 1f), 10f);
+            }
 
             // While the picker is open, Enter is an alternative "load selected"; the
             // picker itself handles arrows / Delete / Escape
