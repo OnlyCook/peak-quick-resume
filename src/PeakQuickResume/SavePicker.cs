@@ -35,7 +35,6 @@ namespace PEAKQuickResume
         private ManualLogSource _log;
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
-        private TeleportConfigOverride _teleportOverride;
 
         private List<ArchivedSave> _entries = new List<ArchivedSave>();
         private int _selected;
@@ -58,21 +57,16 @@ namespace PEAKQuickResume
         private const float RepeatInitialDelay = 0.35f;
         private const float RepeatInterval = 0.08f;
 
-        // Live "Load (N)" footer indicator (Phase 6 step 2), see Update()/ComputeLoadLabel
-        private string _lastLoadLabel;
-
         public bool IsOpen { get; private set; }
 
         public ArchivedSave Selected =>
             (IsOpen && _selected >= 0 && _selected < _entries.Count) ? _entries[_selected] : null;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint = null,
-            TeleportConfigOverride teleportOverride = null)
+        public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint = null)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
-            _teleportOverride = teleportOverride;
         }
 
         /// <summary>
@@ -83,11 +77,6 @@ namespace PEAKQuickResume
         /// </summary>
         public bool Open(bool offline, SaveTarget? preferred)
         {
-            // Phase 6 step 2 crash-safety net: catches a teleport config left stuck by
-            // an override whose restore never got to run (game closed too soon after a
-            // Shift/Alt-overridden load) - see TeleportConfigOverride.ReconcileAfterRestart
-            _teleportOverride?.ReconcileAfterRestart();
-
             _offline = offline;
             _entries = SaveArchive.List(offline, _log);
             if (_entries.Count == 0)
@@ -113,10 +102,6 @@ namespace PEAKQuickResume
             _scrollOffset = 0;
             ClearPendingDelete();
             IsOpen = true;
-            // Reset the "Load (N)" indicator to the plain no-modifier reading every time
-            // the picker (re)opens - never carries a stale reading over from a previous
-            // open, see RefreshFooter/ComputeLoadLabel (Phase 6 step 2)
-            _lastLoadLabel = null;
 
             // The very first time the picker is ever opened in a session, building the
             // real menu (baking every procedural sprite/texture from scratch) is heavy
@@ -235,14 +220,6 @@ namespace PEAKQuickResume
                 _transientWarnText = null;
                 RefreshWarn();
             }
-
-            // Live "Load (N)" indicator (Phase 6 step 2): reflects whichever
-            // teleportJumpLogic value would actually be used on the NEXT load, updating
-            // the instant Shift/Alt is pressed or released. Cheap early-out: only touches
-            // the label (and forces the one layout pass that needs) when the computed
-            // text actually changed, not every single frame
-            string loadLabel = ComputeLoadLabel();
-            if (loadLabel != _lastLoadLabel) SetLoadLabel(loadLabel);
 
             // Jagged-edge animation: cycle through the 3 pre-built frames on a fixed
             // interval. Every frame is already a real, complete Sprite generated once
@@ -785,8 +762,7 @@ namespace PEAKQuickResume
             bool starred = Selected != null && Selected.Starred;
 
             SetFooterEntry(_footerEntries[0], "↑/↓", SavePickerLocalization.Get(PickerText.Select));
-            _lastLoadLabel = ComputeLoadLabel();
-            SetFooterEntry(_footerEntries[1], loadKeys, _lastLoadLabel);
+            SetFooterEntry(_footerEntries[1], loadKeys, SavePickerLocalization.Get(PickerText.Load));
             SetFooterEntry(_footerEntries[2], starKey, SavePickerLocalization.Get(starred ? PickerText.Unstar : PickerText.Star));
             SetFooterEntry(_footerEntries[3], "Del", SavePickerLocalization.Get(PickerText.Delete));
             SetFooterEntry(_footerEntries[4], "Esc", SavePickerLocalization.Get(PickerText.Cancel));
@@ -802,45 +778,6 @@ namespace PEAKQuickResume
             // layout pass right after it sees correct sizes from frame one
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(_footerRow);
-        }
-
-        // Cheap per-frame path for JUST the "Load (N)" label (see Update()), without the
-        // rest of RefreshFooter's work (resume-key text, badge widths, etc. don't change
-        // frame to frame just from Shift/Alt being held)
-        private void SetLoadLabel(string label)
-        {
-            _lastLoadLabel = label;
-            if (_footerEntries.Count < 2) return;
-            _footerEntries[1].LabelText.text = label;
-            Canvas.ForceUpdateCanvases();
-            LayoutRebuilder.ForceRebuildLayoutImmediate(_footerRow);
-        }
-
-        // Dynamically reflects whichever teleportJumpLogic value would actually be used
-        // if the load key were pressed right now (Phase 6 step 2): TeleportConfigOverride's
-        // ResolveOverride (Alt held, or a plain coop load with optimized-coop-loading on)
-        // when it resolves to something, otherwise the base value that would actually
-        // apply instead (Shift held, solo, or the coop optimization disabled) - read via
-        // TryGetBaseJumpLogic so this stays correct even while another override is
-        // currently mid-flight, falling back to the checkpoint mod's live current value
-        // if the override helper isn't available for some reason. Never shows more than
-        // one number at a time. Falls back to the plain label (no number) if nothing
-        // above could be read at all
-        private string ComputeLoadLabel()
-        {
-            string baseLabel = SavePickerLocalization.Get(PickerText.Load);
-            if (_cfg == null) return baseLabel;
-
-            int? value = _teleportOverride?.ResolveOverride();
-            if (!value.HasValue)
-            {
-                if (_teleportOverride != null && _teleportOverride.TryGetBaseJumpLogic(out int baseJump))
-                    value = baseJump;
-                else if (_checkpoint != null && _checkpoint.TryGetTeleportConfig(out int liveJumpLogic, out _, out _))
-                    value = liveJumpLogic;
-            }
-
-            return value.HasValue ? $"{baseLabel} ({value.Value})" : baseLabel;
         }
 
         private static void SetFooterEntry(FooterEntry entry, string key, string label)

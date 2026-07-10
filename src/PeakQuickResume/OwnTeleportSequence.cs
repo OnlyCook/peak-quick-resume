@@ -89,13 +89,6 @@ namespace PEAKQuickResume
             Vector3 spawnPos = savedPos;
             spawnPos.y += 5f;
 
-            bool kilnWorkaround = _cfg.OwnTeleportTheKilnWorkaround.Value;
-            if (kilnWorkaround && (int)finalSegment == 4)
-            {
-                spawnPos = new Vector3(-0.91186905f, 838.8689f, 1713.6833f);
-                finalSegment = (Segment)3;
-            }
-
             // Hardcoded by connection mode, NOT configurable (session 15 fix, first real
             // deviation from a literal port - see ROADMAP.md Phase 8 M7 follow-up):
             // MapHandler.SetSegmentOnSpawn (the checkpoint mod's own default, "jump logic
@@ -123,7 +116,6 @@ namespace PEAKQuickResume
                 OwnWorldLootReset.DestroyLeftoverHeldItems(_log);
 
             if ((int)finalSegment == 5) index--;
-            else if (kilnWorkaround && (int)finalSegment == 4) index--;
 
             yield return new WaitForSeconds(waitTime);
             OwnWorldLootReset.ResetWorldLoot(_log);

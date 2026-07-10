@@ -26,8 +26,6 @@ namespace PEAKQuickResume
         private SavePicker _picker;
         private HelpScreen _helpScreen;
         private TeleportWatchdog _watchdog;
-        private TeleportConfigOverride _teleportOverride;
-        private IslandToggleButton _islandToggle;
 
         // Phase 8 M1: our own PhotonView/RPC channel, standing up alongside the
         // checkpoint mod's (still installed) rather than replacing anything yet -
@@ -68,26 +66,17 @@ namespace PEAKQuickResume
             _watchdog = go.AddComponent<TeleportWatchdog>();
             _watchdog.Init(Logger, _cfg, _checkpoint);
 
-            // Phase 6 step 2: temporary Shift/Alt teleport-config override, shared by
-            // our own F7 flow (below) and the native-F6 path (LoadingScreenPatch)
-            _teleportOverride = new TeleportConfigOverride(Logger, _cfg, _checkpoint, _orchestrator);
-
             _restart = go.AddComponent<RestartOrchestrator>();
             _restart.Init(Logger, _cfg, _checkpoint, _watchdog);
 
             _picker = go.AddComponent<SavePicker>();
-            _picker.Init(Logger, _cfg, _checkpoint, _teleportOverride);
+            _picker.Init(Logger, _cfg, _checkpoint);
 
             // Phase 6 step 3: the F1 help screen, a small menu built from the same
             // visual primitives as the picker above. Created before TutorialPatch.Apply
             // below, which needs a reference to it
             _helpScreen = go.AddComponent<HelpScreen>();
-            _helpScreen.Init(Logger, _cfg, _checkpoint, _teleportOverride);
-
-            // Phase 7: big, clearly-labeled boarding-pass island-toggle button (mirrors
-            // the checkpoint mod's own tiny, easy-to-miss checkbox, see IslandToggleButton)
-            _islandToggle = go.AddComponent<IslandToggleButton>();
-            _islandToggle.Init(Logger, _cfg, _checkpoint);
+            _helpScreen.Init(Logger, _cfg, _checkpoint);
 
             // Phase 8 M1: stands up our own PhotonView/RPC channel (separate GameObject,
             // own ViewID) purely to prove it resolves/works; nothing reads from it yet
@@ -114,7 +103,7 @@ namespace PEAKQuickResume
             // Now that _ownLoadEntryPoints exists, wire the orchestrator (Phase 8 M3:
             // its SOLO path calls _ownLoadEntryPoints directly; coop is unchanged, still
             // via _checkpoint - see ResumeOrchestrator.cs)
-            _orchestrator.Init(Logger, _cfg, _checkpoint, _ownLoadEntryPoints, _teleportOverride, _watchdog);
+            _orchestrator.Init(Logger, _cfg, _checkpoint, _ownLoadEntryPoints, _watchdog);
 
             // Phase 8 M3: our own copy of the checkpoint mod's fall/lava-damage
             // protection window, armed from OwnTeleportSequence (see OwnFallDamageProtection.cs)
@@ -135,8 +124,7 @@ namespace PEAKQuickResume
             // Harmony patches against the checkpoint mod (all non-fatal if it changed):
             //  - replace its F1 tutorial overlay with HelpScreen (Quick Resume + teleport-bug help)
             //  - archive every save it writes so the F7 picker can browse past checkpoints
-            //  - localize its "Loading savegame..." caption (also arms the teleport watchdog's
-            //    load window AND applies the Shift/Alt override for a native F6 load)
+            //  - localize its "Loading savegame..." caption (also arms the teleport watchdog's load window)
             //  - localize its "Save game loaded!" message (and arm the teleport watchdog's watch window)
             if (_checkpoint.CheckpointType != null)
             {
@@ -144,17 +132,19 @@ namespace PEAKQuickResume
                 SavePatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 CampfireCookSaveFixPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
                 BackpackSaveMitigation.Apply(harmony, _checkpoint, Logger);
-                LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride);
-                SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _teleportOverride, _checkpoint);
+                LoadingScreenPatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog);
+                SavegameLoadedMessagePatch.Apply(harmony, _checkpoint.CheckpointType, Logger, _watchdog, _checkpoint);
                 MessageOverlayWrapPatch.Apply(harmony, _checkpoint.CheckpointType, Logger);
             }
 
             // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
-            // target for the watchdog above. No checkpoint-mod dependency (Character is
-            // a vanilla type), but pointless without the checkpoint mod's own hooks above
-            // ever arming a load window, so only applied alongside them
-            if (_checkpoint.CheckpointType != null)
-                TeleportWatchdogPatch.Apply(harmony, Logger, _watchdog);
+            // target for the watchdog above. No checkpoint-mod dependency at all (Character
+            // is a vanilla type) - previously only applied alongside the checkpoint mod's
+            // own hooks above since THEY were the only thing that ever armed a load window,
+            // but since Phase 8 M7 our own OwnTeleportSequence/OwnInventoryRestore arm it
+            // directly for loads through our own path (solo AND coop) regardless of whether
+            // the checkpoint mod is even installed - so this patch is applied unconditionally now
+            TeleportWatchdogPatch.Apply(harmony, Logger, _watchdog);
 
             // Miscellaneous QoL, no dependency on the checkpoint mod: injects Restart /
             // Return to Airport / Board Flight buttons into the vanilla pause menu
@@ -264,16 +254,11 @@ namespace PEAKQuickResume
         private void ConfirmLoad()
         {
             var chosen = _picker.Selected;
-            // Captured HERE, at confirm time - our own load doesn't happen synchronously
-            // with this keypress (it waits for a fresh run to start first), so by the
-            // time the checkpoint mod's teleport actually runs the user has likely
-            // already released Shift/Alt. See TeleportConfigOverride / ROADMAP.md Phase 6 step 2
-            int? teleportOverride = _teleportOverride?.ResolveOverride();
             _picker.Close();
             if (chosen == null) return;
 
             Logger.LogInfo($"Resume confirmed: loading {chosen.DifficultyLabel} save from {chosen.SortTime:u}.");
-            _orchestrator.RequestResume(chosen, teleportOverride);
+            _orchestrator.RequestResume(chosen);
         }
 
         // --- Miscellaneous QoL entry points, called from PauseMenuPatch's injected buttons ---

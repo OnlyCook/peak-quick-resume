@@ -11,8 +11,9 @@ runs) & 2 (F7 save picker) working in-game (solo + 2-player coop). Mechanic 3
 branch `feature/teleport-mitigation`: Steps 1–3 done and confirmed working
 in-game, Step 4 is next** — see "Handoff notes for the next session" at the
 bottom of this file for exactly where to pick up. **Phase 7 (boarding-pass
-island-toggle button) added on the same branch, session 10, NOT YET IN-GAME
-TESTED** — see below. **Phase 8 (own save/load/teleport, drop the runtime
+island-toggle button) added session 10, then REMOVED entirely session 15
+(maintainer decision: the F7 menu already shows/restores everything needed,
+no boarding-pass UI is wanted)** — see below. **Phase 8 (own save/load/teleport, drop the runtime
 dependency on PEAK Checkpoint Save) got a full, detailed execution plan on
 branch `feature/phase8-independent-saveload` (session 11, 2026-07-09) — see
 that section below for the milestone breakdown (M0-M9). M0 (save-file
@@ -44,7 +45,23 @@ mitigations + F7/F1 UI to our own types, drop `TeleportConfigOverride`'s
 now-provably-broken Shift/Alt no-op) is next.**
 **Last updated:** 2026-07-10 (session 15).
 
-## Phase 7 — boarding-pass island-toggle button (session 10, untested)
+## Phase 7 — boarding-pass island-toggle button (session 10, REMOVED session 15)
+
+**Removed entirely (2026-07-10, maintainer decision):** "to me it is completely
+useless as we will not be showing any boarding-pass information (that the F7
+menu already shows) and thus not need such a button. This is much clearer:
+user starts a new run from the boarding pass -> today's map; user loads a
+saved run from the F7 menu -> we explicitly load the saved level and biomes.
+There is no need for it." `IslandToggleButton.cs`/`IslandToggleLocalization.cs`/
+`UiShapes.cs` (the last one had no other consumer) emptied to placeholders -
+see ROADMAP.md Phase 8 M8 follow-up for the exact removal writeup and the `rm`
+commands. `CheckpointInterop.TryGetBoardingToggle`/`_boardingToggleField`,
+`PluginConfig.ShowIslandToggleButton`/`IslandToggleOffsetX`/`IslandToggleOffsetY`
+all removed too. The rest of this section is kept below for history only -
+nothing in it describes current behavior anymore.
+
+<details>
+<summary>Original Phase 7 writeup (historical, kept for context)</summary>
 
 The checkpoint mod's own boarding-pass overlay has a tiny, unlabeled checkbox
 (small blue square, smaller green inner square, top-left next to its
@@ -77,6 +94,8 @@ a savefile present to confirm: the button appears bottom-right, position/size
 look right at actual game resolution, clicking it actually flips the island and
 the checkpoint mod's own text updates, and it correctly disappears in the
 "no savefile found" case.
+
+</details>
 
 ---
 
@@ -823,6 +842,81 @@ Milestones below), and only gets deleted once nothing calls into it anymore
   checkpoint mod's own boarding-pass checkbox to mirror — flag as an open
   question when this milestone starts). Delete `CheckpointInterop.cs` once
   nothing references it.
+
+  **Session 15 (2026-07-10) — M8 partially done, scope revised by maintainer
+  decision:**
+  1. `TeleportWatchdogPatch` needed no repointing (it already only hooks the
+     VANILLA `Character.WarpPlayerRPC`, no checkpoint-mod dependency) - just
+     removed the stale `if (_checkpoint.CheckpointType != null)` gate around
+     applying it (a leftover from before M7's watchdog-arming fix, when it was
+     genuinely pointless without the checkpoint mod's own hooks arming a load
+     window; now our own `OwnTeleportSequence`/`OwnInventoryRestore` arm it
+     directly regardless of the checkpoint mod's presence).
+  2. **`TeleportConfigOverride` (the whole Shift/Alt teleportJumpLogic
+     override feature) was RETIRED ENTIRELY, not repointed** - maintainer
+     decision: "this is clunky and unintuitive anyways. we'll later make the
+     loading robust and add a bunch of automated checks whether anything went
+     wrong while teleporting. the mod should handle the teleport, the user
+     shouldn't change their config if something doesn't work on their end."
+     There was also no config value left for it to repoint TO after M7's own
+     fix (session 15, above) hardcoded segment activation by connection mode
+     instead of exposing a jumpLogic integer at all - the entire premise
+     (manually override a flaky teleport's config) no longer applies to our
+     own path. Removed: `TeleportConfigOverride.cs` (emptied to a placeholder,
+     see below - the maintainer deletes files themselves per policy),
+     `PluginConfig`'s whole `Teleport-Override`/`Teleport-Override-Recovery`
+     config sections (`EnableOptimizedCoopLoading`, `OptimizedCoopJumpLogic`,
+     `AltTeleportJumpLogic`, `OverrideFramesToWait`, `OverrideJumpLogicWaitTime`,
+     `OverrideRestoreDelaySeconds`, all four `PendingOverride*` crash-recovery
+     entries), `CheckpointInterop.TrySetTeleportConfig` (read-only
+     `TryGetTeleportConfig` kept - `CampfireRelightFix` still needs it for the
+     unrelated native-F6 unlit-campfire fix), `SavePicker`'s live "Load (N)"
+     footer indicator (now a static "Load" label, no more per-frame
+     `ComputeLoadLabel`/`SetLoadLabel`), and the Shift/Alt explanation section
+     of the F1 help screen (`HelpScreenContent.Build` + the now-dead
+     `OptimizedIntroFormat`/`OptimizedSoloNote`/`AskHostFormat`/`ShiftLineFormat`/
+     `AltLineFormat`/`OptimizedFooterNote`/`DisabledFooterNote`/`DisabledNoteFormat`
+     entries removed from `HelpScreenLocalization.cs`'s 15-language table -
+     `BugTitle`/`BugSymptoms`/`BugExplain`/`RestartFirstTitle`/`RestartFirstNote`
+     kept, still valid generic advice for the native F6 path). **Per the same
+     maintainer decision, `OwnTeleportTheKilnWorkaround` (a Phase 8 port of the
+     checkpoint mod's own kiln-workaround toggle) was ALSO removed entirely** -
+     "there was a setting about enabling the kiln workaround that is also
+     completely useless and should not be kept" - deleted the config entry and
+     the `kilnWorkaround`-gated branch in `OwnTeleportSequence.cs` (the segment
+     always resolves to its real target now, no Caldera-substitution special
+     case). `TeleportConfigOverride.cs` itself: content replaced with a short
+     placeholder comment (maintainer's global policy is Claude never deletes
+     files directly) - **run `rm src/PeakQuickResume/TeleportConfigOverride.cs`
+     yourself** to actually remove it from the repo when convenient.
+  3. `SavePicker`/`HelpScreenContent`'s only remaining `CheckpointInterop`
+     dependency is `TryGetLoadKeyText` (the checkpoint mod's own F6 key, for
+     display text) - legitimate, unrelated to the override system, left as-is.
+  4. `IslandToggleButton`: initially left unchanged (it mirrors the checkpoint
+     mod's own real boarding-pass checkbox, which our own F7 path doesn't even
+     consult - `ResumeOrchestrator` already force-sets "use saved island" on
+     unconditionally via `TrySetUseSavedLevel`, bypassing that checkbox
+     entirely) - **but then removed entirely later the same session** per a
+     separate maintainer decision, see the "Phase 7" section above (now marked
+     REMOVED) for the full writeup. Same reasoning extended further:
+     `CheckpointInterop.TryGetBoardingToggle`/`_boardingToggleField` and
+     `PluginConfig.ShowIslandToggleButton`/`IslandToggleOffsetX`/
+     `IslandToggleOffsetY` removed too; `UiShapes.cs` emptied as well (it had
+     no other consumer).
+  5. `CheckpointInterop.cs` deletion: **not yet possible**, still referenced
+     by ~15 other files (the entire native F6 fallback path, coop-without-our-
+     path fallback, message overlay, several still-legitimate reflection
+     helpers) - correctly an M9 task, not M8.
+
+  Builds clean (`dotnet build -c Release -p:DeployToProfile=true`, zero
+  warnings/errors), deployed. **Confirmed in-game (session 15, maintainer):**
+  both solo and coop resume still work correctly after the Shift/Alt-override/
+  kiln-workaround removal (the maintainer explicitly re-tested before asking
+  for the boarding-pass button removal above). The boarding-pass button
+  removal itself was NOT separately in-game tested (nothing left to click -
+  removing a UI element rather than changing load/restore logic, low risk) -
+  worth a quick visual confirmation next real session that the boarding pass
+  looks normal (no leftover checkbox artifacts) but not blocking.
 - **M9 — Drop the hard dependency, migration, packaging.** Change the
   BepInEx dependency on `PEAK_Checkpoint_Save` from hard to soft/optional (or
   remove it outright — decide based on how M0-M8 went). Write a one-time

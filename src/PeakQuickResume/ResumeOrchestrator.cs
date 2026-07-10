@@ -27,7 +27,6 @@ namespace PEAKQuickResume
         private PluginConfig _cfg;
         private CheckpointInterop _checkpoint;
         private OwnLoadEntryPoints _ownLoadEntryPoints;
-        private TeleportConfigOverride _teleportOverride;
         private TeleportWatchdog _watchdog;
         private bool _running;
         private bool _lastWaitOk;
@@ -36,37 +35,27 @@ namespace PEAKQuickResume
         // mod's canonical file before starting). Null = auto (current run / latest on disk)
         private ArchivedSave _chosen;
 
-        // Captured at confirm time (see Plugin.ConfirmLoad); the teleportJumpLogic value
-        // to temporarily apply for this one load, or null for no override. See
-        // TeleportConfigOverride / ROADMAP.md Phase 6 step 2
-        private int? _teleportOverrideValue;
-
         public bool IsRunning => _running;
 
         public void Init(ManualLogSource log, PluginConfig cfg, CheckpointInterop checkpoint,
-            OwnLoadEntryPoints ownLoadEntryPoints = null,
-            TeleportConfigOverride teleportOverride = null, TeleportWatchdog watchdog = null)
+            OwnLoadEntryPoints ownLoadEntryPoints = null, TeleportWatchdog watchdog = null)
         {
             _log = log;
             _cfg = cfg;
             _checkpoint = checkpoint;
             _ownLoadEntryPoints = ownLoadEntryPoints;
-            _teleportOverride = teleportOverride;
             _watchdog = watchdog;
         }
 
         /// <summary>Kick off the resume sequence for the current run / latest save</summary>
-        public void RequestResume() => RequestResume(null, null);
+        public void RequestResume() => RequestResume(null);
 
         /// <summary>
         /// Kick off the resume sequence. When <paramref name="chosen"/> is set, that
         /// specific archived checkpoint is restored over the checkpoint mod's canonical
-        /// file before the run starts, so an OLDER checkpoint can be loaded on demand.
-        /// <paramref name="teleportOverrideValue"/> is the teleportJumpLogic value
-        /// (captured at confirm time) to temporarily apply for just this load's
-        /// checkpoint restore, or null for no override
+        /// file before the run starts, so an OLDER checkpoint can be loaded on demand
         /// </summary>
-        public void RequestResume(ArchivedSave chosen, int? teleportOverrideValue = null)
+        public void RequestResume(ArchivedSave chosen)
         {
             if (_running)
             {
@@ -75,7 +64,6 @@ namespace PEAKQuickResume
             }
 
             _chosen = chosen;
-            _teleportOverrideValue = teleportOverrideValue;
 
             if (!_checkpoint.IsAvailable)
             {
@@ -284,12 +272,7 @@ namespace PEAKQuickResume
             bool loadOk;
             if (_ownLoadEntryPoints != null)
             {
-                // Phase 8 M3 (solo) / M7 (coop): loads go through our own restore path.
-                // No busy-wait guard needed yet (nothing concurrent can trigger it), and
-                // no Shift/Alt override applied - TeleportConfigOverride still only
-                // affects the checkpoint mod's own config, which our own path no longer
-                // consults; this is an explicit, temporary limitation until M8 repoints
-                // it onto our own PluginConfig entries. See ROADMAP.md Phase 8 M3
+                // Phase 8 M3 (solo) / M7 (coop): loads go through our own restore path
                 _log.LogInfo("[stage] Triggering our own restore (Phase 8).");
                 string userId = offline ? "" : OwnSavePaths.LocalUserId();
                 loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline, userId);
@@ -305,29 +288,13 @@ namespace PEAKQuickResume
                 }
 
                 _log.LogInfo("[stage] Triggering checkpoint restore.");
-
-                // Apply the Shift/Alt override (if any) for exactly the duration of this
-                // synchronous call - see TeleportConfigOverride for why this needs to be a
-                // flag rather than relying on ambient Input at this point (the user likely
-                // released the key seconds ago, back when they confirmed the load)
-                if (_teleportOverride != null) _teleportOverride.IsDrivingOurOwnLoad = true;
-                try
-                {
-                    _teleportOverride?.ApplyForOurOwnLoad(_teleportOverrideValue);
-                    loadOk = _checkpoint.TryLoadPlayer();
-                }
-                finally
-                {
-                    if (_teleportOverride != null) _teleportOverride.IsDrivingOurOwnLoad = false;
-                }
+                loadOk = _checkpoint.TryLoadPlayer();
             }
             if (!loadOk) { Fail("Load call failed"); yield break; }
 
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
-            Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack)
-                + TeleportConfigOverride.FormatIndicator(_teleportOverride?.LastAppliedOverride), MsgSuccess);
+            Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);
             _chosen = null;
-            _teleportOverrideValue = null;
             _running = false;
         }
 

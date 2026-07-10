@@ -20,18 +20,10 @@ namespace PEAKQuickResume
 
         private static string Key(string k) => $"<color={Accent}>({k})</color>";
 
-        public static string Build(CheckpointInterop checkpoint, PluginConfig cfg, TeleportConfigOverride teleportOverride = null)
+        public static string Build(CheckpointInterop checkpoint, PluginConfig cfg)
         {
             string loadKey = checkpoint?.TryGetLoadKeyText() ?? "F6";
             string resumeKey = Plugin.Instance?.ResumeKeyText ?? "F7";
-
-            int altVal = cfg?.AltTeleportJumpLogic.Value ?? 2;
-            int optimizedVal = cfg?.OptimizedCoopJumpLogic.Value ?? 1;
-            bool optimizedEnabled = cfg?.EnableOptimizedCoopLoading.Value ?? true;
-            int? baseVal = null;
-            if (teleportOverride != null && teleportOverride.TryGetBaseJumpLogic(out int b)) baseVal = b;
-            string baseValText = baseVal.HasValue ? baseVal.Value.ToString() : "unknown";
-            string jumpLogicDesc = checkpoint?.TryGetTeleportJumpLogicDescription();
 
             var sb = new StringBuilder();
             sb.Append(HelpScreenLocalization.Get(HelpText.Intro1)).Append('\n');
@@ -42,30 +34,8 @@ namespace PEAKQuickResume
                 .Append(HelpScreenLocalization.Get(HelpText.BugSymptoms)).Append('\n');
             sb.Append(HelpScreenLocalization.Get(HelpText.BugExplain)).Append("\n\n");
 
-            // The single most effective fix, and the cheapest to try - goes first,
-            // before any of the teleportJumpLogic workarounds below
             sb.Append($"<color={Accent}>{HelpScreenLocalization.Get(HelpText.RestartFirstTitle)}</color> ")
                 .Append(HelpScreenLocalization.Get(HelpText.RestartFirstNote)).Append("\n\n");
-
-            if (optimizedEnabled)
-            {
-                sb.Append(HelpScreenLocalization.Get(HelpText.OptimizedIntroFormat, Key(loadKey), Key(resumeKey), optimizedVal, baseValText))
-                    .Append(' ').Append(HelpScreenLocalization.Get(HelpText.OptimizedSoloNote)).Append('\n');
-                sb.Append(HelpScreenLocalization.Get(HelpText.AskHostFormat, resumeKey)).Append("\n\n");
-                sb.Append(HelpScreenLocalization.Get(HelpText.ShiftLineFormat, Key("Shift"), Key(resumeKey), baseValText)).Append('\n');
-                sb.Append(HelpScreenLocalization.Get(HelpText.AltLineFormat, Key("Alt"), Key(resumeKey), altVal)).Append("\n\n");
-                sb.Append(HelpScreenLocalization.Get(HelpText.OptimizedFooterNote)).Append("\n\n");
-            }
-            else
-            {
-                sb.Append(HelpScreenLocalization.Get(HelpText.AskHostFormat, resumeKey)).Append("\n\n");
-                sb.Append(HelpScreenLocalization.Get(HelpText.ShiftLineFormat, Key("Shift"), Key(resumeKey), baseValText)).Append('\n');
-                sb.Append(HelpScreenLocalization.Get(HelpText.AltLineFormat, Key("Alt"), Key(resumeKey), altVal)).Append("\n\n");
-                sb.Append(HelpScreenLocalization.Get(HelpText.DisabledFooterNote)).Append("\n\n");
-                sb.Append(HelpScreenLocalization.Get(HelpText.DisabledNoteFormat, optimizedVal)).Append("\n\n");
-            }
-            //if (!string.IsNullOrEmpty(jumpLogicDesc))
-            //    sb.Append($"<size=85%>{jumpLogicDesc}</size>\n\n");
 
             sb.Append(HelpScreenLocalization.Get(HelpText.AchievementsNote));
 

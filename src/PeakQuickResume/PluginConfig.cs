@@ -21,13 +21,6 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> ShowBoardFlightButton;
         public readonly ConfigEntry<bool> MoveRebindControlsToSettings;
 
-        // Phase 7: a big, clearly-labeled toggle button on the boarding-pass screen,
-        // standing in for the checkpoint mod's own tiny, unlabeled "use saved island /
-        // new island" checkbox (easy to never notice it's even clickable)
-        public readonly ConfigEntry<bool> ShowIslandToggleButton;
-        public readonly ConfigEntry<float> IslandToggleOffsetX;
-        public readonly ConfigEntry<float> IslandToggleOffsetY;
-
         // Timing knobs, tuned blindly for now, exposed so we can iterate from
         // in-game reports without recompiling. Times are in seconds
         public readonly ConfigEntry<float> SettleAfterAirport;
@@ -54,57 +47,18 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> EnableWarpSuppression;
         public readonly ConfigEntry<float> WarpSuppressionExtraSeconds;
 
-        // Phase 6 step 2: temporary teleport-config override for the next load only
-        // (native F6 or ours). Every number here is exposed as its own setting
-        // specifically so it's easy to change without touching code
-        //
-        // Extensive maintainer testing (session 11, both directions of host/client,
-        // every campfire on 3 islands, mixed inventories) found teleportJumpLogic=1
-        // avoids nearly every case of the checkpoint mod's intermittent teleport bug in
-        // COOP specifically (it unfogs/loads every intervening island's segment on the
-        // way to the target, rather than jumping straight there). So coop's plain,
-        // no-modifier load now defaults to OptimizedCoopJumpLogic (see below) instead
-        // of the user's own base teleportJumpLogic - the exact opposite of the old
-        // "0 is safest, override only if asked" stance, now that testing backs a
-        // specific better default. Solo is never affected (no known solo-only benefit
-        // was found, and there's no coop desync mechanism for it to fix there).
-        // Holding Shift now means "use my own base config anyway" (no override applied
-        // at all) rather than a distinct configured value - the escape hatch for
-        // anyone who wants the old behavior for one load without changing settings
-        public readonly ConfigEntry<bool> EnableOptimizedCoopLoading;
-        public readonly ConfigEntry<int> OptimizedCoopJumpLogic;
-        public readonly ConfigEntry<int> AltTeleportJumpLogic;
-        public readonly ConfigEntry<int> OverrideFramesToWait;
-        public readonly ConfigEntry<float> OverrideJumpLogicWaitTime;
-        public readonly ConfigEntry<float> OverrideRestoreDelaySeconds;
-
-        // Internal bookkeeping, not meant to be hand-edited: persists the pre-override
-        // teleport config to disk for the ~35s window an override is active, so a
-        // crash/quit in that window doesn't leave it stuck. See
-        // TeleportConfigOverride.Apply/RestoreAfterDelay/ReconcileAfterRestart.
-        public readonly ConfigEntry<bool> PendingOverrideResetOwed;
-        public readonly ConfigEntry<int> PendingOverrideOriginalJumpLogic;
-        public readonly ConfigEntry<int> PendingOverrideOriginalFramesToWait;
-        public readonly ConfigEntry<float> PendingOverrideOriginalWaitTime;
-
         // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
         // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
         // same meaning) once we stop reflecting into its instance for this
         public readonly ConfigEntry<bool> OwnEnableClientReadyStatusCheck;
 
         // Phase 8 M3: our own copies of the checkpoint mod's teleport-sequence
-        // config entries (same names/defaults/meaning as configTeleportJumpLogic,
-        // configAdvancedTeleportFramesToWait, configAdvancedJumpLogicWaitTime,
-        // configTeleportTheKilnWorkaround, configCampfireReset, configDaytime -
-        // decompile lines 1081-1116), used by OwnTeleportSequence.cs instead of
-        // reflecting into the checkpoint mod's instance. NOTE: these are the BASE
-        // values only - the Shift/Alt/optimized-coop override system
-        // (TeleportConfigOverride) still only reads/writes the checkpoint mod's OWN
-        // config and has no effect on these yet (that repoint is M8's job); see
-        // ROADMAP.md Phase 8 M3 for the exact, temporary consequence of this
+        // config entries (same names/defaults/meaning as configAdvancedTeleportFramesToWait,
+        // configAdvancedJumpLogicWaitTime, configCampfireReset, configDaytime - decompile
+        // lines 1081-1116), used by OwnTeleportSequence.cs instead of reflecting into the
+        // checkpoint mod's instance
         public readonly ConfigEntry<int> OwnTeleportFramesToWait;
         public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
-        public readonly ConfigEntry<bool> OwnTeleportTheKilnWorkaround;
         public readonly ConfigEntry<bool> OwnCampfireReset;
         public readonly ConfigEntry<bool> OwnDaytime;
 
@@ -196,33 +150,6 @@ namespace PEAKQuickResume
                 + "other mods'), since only 9 fit on screen at once and a button you rarely use otherwise pushes "
                 + "one you actually need off the bottom. Disabled by default since it relocates a vanilla button.");
 
-            ShowIslandToggleButton = cfg.Bind("Boardingpass", "show-island-toggle-button", true,
-                "Show a big, clearly-labeled toggle button in the bottom-right of the boarding pass screen for "
-                + "switching between loading your saved island (with its biomes) and a new one, mirroring the "
-                + "checkpoint mod's own tiny \"use saved island / new island\" checkbox next to its boarding-pass "
-                + "text (top-left, easy to miss). Both control the exact same setting; this just makes it "
-                + "obvious and easy to click.");
-
-            // Explicit AcceptableValueRange on both (not just a bare default) so mod-config
-            // UIs (e.g. PEAKLib.ModConfig) render a slider that actually SPANS negative
-            // values instead of inferring some positive-only range from the default alone
-            // and silently clamping island-toggle-offset-y's negative default back to 0
-            IslandToggleOffsetX = cfg.Bind("Boardingpass", "island-toggle-offset-x", 400f,
-                new ConfigDescription(
-                    "Horizontal offset (pixels) of the island-toggle button from the checkpoint mod's own "
-                    + "boarding-pass message anchor point (the same coordinate system its own message text and "
-                    + "tiny checkbox use, so this scales/positions consistently with them at any resolution). "
-                    + "Positive = further right. Raise this if the button overlaps the message text (e.g. a long "
-                    + "campfire/level name makes a line wider than usual).",
-                    new AcceptableValueRange<float>(-200f, 900f)));
-
-            IslandToggleOffsetY = cfg.Bind("Boardingpass", "island-toggle-offset-y", -20f,
-                new ConfigDescription(
-                    "Vertical offset (pixels), added on top of the checkpoint mod's own checkbox height (so by "
-                    + "default the button lines up with the top line of the message). Positive = further up, "
-                    + "negative = further down.",
-                    new AcceptableValueRange<float>(-300f, 300f)));
-
             SettleAfterAirport = cfg.Bind("Timing", "settle-after-airport", 0.75f,
                 "Seconds to wait after the Airport scene loads before starting the new run (advanced).");
 
@@ -305,58 +232,6 @@ namespace PEAKQuickResume
                 "How far (in meters) from the intended target still counts as \"not settled\" when the position "
                 + "recovery check above runs (advanced).");
 
-            EnableOptimizedCoopLoading = cfg.Bind("Teleport-Override", "enable-optimized-coop-loading", true,
-                "In COOP, a plain load (native F6, or this mod's F7/Enter with no modifier held) uses "
-                + "optimized-coop-jump-logic instead of your own base teleportJumpLogic, ONLY for that one load - "
-                + "extensive maintainer testing found this avoids nearly every case of the checkpoint mod's "
-                + "intermittent teleport bug. Solo is never affected by this setting (always uses your own base "
-                + "value). Hold Shift while loading to use your own base value anyway for just that load, even "
-                + "with this enabled. If you disable this, a plain load goes back to your own base value in coop "
-                + "too, same as solo - set your own teleportJumpLogic to 1 directly in PEAK Checkpoint Save's own "
-                + "config if you still want the optimized value as your default everywhere.");
-
-            OptimizedCoopJumpLogic = cfg.Bind("Teleport-Override", "optimized-coop-jump-logic", 1,
-                "Which of the checkpoint mod's own teleportJumpLogic values (0 = SetSegmentOnSpawn, "
-                + "1 = JumpToSegment, 2 = GoToSegment) enable-optimized-coop-loading above uses (advanced - the "
-                + "default of 1 is the one extensive testing actually validated, only change this if you're doing "
-                + "your own testing).");
-
-            AltTeleportJumpLogic = cfg.Bind("Teleport-Override", "alt-teleport-jump-logic", 2,
-                "Which of the checkpoint mod's own teleportJumpLogic values to use, ONLY for the next load, when "
-                + "holding Alt while loading (native F6, or this mod's F7/Enter) - in both solo and coop. Restored "
-                + "to whatever you actually have configured afterward. Host-only, has no effect for non-hosts "
-                + "(this setting only ever matters on whichever machine drives the actual teleport).");
-
-            OverrideFramesToWait = cfg.Bind("Teleport-Override", "override-frames-to-wait", 40,
-                "While a Shift/Alt override is active, the checkpoint mod's own teleportFramesToWait is raised to "
-                + "at least this value (never lowered below whatever you already had configured) (advanced).");
-
-            OverrideJumpLogicWaitTime = cfg.Bind("Teleport-Override", "override-jump-logic-wait-time", 2f,
-                "Same as override-frames-to-wait above, but for the checkpoint mod's jumpLogicWaitTime "
-                + "(advanced).");
-
-            OverrideRestoreDelaySeconds = cfg.Bind("Teleport-Override", "override-restore-delay-seconds", 35f,
-                "Seconds after a Shift/Alt-overridden load before the checkpoint mod's teleport settings are "
-                + "restored to whatever you actually have configured. Comfortably longer than the ~30s window "
-                + "its own teleport corrections can keep running in (advanced).");
-
-            PendingOverrideResetOwed = cfg.Bind("Teleport-Override-Recovery", "pending-reset-owed", false,
-                "Internal bookkeeping, do not edit by hand. True while a Shift/Alt override's restore is still "
-                + "pending; used to detect and fix a teleport config left stuck if the game closed before it "
-                + "could restore on its own.");
-
-            PendingOverrideOriginalJumpLogic = cfg.Bind("Teleport-Override-Recovery", "pending-original-jump-logic", 0,
-                "Internal bookkeeping, do not edit by hand. The teleportJumpLogic value to restore if "
-                + "pending-reset-owed is stuck true.");
-
-            PendingOverrideOriginalFramesToWait = cfg.Bind("Teleport-Override-Recovery", "pending-original-frames-to-wait", 0,
-                "Internal bookkeeping, do not edit by hand. Same as pending-original-jump-logic, for "
-                + "teleportFramesToWait.");
-
-            PendingOverrideOriginalWaitTime = cfg.Bind("Teleport-Override-Recovery", "pending-original-wait-time", 0f,
-                "Internal bookkeeping, do not edit by hand. Same as pending-original-jump-logic, for "
-                + "jumpLogicWaitTime.");
-
             OwnEnableClientReadyStatusCheck = cfg.Bind("Own-Network", "enable-client-ready-status-check", true,
                 "COOP ONLY (Phase 8): if enabled, our own save/load restore waits until every connected client has "
                 + "reported itself ready (in a Level scene) before proceeding, same behavior and default as the "
@@ -367,11 +242,6 @@ namespace PEAKQuickResume
 
             OwnJumpLogicWaitTime = cfg.Bind("Own-Teleport", "jump-logic-wait-time", 1f,
                 "Phase 8: seconds to wait between steps of our own restore path's teleport sequence (advanced).");
-
-            OwnTeleportTheKilnWorkaround = cfg.Bind("Own-Teleport", "teleport-the-kiln-workaround", false,
-                "Phase 8: if enabled, tries to teleport to the end of Caldera (in front of the volcano) instead of "
-                + "loading the next map segment, ONLY for our own restore path. Same meaning/default as the "
-                + "checkpoint mod's own configTeleportTheKilnWorkaround.");
 
             OwnCampfireReset = cfg.Bind("Own-Teleport", "campfire-reset", true,
                 "Phase 8: if enabled, the campfire resets after loading more than once in the current run, for "

@@ -9,10 +9,8 @@ namespace PEAKQuickResume
     /// itself ships; "Traditional Chinese" is left blank (not one of the game's shipped
     /// languages) and falls back to English
     ///
-    /// Key names (F6/F7/Shift/Alt/Enter), config setting names
-    /// (enable-optimized-coop-loading), and "teleportJumpLogic" are left untranslated
-    /// everywhere, same as "PEAK Checkpoint Save"/"Quick Resume" - they're literal
-    /// identifiers, not prose
+    /// Key names (F6/F7/Enter) are left untranslated everywhere, same as
+    /// "PEAK Checkpoint Save"/"Quick Resume" - they're literal identifiers, not prose
     /// </summary>
     internal enum HelpText
     {
@@ -26,14 +24,6 @@ namespace PEAKQuickResume
         BugExplain,
         RestartFirstTitle,
         RestartFirstNote,
-        OptimizedIntroFormat,  // {0}=load key, {1}=resume key, {2}=optimized value, {3}=base value
-        OptimizedSoloNote,
-        AskHostFormat,         // {0} = resume key text
-        ShiftLineFormat,       // {0}=Shift badge, {1}=resume key badge, {2}=base value
-        AltLineFormat,         // {0}=Alt badge, {1}=resume key badge, {2}=alt value
-        OptimizedFooterNote,
-        DisabledFooterNote,
-        DisabledNoteFormat,    // {0} = optimized value
         AchievementsNote,
     }
 
@@ -197,150 +187,6 @@ namespace PEAKQuickResume
                 "모두가 게임을 나갔다가 다시 참가하거나(또는 게임을 완전히 재시작) 한 뒤, 같은 저장 파일을 다시 불러오세요. 이것만으로 대부분의 경우가 해결되니, 아래의 다른 방법을 시도하기 전에 먼저 이것을 시도하세요.",
                 "niech wszyscy opuszczą grę i dołączą ponownie (albo całkowicie ją zrestartują), a następnie wczytajcie ten sam zapis. Samo to rozwiązuje większość przypadków, więc wypróbuj to przed czymkolwiek poniżej.",
                 "herkesin oyundan çıkıp yeniden katılmasını (veya oyunu tamamen yeniden başlatmasını) sağlayın, ardından aynı kaydı tekrar yükleyin. Bu tek başına çoğu durumu çözer, bu yüzden aşağıdaki diğer şeyleri denemeden önce bunu deneyin.",
-            },
-            [HelpText.OptimizedIntroFormat] = new[]
-            {
-                "In COOP, a normal load ({0}, or {1}/Enter with no key held) already uses teleportJumpLogic {2} instead of your usual setting (currently {3}), for exactly the reason above.",
-                "En COOP, un chargement normal ({0}, ou {1}/Entrée sans touche maintenue) utilise déjà teleportJumpLogic {2} au lieu de votre réglage habituel (actuellement {3}), pour exactement la raison ci-dessus.",
-                "In COOP, un caricamento normale ({0}, oppure {1}/Invio senza tasti premuti) usa già teleportJumpLogic {2} invece della tua impostazione abituale (attualmente {3}), proprio per il motivo sopra.",
-                "In COOP verwendet ein normales Laden ({0}, oder {1}/Enter ohne gehaltene Taste) bereits teleportJumpLogic {2} statt deiner üblichen Einstellung (derzeit {3}), genau aus dem oben genannten Grund.",
-                "En COOP, una carga normal ({0}, o {1}/Intro sin ninguna tecla pulsada) ya usa teleportJumpLogic {2} en lugar de tu ajuste habitual (actualmente {3}), exactamente por el motivo anterior.",
-                "En COOP, una carga normal ({0}, o {1}/Enter sin ninguna tecla presionada) ya usa teleportJumpLogic {2} en lugar de tu ajuste habitual (actualmente {3}), exactamente por el motivo anterior.",
-                "No COOP, um carregamento normal ({0}, ou {1}/Enter sem nenhuma tecla pressionada) já usa teleportJumpLogic {2} em vez da sua configuração habitual (atualmente {3}), exatamente pelo motivo acima.",
-                "В КООПЕ обычная загрузка ({0}, или {1}/Enter без зажатой клавиши) уже использует teleportJumpLogic {2} вместо вашей обычной настройки (сейчас {3}) именно по указанной выше причине.",
-                "У КООПІ звичайне завантаження ({0}, або {1}/Enter без затиснутої клавіші) вже використовує teleportJumpLogic {2} замість вашого звичного налаштування (наразі {3}) саме з вищезазначеної причини.",
-                "在合作模式下，普通加载（{0}，或不按任何键的 {1}/回车）已经使用 teleportJumpLogic {2}，而不是你平时的设置（当前为 {3}），正是出于上面提到的原因。",
-                "",
-                "COOPでは、通常のロード（{0}、またはキーを押さない{1}/Enter）は、上記の理由からすでにteleportJumpLogic {2}を使用しており、あなたの普段の設定（現在{3}）は使われません。",
-                "협동 모드에서는 일반 로드({0}, 또는 아무 키도 누르지 않은 {1}/Enter)가 위에서 설명한 이유로 이미 평소 설정(현재 {3}) 대신 teleportJumpLogic {2}를 사용합니다.",
-                "W trybie KOOP zwykłe wczytywanie ({0}, lub {1}/Enter bez trzymanego klawisza) już używa teleportJumpLogic {2} zamiast twojego zwykłego ustawienia (obecnie {3}), właśnie z powodu wyjaśnionego powyżej.",
-                "KOOP modunda, düz bir yükleme ({0} veya hiçbir tuşa basılmadan {1}/Enter) tam da yukarıda açıklanan nedenden dolayı zaten normal ayarın (şu anda {3}) yerine teleportJumpLogic {2} kullanır.",
-            },
-            [HelpText.OptimizedSoloNote] = new[]
-            {
-                "Solo isn't affected and always uses your usual setting.",
-                "Le solo n'est pas concerné et utilise toujours votre réglage habituel.",
-                "La modalità solo non è interessata e usa sempre la tua impostazione abituale.",
-                "Solo ist davon nicht betroffen und verwendet immer deine übliche Einstellung.",
-                "El modo solo no se ve afectado y siempre usa tu ajuste habitual.",
-                "El modo solo no se ve afectado y siempre usa tu ajuste habitual.",
-                "O modo solo não é afetado e sempre usa sua configuração habitual.",
-                "Одиночный режим не затрагивается и всегда использует вашу обычную настройку.",
-                "Одиночний режим не зачіпається і завжди використовує ваше звичне налаштування.",
-                "单人模式不受影响，始终使用你平时的设置。",
-                "",
-                "ソロプレイには影響せず、常にあなたの普段の設定が使用されます。",
-                "솔로 플레이는 영향을 받지 않으며 항상 평소 설정을 사용합니다.",
-                "Tryb solo nie jest tym objęty i zawsze używa twojego zwykłego ustawienia.",
-                "Solo modu bundan etkilenmez ve her zaman normal ayarını kullanır.",
-            },
-            [HelpText.AskHostFormat] = new[]
-            {
-                "Still stuck after restarting? Ask your HOST to reload the SAME save from the picker ({0}) while holding:",
-                "Toujours bloqué après avoir redémarré ? Demandez à votre HÔTE de recharger la MÊME sauvegarde depuis le sélecteur ({0}) en maintenant :",
-                "Ancora bloccato dopo il riavvio? Chiedi al tuo HOST di ricaricare LO STESSO salvataggio dal selettore ({0}) tenendo premuto:",
-                "Immer noch festgefahren nach dem Neustart? Bitte deinen HOST, denselben Speicherstand aus der Auswahl ({0}) neu zu laden, und dabei zu halten:",
-                "¿Sigues atascado después de reiniciar? Pide a tu HOST que recargue la MISMA partida desde el selector ({0}) manteniendo pulsado:",
-                "¿Sigues atascado después de reiniciar? Pide a tu HOST que recargue la MISMA partida desde el selector ({0}) manteniendo presionado:",
-                "Ainda travado depois de reiniciar? Peça ao seu HOST para recarregar o MESMO save pelo seletor ({0}) segurando:",
-                "Всё ещё не помогло после перезапуска? Попросите вашего ХОСТА перезагрузить ТО ЖЕ сохранение из выбора ({0}), удерживая:",
-                "Все ще не допомогло після перезапуску? Попросіть вашого ХОСТА перезавантажити ТЕ САМЕ збереження з вибору ({0}), утримуючи:",
-                "重启后仍未解决？请让你的房主在存档选择器（{0}）中按住以下按键重新加载同一个存档：",
-                "",
-                "再起動しても直らない場合は、ホストに、セーブ選択画面（{0}）で以下のキーを押しながら同じセーブをリロードしてもらってください：",
-                "재시작 후에도 여전히 문제가 있나요? 호스트에게 저장 파일 선택 화면({0})에서 다음 키를 누른 채로 같은 저장 파일을 다시 불러오도록 요청하세요:",
-                "Nadal utknąłeś po restarcie? Poproś swojego HOSTA, aby ponownie wczytał TEN SAM zapis z wyboru ({0}), trzymając:",
-                "Yeniden başlattıktan sonra hâlâ takılıyor musun? SUNUCUNDAN, kayıt seçiciden ({0}) şunu basılı tutarak AYNI kaydı yeniden yüklemesini isteyin:",
-            },
-            [HelpText.ShiftLineFormat] = new[]
-            {
-                "{0} + {1}/Enter => your usual setting ({2})",
-                "{0} + {1}/Entrée => votre réglage habituel ({2})",
-                "{0} + {1}/Invio => la tua impostazione abituale ({2})",
-                "{0} + {1}/Enter => deine übliche Einstellung ({2})",
-                "{0} + {1}/Intro => tu ajuste habitual ({2})",
-                "{0} + {1}/Enter => tu ajuste habitual ({2})",
-                "{0} + {1}/Enter => sua configuração habitual ({2})",
-                "{0} + {1}/Enter => ваша обычная настройка ({2})",
-                "{0} + {1}/Enter => ваше звичне налаштування ({2})",
-                "{0} + {1}/回车 => 你平时的设置 ({2})",
-                "",
-                "{0} + {1}/Enter => あなたの普段の設定（{2}）",
-                "{0} + {1}/Enter => 평소 설정 ({2})",
-                "{0} + {1}/Enter => twoje zwykłe ustawienie ({2})",
-                "{0} + {1}/Enter => normal ayarın ({2})",
-            },
-            [HelpText.AltLineFormat] = new[]
-            {
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Entrée => teleportJumpLogic {2}",
-                "{0} + {1}/Invio => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Intro => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/回车 => teleportJumpLogic {2}",
-                "",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-                "{0} + {1}/Enter => teleportJumpLogic {2}",
-            },
-            [HelpText.OptimizedFooterNote] = new[]
-            {
-                "If it still happens, try Shift or Alt instead. It only affects the next load, then reverts on its own.",
-                "Si cela se produit encore, essayez plutôt Maj ou Alt. Cela n'affecte que le prochain chargement, puis revient à la normale tout seul.",
-                "Se succede ancora, prova invece Maiusc o Alt. Influisce solo sul prossimo caricamento, poi torna alla normalità da solo.",
-                "Falls es weiterhin passiert, versuche stattdessen Umschalt oder Alt. Das wirkt sich nur auf das nächste Laden aus und setzt sich danach von selbst zurück.",
-                "Si sigue ocurriendo, prueba con Mayús o Alt en su lugar. Solo afecta a la próxima carga y luego vuelve a la normalidad por sí solo.",
-                "Si sigue ocurriendo, prueba con Shift o Alt en su lugar. Solo afecta a la próxima carga y luego vuelve a la normalidad por sí solo.",
-                "Se ainda acontecer, tente Shift ou Alt em vez disso. Isso afeta apenas o próximo carregamento e depois volta ao normal sozinho.",
-                "Если это всё ещё происходит, попробуйте вместо этого Shift или Alt. Это влияет только на следующую загрузку, а затем само возвращается к норме.",
-                "Якщо це все ще трапляється, спробуйте натомість Shift або Alt. Це впливає лише на наступне завантаження, а потім само повертається до норми.",
-                "如果问题仍然出现，可以改为尝试 Shift 或 Alt。这只影响下一次加载，之后会自动恢复。",
-                "",
-                "それでも起きる場合は、代わりにShiftまたはAltを試してください。これは次の1回のロードにのみ影響し、その後自動的に元に戻ります。",
-                "그래도 계속 발생한다면 대신 Shift나 Alt를 시도해 보세요. 이는 다음 로드에만 영향을 주며, 이후 자동으로 원래대로 돌아갑니다.",
-                "Jeśli to nadal się zdarza, spróbuj zamiast tego Shift lub Alt. Wpływa to tylko na następne wczytanie, a potem samo się cofa.",
-                "Hâlâ oluyorsa, bunun yerine Shift veya Alt tuşunu deneyin. Bu yalnızca bir sonraki yüklemeyi etkiler, ardından kendiliğinden eski haline döner.",
-            },
-            [HelpText.DisabledFooterNote] = new[]
-            {
-                "If one doesn't help, try the other. It only affects the next load, then reverts on its own.",
-                "Si l'un ne fonctionne pas, essayez l'autre. Cela n'affecte que le prochain chargement, puis revient à la normale tout seul.",
-                "Se uno non aiuta, prova l'altro. Influisce solo sul prossimo caricamento, poi torna alla normalità da solo.",
-                "Wenn eines nicht hilft, versuche das andere. Das wirkt sich nur auf das nächste Laden aus und setzt sich danach von selbst zurück.",
-                "Si uno no funciona, prueba el otro. Solo afecta a la próxima carga y luego vuelve a la normalidad por sí solo.",
-                "Si uno no funciona, prueba el otro. Solo afecta a la próxima carga y luego vuelve a la normalidad por sí solo.",
-                "Se um não ajudar, tente o outro. Isso afeta apenas o próximo carregamento e depois volta ao normal sozinho.",
-                "Если один не помогает, попробуйте другой. Это влияет только на следующую загрузку, а затем само возвращается к норме.",
-                "Якщо один не допомагає, спробуйте інший. Це впливає лише на наступне завантаження, а потім само повертається до норми.",
-                "如果一个不管用，可以试试另一个。这只影响下一次加载，之后会自动恢复。",
-                "",
-                "片方で効果がなければ、もう片方を試してください。これは次の1回のロードにのみ影響し、その後自動的に元に戻ります。",
-                "하나가 효과가 없다면 다른 것을 시도해 보세요. 이는 다음 로드에만 영향을 주며, 이후 자동으로 원래대로 돌아갑니다.",
-                "Jeśli jedno nie pomoże, spróbuj drugiego. Wpływa to tylko na następne wczytanie, a potem samo się cofa.",
-                "Biri işe yaramazsa diğerini deneyin. Bu yalnızca bir sonraki yüklemeyi etkiler, ardından kendiliğinden eski haline döner.",
-            },
-            [HelpText.DisabledNoteFormat] = new[]
-            {
-                "COOP auto-optimization is currently OFF (enable-optimized-coop-loading in the config). Turning it on makes a normal COOP load use teleportJumpLogic {0} by default, which testing found avoids most of the issues above.",
-                "L'auto-optimisation COOP est actuellement DÉSACTIVÉE (enable-optimized-coop-loading dans la config). L'activer fait qu'un chargement COOP normal utilise par défaut teleportJumpLogic {0}, ce qui, d'après les tests, évite la plupart des problèmes ci-dessus.",
-                "L'auto-ottimizzazione COOP è attualmente DISATTIVATA (enable-optimized-coop-loading nella config). Attivandola, un caricamento COOP normale userà come predefinito teleportJumpLogic {0}, il che, secondo i test, evita la maggior parte dei problemi sopra.",
-                "Die COOP-Auto-Optimierung ist derzeit AUS (enable-optimized-coop-loading in der Konfiguration). Wird sie aktiviert, verwendet ein normales COOP-Laden standardmäßig teleportJumpLogic {0}, was laut Tests die meisten der oben genannten Probleme vermeidet.",
-                "La auto-optimización de COOP está actualmente DESACTIVADA (enable-optimized-coop-loading en la configuración). Activarla hace que una carga COOP normal use por defecto teleportJumpLogic {0}, lo que, según las pruebas, evita la mayoría de los problemas mencionados arriba.",
-                "La auto-optimización de COOP está actualmente DESACTIVADA (enable-optimized-coop-loading en la configuración). Activarla hace que una carga COOP normal use por defecto teleportJumpLogic {0}, lo que, según las pruebas, evita la mayoría de los problemas mencionados arriba.",
-                "A auto-otimização do COOP está atualmente DESATIVADA (enable-optimized-coop-loading na configuração). Ativá-la faz com que um carregamento COOP normal use por padrão teleportJumpLogic {0}, o que, segundo os testes, evita a maioria dos problemas acima.",
-                "Автооптимизация КООПА сейчас ВЫКЛЮЧЕНА (enable-optimized-coop-loading в конфиге). Включив её, обычная загрузка в КООПЕ будет по умолчанию использовать teleportJumpLogic {0}, что, по результатам тестов, позволяет избежать большинства проблем, указанных выше.",
-                "Автооптимізація КООПУ зараз ВИМКНЕНА (enable-optimized-coop-loading у конфізі). Увімкнувши її, звичайне завантаження в КООПІ використовуватиме за замовчуванням teleportJumpLogic {0}, що, за результатами тестів, дає змогу уникнути більшості проблем, зазначених вище.",
-                "合作模式自动优化目前处于关闭状态（配置中的 enable-optimized-coop-loading）。开启后，普通的合作模式加载将默认使用 teleportJumpLogic {0}，测试表明这能避免上述大多数问题。",
-                "",
-                "COOP自動最適化は現在OFFです（設定のenable-optimized-coop-loading）。有効にすると、通常のCOOPロードはデフォルトでteleportJumpLogic {0}を使用するようになり、テストの結果、上記の問題のほとんどを回避できることが分かっています。",
-                "협동 자동 최적화가 현재 꺼져 있습니다 (설정의 enable-optimized-coop-loading). 이를 켜면 일반 협동 로드가 기본적으로 teleportJumpLogic {0}을(를) 사용하게 되며, 테스트 결과 위에 나열된 대부분의 문제를 피할 수 있는 것으로 확인되었습니다.",
-                "Automatyczna optymalizacja KOOP jest obecnie WYŁĄCZONA (enable-optimized-coop-loading w konfiguracji). Włączenie jej sprawia, że zwykłe wczytywanie KOOP domyślnie używa teleportJumpLogic {0}, co według testów pozwala uniknąć większości problemów wymienionych powyżej.",
-                "KOOP otomatik optimizasyonu şu anda KAPALI (yapılandırmada enable-optimized-coop-loading). Açmak, düz bir KOOP yüklemesinin varsayılan olarak teleportJumpLogic {0} kullanmasını sağlar; testler bunun yukarıda listelenen sorunların çoğunu önlediğini gösterdi.",
             },
             [HelpText.AchievementsNote] = new[]
             {
