@@ -29,7 +29,8 @@ namespace PEAKQuickResume
         NoSavesCoop,
         TeleportBugHint,
         LoadingSaveScreen, // ALL CAPS, base text for OwnLoadingScreen's cycling "LOADING SAVE..." caption
-        CheckpointModStillInstalled,
+        CheckpointModStillInstalled,       // full text, shown on the (persistent) help screen
+        CheckpointModStillInstalledShort,  // {0} = help key; the brief one-time popup, points at the help screen
     }
 
     internal static class MessagesLocalization
@@ -363,6 +364,25 @@ namespace PEAKQuickResume
                 "PEAK Checkpoint Save가 아직 설치되어 있습니다. Quick Resume는 더 이상 이것이 필요 없으며 완전히 독립적으로 작동합니다. 두 모드가 각각 독립적으로 저장하고 로그를 기록하므로 로그 메시지와 저장이 중복되어 나타납니다. 이는 무해하지만(로직 충돌 없음), 중복을 없애려면 PEAK Checkpoint Save를 제거하세요.",
                 "PEAK Checkpoint Save jest nadal zainstalowany. Quick Resume już go nie potrzebuje i działa całkowicie samodzielnie; oba mody zapisują i logują niezależnie, więc spodziewaj się zduplikowanych komunikatów w logu i zapisów. Jest to nieszkodliwe (brak konfliktu logiki), ale odinstaluj PEAK Checkpoint Save, aby usunąć duplikaty.",
                 "PEAK Checkpoint Save hâlâ yüklü. Quick Resume artık ona ihtiyaç duymuyor ve tamamen kendi başına çalışıyor; her iki mod da bağımsız olarak kaydediyor ve log tutuyor, bu yüzden yinelenen log mesajları ve kayıtlar görmeyi bekleyin. Bu zararsızdır (mantık çakışması yok), ancak yinelenenleri kaldırmak için PEAK Checkpoint Save'i kaldırın.",
+            },
+            // Short popup (points at the help screen for the full text). {0} = help key
+            [MsgKey.CheckpointModStillInstalledShort] = new[]
+            {
+                "PEAK Checkpoint Save is still installed and no longer needed. Expect harmless duplicate saves and logs. Press {0} for details.",
+                "PEAK Checkpoint Save est toujours installé et n'est plus nécessaire. Attendez-vous à des sauvegardes et des logs en double, sans danger. Appuyez sur {0} pour plus de détails.",
+                "PEAK Checkpoint Save è ancora installato e non più necessario. Aspettati salvataggi e log duplicati, del tutto innocui. Premi {0} per i dettagli.",
+                "PEAK Checkpoint Save ist noch installiert und wird nicht mehr benötigt. Rechne mit harmlosen doppelten Speicherungen und Logs. Drücke {0} für Details.",
+                "PEAK Checkpoint Save sigue instalado y ya no es necesario. Espera guardados y registros duplicados, sin ningún problema. Pulsa {0} para más detalles.",
+                "PEAK Checkpoint Save sigue instalado y ya no es necesario. Espera guardados y registros duplicados, sin ningún problema. Presiona {0} para más detalles.",
+                "PEAK Checkpoint Save ainda está instalado e não é mais necessário. Espere saves e logs duplicados, sem problema algum. Pressione {0} para mais detalhes.",
+                "PEAK Checkpoint Save всё ещё установлен и больше не нужен. Ожидайте безвредные дублирующиеся сохранения и логи. Нажмите {0} для подробностей.",
+                "PEAK Checkpoint Save усе ще встановлений і більше не потрібен. Очікуйте безпечні дубльовані збереження та логи. Натисніть {0} для деталей.",
+                "PEAK Checkpoint Save 仍已安装，但已不再需要。你会看到重复的存档和日志，这没有危害。按 {0} 查看详情。",
+                "",
+                "PEAK Checkpoint Save がまだインストールされていますが、もう必要ありません。無害ですが、セーブとログが重複します。詳細は {0} を押してください。",
+                "PEAK Checkpoint Save가 아직 설치되어 있지만 더 이상 필요하지 않습니다. 무해하지만 저장과 로그가 중복됩니다. 자세한 내용은 {0}을(를) 누르세요.",
+                "PEAK Checkpoint Save jest nadal zainstalowany i już niepotrzebny. Spodziewaj się nieszkodliwych zduplikowanych zapisów i logów. Naciśnij {0}, aby zobaczyć szczegóły.",
+                "PEAK Checkpoint Save hâlâ yüklü ve artık gerekli değil. Zararsız, yinelenen kayıtlar ve loglar görebilirsiniz. Ayrıntılar için {0} tuşuna basın.",
             },
         };
 

@@ -50,6 +50,14 @@ namespace PEAKQuickResume
 
             sb.Append(HelpScreenLocalization.Get(HelpText.AchievementsNote));
 
+            // Persistent, re-viewable copy of the duplicate-mod warning the one-time popup
+            // also shows (see Plugin.Update) - only when PEAK Checkpoint Save is actually
+            // still installed. Reuses the same translated string (MessagesLocalization) so
+            // there's only one place to maintain it. Accent-colored to stand out as a note
+            if (Plugin.Instance?.CheckpointModInstalled == true)
+                sb.Append("\n\n")
+                    .Append($"<color={Accent}>{MessagesLocalization.Get(MsgKey.CheckpointModStillInstalled)}</color>");
+
             return sb.ToString();
         }
     }
