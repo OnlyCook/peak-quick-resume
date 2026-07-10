@@ -45,15 +45,38 @@ namespace PEAKQuickResume
         private ManualLogSource _log;
         private PluginConfig _cfg;
         private OwnLoadEntryPoints _entryPoints;
+        private OwnWakeUpEffect _wakeUpEffect;
+        private OwnLoadingScreen _loadingScreen;
 
-        public void Init(ManualLogSource log, PluginConfig cfg, OwnLoadEntryPoints entryPoints)
+        public void Init(ManualLogSource log, PluginConfig cfg, OwnLoadEntryPoints entryPoints,
+            OwnWakeUpEffect wakeUpEffect = null, OwnLoadingScreen loadingScreen = null)
         {
             _log = log;
             _cfg = cfg;
             _entryPoints = entryPoints;
+            _wakeUpEffect = wakeUpEffect;
+            _loadingScreen = loadingScreen;
         }
 
-        public void Begin(OwnSaveData data, SaveTarget target, bool offline) => StartCoroutine(RunSequence(data, target, offline));
+        /// <summary>
+        /// True for the whole duration of a Begin()-triggered sequence, including the wake-up +
+        /// loading-screen presentation at the end. <c>Begin</c>/<c>TryLoadPlayer</c> are
+        /// fire-and-forget (they start the coroutine and return immediately), so
+        /// <see cref="ResumeOrchestrator"/> polls this (via <c>OwnLoadEntryPoints.TeleportInProgress</c>)
+        /// to know when it's actually safe to show the "Save loaded" message - showing it
+        /// immediately after Begin() returns would print it well before the player has even seen
+        /// the loading screen appear
+        /// </summary>
+        public bool IsRunning { get; private set; }
+
+        public void Begin(OwnSaveData data, SaveTarget target, bool offline) => StartCoroutine(RunSequenceWrapper(data, target, offline));
+
+        private IEnumerator RunSequenceWrapper(OwnSaveData data, SaveTarget target, bool offline)
+        {
+            IsRunning = true;
+            yield return RunSequence(data, target, offline);
+            IsRunning = false;
+        }
 
         private IEnumerator RunSequence(OwnSaveData data, SaveTarget target, bool offline)
         {
@@ -62,6 +85,40 @@ namespace PEAKQuickResume
             float waitTime = Mathf.Max(0f, _cfg.OwnJumpLogicWaitTime.Value);
 
             _log?.LogInfo($"OwnTeleportSequence: executing custom jump to: {finalSegment}");
+
+            // Session-requested polish: crossfade into the game's own real "LOADING..." screen
+            // before any of the teleport work below (which is otherwise unchanged) runs, so it's
+            // all hidden behind the loading screen instead of happening in full view; once it's
+            // all done, collapse the player into the passed-out pose, reveal them already lying
+            // down as the loading screen clears, then let them visibly stand back up (see the
+            // matching block at the end of this method). Config-gated and fully null-safe (either
+            // component being unavailable just skips straight to today's plain instant-teleport
+            // behaviour). Also mirrored onto every OTHER connected player (see
+            // OwnNetwork.ClientPresentationOthers) - fire-and-forget, same style as the existing
+            // LoadingScreenOthers(true) call just below
+            //
+            // IMPORTANT: the wake-up collapse must NOT happen up here, before ReviveDeadPlayers
+            // (a few lines down) - ReviveDeadPlayers unconditionally clears passedOut/fullyPassedOut
+            // (plus afflictions) for ANY character it finds flagged that way, including our own
+            // fake collapse, undoing it within a couple of seconds and long before the intended
+            // reveal. An earlier version collapsed here and could never be woken up visibly during
+            // a REAL resume (confirmed via the F10 debug tool: the beat worked perfectly in
+            // isolation, since standalone testing never runs ReviveDeadPlayers at all) - moving the
+            // collapse to after everything else runs (right before FadeOut) sidesteps this entirely
+            bool wakeUpEnabled = _cfg.OwnWakeUpAnimationEnabled.Value;
+            // Debug-only escape hatch: skips just the loading-screen overlay (FadeIn/FadeOut)
+            // while leaving the wake-up beat and every other Wake-Up timing setting untouched -
+            // useful for watching what's happening underneath without the screen hiding it
+            bool showLoadingScreen = wakeUpEnabled && !_cfg.DebugDisableLoadingScreen.Value;
+
+            // Small delay before starting the crossfade in: without it, our own loading screen
+            // can start covering things up right as the game's own level-load screen is still
+            // finishing its own clear, cutting it off a beat too early (session-reported)
+            if (wakeUpEnabled)
+                yield return new WaitForSeconds(Mathf.Max(0f, _cfg.OwnLoadingScreenFadeInDelay.Value));
+            if (wakeUpEnabled) _entryPoints.Network?.ClientPresentationOthers(true);
+            if (showLoadingScreen && _loadingScreen != null)
+                yield return _loadingScreen.FadeIn(_cfg.OwnLoadingScreenFadeTime.Value);
 
             // Mirrors decompile 2271-2274 (LoadingScreen(true) + RPC_Loadingscreen to
             // Others): repurposed here (see OwnNetwork's class remarks) to arm
@@ -194,6 +251,25 @@ namespace PEAKQuickResume
 
             if (isFoggedSegment)
                 StartCoroutine(OwnEnvironmentReset.ResetFogAfterLoad(index, finalSegment, _log, extendedTime: true));
+
+            // Everything above is unchanged/hidden behind the loading screen. NOW collapse into
+            // the passed-out pose (safe here - well after ReviveDeadPlayers, nothing left in the
+            // sequence resets passedOut/fullyPassedOut). Hold BEHIND the still-fully-opaque
+            // loading screen a bit longer before fading out (see OwnWakeUpSettleHoldTime) - the
+            // real teleport's small landing drop and the collapse itself both need a moment to
+            // physically settle, and without this hold the fade-out reveals that motion still in
+            // progress (session-reported: visible collapsing + a mid-air fall/landing shake right
+            // after the screen cleared). Only once fully settled do we reveal the player already
+            // lying at the new position and let them visibly stand back up
+            if (wakeUpEnabled && _wakeUpEffect != null)
+                _wakeUpEffect.Collapse();
+            if (wakeUpEnabled)
+                yield return new WaitForSeconds(Mathf.Max(0f, _cfg.OwnWakeUpSettleHoldTime.Value));
+            if (wakeUpEnabled) _entryPoints.Network?.ClientPresentationOthers(false);
+            if (showLoadingScreen && _loadingScreen != null)
+                yield return _loadingScreen.FadeOut(_cfg.OwnLoadingScreenFadeTime.Value);
+            if (wakeUpEnabled && _wakeUpEffect != null)
+                yield return _wakeUpEffect.Wake(_cfg.OwnWakeUpStandTime.Value);
 
             _entryPoints.MarkLoadedThisRound();
         }

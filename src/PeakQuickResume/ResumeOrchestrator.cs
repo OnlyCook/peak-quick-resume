@@ -298,6 +298,19 @@ namespace PEAKQuickResume
             }
             if (!loadOk) { Fail("Load call failed"); yield break; }
 
+            // Own path only: TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's
+            // coroutine and returns immediately), so wait for the ENTIRE sequence - including its
+            // wake-up + loading-screen presentation at the end - to actually finish before
+            // declaring success. Showing the message right after TryLoadPlayer returns would print
+            // it well before the player has even seen the loading screen appear. Don't hard-fail on
+            // a timeout here (the load itself already succeeded); just show the message anyway
+            if (_ownLoadEntryPoints != null)
+            {
+                yield return WaitFor(() => !_ownLoadEntryPoints.TeleportInProgress, timeout, "teleport + wake-up sequence to finish");
+                if (!_lastWaitOk)
+                    _log.LogWarning("[stage] Teleport sequence didn't report done in time; showing the completion message anyway.");
+            }
+
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
             Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);
             _chosen = null;

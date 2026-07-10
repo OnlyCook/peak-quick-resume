@@ -93,6 +93,19 @@ namespace PEAKQuickResume
             _ownNetwork = go.AddComponent<OwnNetwork>();
             _ownNetwork.Init(Logger, _cfg);
 
+            // Native-feeling wake-up + loading-screen crossfade around the teleport step
+            // (see OwnWakeUpEffect.cs / OwnLoadingScreen.cs); wired into OwnTeleportSequence below
+            var ownWakeUpEffect = go.AddComponent<OwnWakeUpEffect>();
+            ownWakeUpEffect.Init(Logger);
+
+            var ownLoadingScreen = go.AddComponent<OwnLoadingScreen>();
+            ownLoadingScreen.Init(Logger);
+
+            // TEMPORARY (remove once the wake-up beat is confirmed working end to end):
+            // F10 manually triggers the wake-up + loading-screen presentation in isolation
+            var ownWakeUpDebugTool = go.AddComponent<OwnWakeUpDebugTool>();
+            ownWakeUpDebugTool.Init(Logger, _cfg, ownWakeUpEffect, ownLoadingScreen);
+
             // Phase 8 M3: our own literal port of CustomJumpToSegment/TeleportToPosition/
             // TeleportClientsToHost/ReviveDeadPlayers (see OwnTeleportSequence.cs)
             var ownTeleportSequence = go.AddComponent<OwnTeleportSequence>();
@@ -101,14 +114,15 @@ namespace PEAKQuickResume
             // IS wired live via ResumeOrchestrator below
             _ownLoadEntryPoints = go.AddComponent<OwnLoadEntryPoints>();
             _ownLoadEntryPoints.Init(Logger, _cfg, _ownNetwork, ownTeleportSequence);
-            ownTeleportSequence.Init(Logger, _cfg, _ownLoadEntryPoints);
+            ownTeleportSequence.Init(Logger, _cfg, _ownLoadEntryPoints, ownWakeUpEffect, ownLoadingScreen);
 
             // Phase 8 M7/M9: now that _watchdog/_messageOverlay/_ownLoadEntryPoints all
             // exist, wire them onto the channel so its RPC handlers (RPC_Loadingscreen ->
             // TeleportWatchdog, RPC_SendMessage -> our own overlay, RPC_RequestSave/
             // RPC_RecentlyLitCampfire -> OwnLoadEntryPoints' cooldowns) can reach them -
-            // see OwnNetwork.AttachDependencies
-            _ownNetwork.AttachDependencies(_messageOverlay, _watchdog, _ownLoadEntryPoints);
+            // see OwnNetwork.AttachDependencies. Also wires ownWakeUpEffect/ownLoadingScreen so
+            // RPC_ClientPresentation can mirror the host's own presentation on this machine too
+            _ownNetwork.AttachDependencies(_messageOverlay, _watchdog, _ownLoadEntryPoints, ownWakeUpEffect, ownLoadingScreen);
 
             // Now that _ownLoadEntryPoints exists, wire the orchestrator (Phase 8 M3:
             // its SOLO path calls _ownLoadEntryPoints directly; M7: coop too - see

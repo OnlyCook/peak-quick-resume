@@ -30,8 +30,9 @@ This mod started as an automation layer on top of [PEAK Checkpoint Save](https:/
 2. Press **F7** to open the save picker.
 3. Use **↑/↓** to highlight a checkpoint, then press **F7** again (or Enter) to load it. Just want the latest? Press **F7** twice.  
   
-- Press **Del** to delete the highlighted save (press it twice to confirm), or **Esc** to close the menu.  
+- Press **Del** to delete the highlighted save (press it twice to confirm).  
 - Press **B** to star the highlighted save (press **B** again to unstar it). Starred saves are moved to the top and can't be deleted until unstarred again.
+- Press **Esc** to close the menu.  
 
 In co-op, only the **host** can use F7 and everyone is restored together.
 
@@ -41,7 +42,7 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 
 <summary><b>View config information</b></summary>
 
-Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below (including a proper click-to-rebind widget for the resume key) is also editable in the game's settings under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
+Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below is also editable in the game's settings under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
 
 - **resume-key**: the key to open the picker / load the highlighted save (default **F7**). Rebindable directly in ModConfig's menu.
 - **resume-key-also-confirms-load**: if disabled, pressing the resume key while the picker is open does nothing, only Enter confirms a load (useful if you keep accidentally reloading while trying to close the picker).
@@ -61,10 +62,10 @@ Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split int
 
 ## Notes
 
-- **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but everyone should have it installed for compatibility reasons.
+- **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons.
 - Loading a checkpoint can grant Steam achievements. Don't use it if you want to earn everything unassisted.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
-- Translations were done by AI, so if something is off in your language, then you are free to open a GitHub Issue (see below).
+- Translations were done by AI, so if something is off in your language you are free to open a GitHub Issue (see below).
 
 ## Feedback & bug reports
 
