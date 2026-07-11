@@ -268,6 +268,24 @@ namespace PEAKQuickResume
             if (_entryPoints.LoadedSaveFileThisRound)
                 OwnWorldLootReset.DestroyStaleWorldObjects(_log);
 
+            // Deployable restore (Portable Stove / Scout Cannon) - own addition, no
+            // decompile counterpart (see DeployableRestore class remarks). Checkpoint
+            // Flag was tried here too and reverted (session-confirmed broken in solo -
+            // see OwnSaveData.portableStoves' remarks for why). MUST run after
+            // DestroyStaleWorldObjects just above, not alongside the
+            // AncientStatue/Luggage/WorldItem restore block earlier in this method:
+            // that destroy pass matches these exact prefab names on every REPEAT load
+            // and would immediately delete whatever was just restored here if this ran
+            // any earlier. Same "every load, not just repeat loads" reasoning as the
+            // earlier restore block otherwise applies - ResetWorldLoot doesn't touch
+            // these objects at all (only DestroyStaleWorldObjects, repeat-load-only,
+            // does), so there's no earlier "run every load" hazard to guard against here
+            if (RunLauncher.IsHost)
+            {
+                DeployableRestore.RestoreStoves(data, savedPos, _log);
+                DeployableRestore.RestoreCannons(data, savedPos, _log);
+            }
+
             bool isFoggedSegment = (int)finalSegment >= 0 && (int)finalSegment <= 4;
             if (isFoggedSegment)
             {

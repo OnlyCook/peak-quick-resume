@@ -92,6 +92,25 @@ namespace PEAKQuickResume
         // towards the High Altitude Badge. Null on any save predating this feature -
         // treated identically to "nothing tracked yet this run" (a fresh baseline)
         public OwnSavedAchievementProgress achievementProgress;
+
+        // Deployable ("world object") restore around the loaded campfire - own
+        // addition, no decompile counterpart at all: the checkpoint mod only ever
+        // DESTROYED these on a repeat load (see OwnWorldLootReset.StaleSegmentObjectNames),
+        // it never saved or restored their state. See DeployableRestore.
+        // Null on any save predating this feature - treated identically to an empty
+        // list (nothing to restore).
+        //
+        // Checkpoint Flag was deliberately NOT added here (tried, reverted -
+        // session-confirmed broken in solo: a planted flag came back missing after a
+        // save/load): its revival logic hinges on Character.data.checkpointFlags, a
+        // plain per-machine list only ever populated by the vanilla
+        // CheckpointFlag.Initialize, which itself only runs on the planting client -
+        // reconstructing that reliably needs syncing state the game itself never
+        // syncs, and a half-working revive token isn't worth the risk for what's a
+        // minor QoL feature. Stove/Cannon have no such risk (they're just placed
+        // props with no per-player binding), so they're kept
+        public List<OwnSavedDeployableState> portableStoves;
+        public List<OwnSavedDeployableState> scoutCannons;
     }
 
     /// <summary>Decompile: PEAK_Checkpoint_Save.Plugin.SavedItemState (line 434)</summary>
@@ -205,5 +224,24 @@ namespace PEAKQuickResume
         public List<ushort> gourmandRequirementsEaten = new List<ushort>();
         public List<int> achievementsEarnedThisRun = new List<int>();
         public List<int> completedAscentsThisRun = new List<int>();
+    }
+
+    /// <summary>
+    /// One player-placed deployable (Portable Stove or Scout Cannon, see
+    /// DeployableRestore) near a saved campfire. Both are plain <c>Constructable</c>-
+    /// built props with no meaningful persistent runtime state beyond where they are
+    /// (see DeployableRestore's class remarks for why burn/fuel state is deliberately
+    /// NOT captured) - full quaternion kept (not just yaw) so an angled placement
+    /// (Constructable.isAngleable) restores exactly as built
+    /// </summary>
+    public class OwnSavedDeployableState
+    {
+        public float posX;
+        public float posY;
+        public float posZ;
+        public float rotX;
+        public float rotY;
+        public float rotZ;
+        public float rotW;
     }
 }

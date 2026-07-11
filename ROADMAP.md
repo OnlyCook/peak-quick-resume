@@ -2365,3 +2365,68 @@ rather than assuming the old plan text still matches the code.
   from compiling alone.
 - The decompiled reference sources live under `scratch/` (git-ignored).
   Regenerate with the commands in `docs/RESEARCH.md` if missing.
+
+## Deployable restore (branch `feature/extend-restore`, session 2026-07-11)
+
+Post-Phase-8 native improvement, not a port: the checkpoint mod's own "world
+object state" handling (`OwnWorldLootReset.StaleSegmentObjectNames`) is
+destroy-only, see that class's remarks - it never saved or restored any of
+`PortableStovetop_Placed`/`Flag_Planted_Checkpoint`/`ScoutCannon_Placed`/etc,
+just cleaned up stale player-placed copies on a repeat load. Ancient
+Statue/Luggage/generic world-item restore around the campfire (see
+`AncientStatueRestore`/`LuggageRestore`/`WorldItemRestore`) already went
+beyond the original mod's own scope for items/containers; this closes the gap
+for two of the three deployables the maintainer asked for.
+
+**Shipped: Portable Stove / Scout Cannon (`DeployableRestore.cs`).**
+Straightforward once the decompile was actually checked -
+`PortableStovetop_Placed` turned out to be a plain `Campfire` instance
+(confirmed via the checkpoint mod's own `Campfire_AutoSave_Patch`, which
+explicitly excludes anything named that from ever triggering an autosave -
+there's no dedicated "stove" class at all in the current decompile, it
+doesn't even exist as a string anywhere in `Assembly-CSharp.dll`'s current
+build, only as a GameObject name), and `ScoutCannon` has no persistent
+ammo/fuel/already-fired state worth saving (`ScoutCannon.lit` is a ~4s
+transient firing window). Both are built via the game's own generic
+`Constructable.FinishConstruction`, which spawns them with plain
+`PhotonNetwork.Instantiate(prefabName, pos, rot, 0)` - restore does exactly
+that at the saved position/rotation, position/rotation only, no burn/fuel
+state. Player-placed-only filter (`PhotonView.CreatorActorNr > 0`, not a room
+view) reused from `OwnWorldLootReset.DestroyStaleWorldObjects` so a
+scene-baked Scout Cannon (implied to exist by `ScoutCannonAchievementZone`)
+is never touched. Must run AFTER `OwnWorldLootReset.DestroyStaleWorldObjects`
+in `OwnTeleportSequence`, not alongside the earlier Ancient Statue/Luggage/
+WorldItem restore block - that destroy pass matches these exact prefab names
+on every repeat load and would immediately delete whatever was just restored
+if this ran any earlier (a real ordering bug caught and fixed before ever
+reaching in-game testing). **Builds clean, not yet in-game tested** (the
+stove/cannon path specifically - see below for what WAS tested).
+
+**Tried and reverted: Checkpoint Flag.** Implemented in full
+(`CheckpointFlagRestore.cs` + `CheckpointFlagTrackerPatch.cs`, since deleted)
+following the same shape as `ApplyAfflictionsTo`/`RestoreThornsFor` (a Harmony
+postfix on `CheckpointFlag.Initialize` broadcasting the planter's userId +
+affliction snapshot over `OwnNetwork` into an in-memory registry, since
+`Character.data.checkpointFlags` - what `Character.TryCheckpoint` actually
+reads on death - is a plain, never-networked per-machine list only the
+planting client's own `Initialize` call ever populates; restore then spawned
+the flag and sent a targeted RPC to the ORIGINAL planter's own client to bind
+it there, waiting up to 3s for them to be present before giving up on that
+specific flag). **In-game tested solo (session 2026-07-11): the flag
+disappeared after save/load instead of restoring.** Root cause not
+diagnosed - maintainer's call, and the right one: a self-revive token that
+sometimes silently doesn't work is a worse outcome than not having the
+feature at all, and continuing to debug PUN's exact replication semantics for
+per-machine `CharacterData` fields (never confirmed from the decompile,
+only inferred) risked spending real effort chasing a mechanic that's minor
+QoL at best. Reverted cleanly: `OwnSaveData.checkpointFlags` field, both
+save-capture call sites, the `OwnTeleportSequence` restore call, the
+`OwnNetwork`/`OwnNetworkRpc` RPC surface (`BroadcastCheckpointFlagPlanted`/
+`BindCheckpointFlagFor`/`RPC_TrackCheckpointFlag`/`RPC_BindCheckpointFlag`),
+and the `Plugin.Awake` patch-apply call are all removed; the two new files
+are deleted. If this is revisited later, start from this section's diagnosis
+rather than re-deriving it - the open question is specifically WHY the flag
+didn't come back (spawn failure? bind failure? something in `Initialize`
+itself not behaving the way the decompile suggested when called outside its
+normal construction-flow context?), not whether the overall approach shape
+was right.

@@ -91,6 +91,8 @@ namespace PEAKQuickResume
                 AncientStatueRestore.Capture(statueSearchPos, claimedItems, log, out OwnSavedStatueState statueState);
                 LuggageRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
                 WorldItemRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
+                DeployableRestore.CaptureStoves(statueSearchPos, log, out List<OwnSavedDeployableState> portableStoves);
+                DeployableRestore.CaptureCannons(statueSearchPos, log, out List<OwnSavedDeployableState> scoutCannons);
 
                 foreach (Player player in allPlayers)
                 {
@@ -181,6 +183,8 @@ namespace PEAKQuickResume
                         luggageStates = luggageStates,
                         worldItemStates = worldItemStates,
                         achievementProgress = achievementProgress,
+                        portableStoves = portableStoves,
+                        scoutCannons = scoutCannons,
                         extModsPeakapaloozaPEAKTOBEACH = false,
                     };
 
@@ -241,6 +245,8 @@ namespace PEAKQuickResume
                 AncientStatueRestore.Capture(pos, claimedItems, log, out OwnSavedStatueState statueState);
                 LuggageRestore.Capture(pos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
                 WorldItemRestore.Capture(pos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
+                DeployableRestore.CaptureStoves(pos, log, out List<OwnSavedDeployableState> portableStoves);
+                DeployableRestore.CaptureCannons(pos, log, out List<OwnSavedDeployableState> scoutCannons);
 
                 CharacterAfflictions afflictions = Character.localCharacter.refs.afflictions;
                 float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -300,6 +306,8 @@ namespace PEAKQuickResume
                     luggageStates = luggageStates,
                     worldItemStates = worldItemStates,
                     achievementProgress = achievementProgress,
+                    portableStoves = portableStoves,
+                    scoutCannons = scoutCannons,
                     extModsPeakapaloozaPEAKTOBEACH = false,
                 };
 

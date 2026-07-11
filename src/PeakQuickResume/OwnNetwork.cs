@@ -690,5 +690,6 @@ namespace PEAKQuickResume
                 Owner?.LogError($"RPC_ApplyAchievementProgress error: {e}");
             }
         }
+
     }
 }
