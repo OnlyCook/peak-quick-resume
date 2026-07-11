@@ -9,7 +9,7 @@ No other mods are required. [PEAK Checkpoint Save](https://thunderstore.io/c/pea
 - You can install the mod through r2modman as `PEAK_Quick_Resume`
 - Or on Thunderstore as `PEAK Quick Resume` ([Website](https://thunderstore.io/c/peak/p/OnlyCook/PEAK_Quick_Resume/))
 
-Achievement progress is saved and restored correctly when you load a checkpoint (this also fixes teleporting inflating the High Altitude Badge's climbed-height total) - but only for whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
+Achievement progress is saved and restored correctly when you load a checkpoint, but only for whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
 
 ## For developers
 
