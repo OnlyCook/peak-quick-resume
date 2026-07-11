@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BepInEx.Logging;
 using Peak.Network;
 using Photon.Pun;
@@ -69,16 +70,16 @@ namespace PEAKQuickResume
         /// Called from OwnSaveCapture right before writing OwnSaveData. Searches around
         /// the actual Campfire object nearest <paramref name="fallbackPos"/> (the saving
         /// player's own position - whoever lit the campfire is standing right next to
-        /// it), falling back to that raw position if no Campfire is found nearby at all
+        /// it), falling back to that raw position if no Campfire is found nearby at all.
+        /// Adds the found item (if any) to <paramref name="claimed"/> so LuggageRestore/
+        /// WorldItemRestore, called right after this in the same save, don't also save
+        /// it as their own - see WorldItemRestore's class remarks for why that matters.
+        /// Returns null when there's no statue nearby at all (as opposed to a non-null
+        /// state with <c>broken = false</c>, which means a statue WAS found, just untouched)
         /// </summary>
-        public static void Capture(Vector3 fallbackPos, ManualLogSource log, out bool broken, out bool hasItem,
-            out ushort itemId, out Vector3 itemPos, out Quaternion itemRot)
+        public static void Capture(Vector3 fallbackPos, HashSet<Item> claimed, ManualLogSource log, out OwnSavedStatueState state)
         {
-            broken = false;
-            hasItem = false;
-            itemId = 0;
-            itemPos = default;
-            itemRot = default;
+            state = null;
             try
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
@@ -89,23 +90,35 @@ namespace PEAKQuickResume
                     return;
                 }
 
-                broken = statue.IsOpen;
+                state = new OwnSavedStatueState { broken = statue.IsOpen };
                 log?.LogInfo($"AncientStatueRestore.Capture: found statue '{statue.name}' at {statue.transform.position} "
-                    + $"({Vector3.Distance(statue.transform.position, searchCenter):F1}m from search center), broken={broken}.");
-                if (!broken) return;
+                    + $"({Vector3.Distance(statue.transform.position, searchCenter):F1}m from search center), broken={state.broken}.");
+                if (!state.broken) return;
 
-                Item groundItem = CampfireAreaHelpers.FindNearestFreeItem(statue.transform.position, ItemSearchRadius);
+                Item groundItem = CampfireAreaHelpers.FindNearestFreeItem(statue.transform.position, ItemSearchRadius, claimed);
                 if (groundItem == null)
                 {
                     log?.LogInfo("AncientStatueRestore.Capture: statue is broken but no unclaimed ground item found nearby.");
                     return;
                 }
 
-                hasItem = true;
-                itemId = groundItem.itemID;
-                itemPos = groundItem.transform.position;
-                itemRot = groundItem.transform.rotation;
-                log?.LogInfo($"AncientStatueRestore.Capture: statue holds item '{groundItem.name}' (id={itemId}) at {itemPos}.");
+                var item = new OwnSavedPositionedItem
+                {
+                    itemId = groundItem.itemID,
+                    posX = groundItem.transform.position.x,
+                    posY = groundItem.transform.position.y,
+                    posZ = groundItem.transform.position.z,
+                    rotX = groundItem.transform.rotation.x,
+                    rotY = groundItem.transform.rotation.y,
+                    rotZ = groundItem.transform.rotation.z,
+                    rotW = groundItem.transform.rotation.w,
+                };
+                foreach (var kv in OwnItemStateIO.ReadItemStateValues(groundItem.data, groundItem.itemID))
+                    item.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
+                state.item = item;
+
+                claimed?.Add(groundItem);
+                log?.LogInfo($"AncientStatueRestore.Capture: statue holds item '{groundItem.name}' (id={item.itemId}) at {groundItem.transform.position}.");
             }
             catch (Exception e)
             {
@@ -125,7 +138,7 @@ namespace PEAKQuickResume
         /// </summary>
         public static void Restore(OwnSaveData data, Vector3 fallbackPos, ManualLogSource log)
         {
-            if (data == null || !data.ancientStatueBroken)
+            if (data?.ancientStatue == null || !data.ancientStatue.broken)
             {
                 log?.LogInfo("AncientStatueRestore.Restore: nothing to restore for this load (statue was unbroken when saved, or no save data).");
                 return;
@@ -151,18 +164,17 @@ namespace PEAKQuickResume
                 statue.Break();
                 log?.LogInfo("AncientStatueRestore: restored the Ancient Statue to its broken state.");
 
-                if (data.ancientStatueHasItem
-                    && ItemDatabase.TryGetItem(data.ancientStatueItemId, out Item prefab) && prefab != null)
+                OwnSavedPositionedItem item = data.ancientStatue.item;
+                if (item != null && ItemDatabase.TryGetItem(item.itemId, out Item prefab) && prefab != null)
                 {
                     // Spawn at the item's OWN captured position/rotation (see
-                    // OwnSavedLuggageItem's remarks, same reasoning applies here) rather
+                    // OwnSavedPositionedItem's remarks, same reasoning applies here) rather
                     // than the statue's configured spawn spot or a transform.up offset -
                     // both were tried and reverted (session-confirmed): a spawn spot is
                     // where physics DROPS the item, not necessarily where it settles,
                     // and transform.up isn't reliably "the hands" on uneven terrain
-                    Vector3 spawnPos = new Vector3(data.ancientStatueItemPosX, data.ancientStatueItemPosY, data.ancientStatueItemPosZ);
-                    Quaternion spawnRot = new Quaternion(data.ancientStatueItemRotX, data.ancientStatueItemRotY,
-                        data.ancientStatueItemRotZ, data.ancientStatueItemRotW);
+                    Vector3 spawnPos = new Vector3(item.posX, item.posY, item.posZ);
+                    Quaternion spawnRot = new Quaternion(item.rotX, item.rotY, item.rotZ, item.rotW);
 
                     GameObject spawned = PhotonNetwork.InstantiateItemRoom(prefab.name, spawnPos, spawnRot);
                     if (spawned != null)
@@ -175,11 +187,13 @@ namespace PEAKQuickResume
                         if (statue.isKinematic && spawned.TryGetComponent<PhotonView>(out PhotonView view))
                             view.RPC("SetKinematicRPC", RpcTarget.AllBuffered, true, spawnPos, spawnRot);
 
-                        log?.LogInfo($"AncientStatueRestore: respawned saved item {data.ancientStatueItemId} at {spawnPos} on the Ancient Statue.");
+                        CampfireAreaHelpers.ApplySavedItemValues(spawned, item.values, log);
+
+                        log?.LogInfo($"AncientStatueRestore: respawned saved item {item.itemId} at {spawnPos} on the Ancient Statue.");
                     }
                     else
                     {
-                        log?.LogWarning($"AncientStatueRestore: InstantiateItemRoom returned null for item {data.ancientStatueItemId}.");
+                        log?.LogWarning($"AncientStatueRestore: InstantiateItemRoom returned null for item {item.itemId}.");
                     }
                 }
             }

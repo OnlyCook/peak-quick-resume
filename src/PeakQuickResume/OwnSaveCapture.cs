@@ -82,11 +82,15 @@ namespace PEAKQuickResume
 
                 // World state (not per-player) - captured once using the host's own
                 // position and stamped identically into every connected player's file,
-                // see AncientStatueRestore for why
+                // see AncientStatueRestore for why. One shared "claimed" set threads
+                // through all three captures so the same physical item never ends up
+                // saved twice under two different mechanics - see WorldItemRestore's
+                // class remarks for why that matters
                 Vector3 statueSearchPos = Character.localCharacter != null ? Character.localCharacter.Head : Vector3.zero;
-                AncientStatueRestore.Capture(statueSearchPos, log, out bool statueBroken, out bool statueHasItem,
-                    out ushort statueItemId, out Vector3 statueItemPos, out Quaternion statueItemRot);
-                LuggageRestore.Capture(statueSearchPos, log, out List<OwnSavedLuggageState> luggageStates);
+                var claimedItems = new HashSet<Item>();
+                AncientStatueRestore.Capture(statueSearchPos, claimedItems, log, out OwnSavedStatueState statueState);
+                LuggageRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
+                WorldItemRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
 
                 foreach (Player player in allPlayers)
                 {
@@ -154,17 +158,9 @@ namespace PEAKQuickResume
                         backpackItemStates = backpackStates,
                         afflictions_current = currentStatuses,
                         extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
-                        ancientStatueBroken = statueBroken,
-                        ancientStatueHasItem = statueHasItem,
-                        ancientStatueItemId = statueItemId,
-                        ancientStatueItemPosX = statueItemPos.x,
-                        ancientStatueItemPosY = statueItemPos.y,
-                        ancientStatueItemPosZ = statueItemPos.z,
-                        ancientStatueItemRotX = statueItemRot.x,
-                        ancientStatueItemRotY = statueItemRot.y,
-                        ancientStatueItemRotZ = statueItemRot.z,
-                        ancientStatueItemRotW = statueItemRot.w,
+                        ancientStatue = statueState,
                         luggageStates = luggageStates,
+                        worldItemStates = worldItemStates,
                         extModsPeakapaloozaPEAKTOBEACH = false,
                     };
 
@@ -218,9 +214,10 @@ namespace PEAKQuickResume
                 List<OwnSavedItemState> inventoryStates = CaptureInventory(localPlayer, cfg, log);
                 List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(localPlayer, cfg, log);
 
-                AncientStatueRestore.Capture(pos, log, out bool statueBroken, out bool statueHasItem,
-                    out ushort statueItemId, out Vector3 statueItemPos, out Quaternion statueItemRot);
-                LuggageRestore.Capture(pos, log, out List<OwnSavedLuggageState> luggageStates);
+                var claimedItems = new HashSet<Item>();
+                AncientStatueRestore.Capture(pos, claimedItems, log, out OwnSavedStatueState statueState);
+                LuggageRestore.Capture(pos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
+                WorldItemRestore.Capture(pos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
 
                 CharacterAfflictions afflictions = Character.localCharacter.refs.afflictions;
                 float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -271,17 +268,9 @@ namespace PEAKQuickResume
                     backpackItemStates = backpackStates,
                     afflictions_current = currentStatuses,
                     extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
-                    ancientStatueBroken = statueBroken,
-                    ancientStatueHasItem = statueHasItem,
-                    ancientStatueItemId = statueItemId,
-                    ancientStatueItemPosX = statueItemPos.x,
-                    ancientStatueItemPosY = statueItemPos.y,
-                    ancientStatueItemPosZ = statueItemPos.z,
-                    ancientStatueItemRotX = statueItemRot.x,
-                    ancientStatueItemRotY = statueItemRot.y,
-                    ancientStatueItemRotZ = statueItemRot.z,
-                    ancientStatueItemRotW = statueItemRot.w,
+                    ancientStatue = statueState,
                     luggageStates = luggageStates,
+                    worldItemStates = worldItemStates,
                     extModsPeakapaloozaPEAKTOBEACH = false,
                 };
 

@@ -24,7 +24,7 @@ namespace PEAKQuickResume
     /// [PunRPC] methods by name regardless of C# accessibility, same technique already
     /// used for SetKinematicRPC below): spawnItems=false marks it open with no auto
     /// spawn, then we place the saved item(s) ourselves at their own CAPTURED position/
-    /// rotation (see OwnSavedLuggageItem's remarks for why not a configured spawn spot
+    /// rotation (see OwnSavedPositionedItem's remarks for why not a configured spawn spot
     /// or a slot index)
     ///
     /// Host-only throughout (world state, not per-player). Every step is wrapped and
@@ -46,8 +46,14 @@ namespace PEAKQuickResume
         // items, tight enough to stay clear of unrelated ground loot nearby
         private const float ItemSearchRadius = 10f;
 
-        /// <summary>Called from OwnSaveCapture right before writing OwnSaveData</summary>
-        public static void Capture(Vector3 fallbackPos, ManualLogSource log, out List<OwnSavedLuggageState> states)
+        /// <summary>
+        /// Called from OwnSaveCapture right before writing OwnSaveData, AFTER
+        /// AncientStatueRestore.Capture has added its own find to
+        /// <paramref name="claimed"/>. Adds every item found here to it too, so
+        /// WorldItemRestore's capture (called right after this) doesn't also save the
+        /// same physical items as generic loose loot - see its class remarks
+        /// </summary>
+        public static void Capture(Vector3 fallbackPos, HashSet<Item> claimed, ManualLogSource log, out List<OwnSavedLuggageState> states)
         {
             states = new List<OwnSavedLuggageState>();
             try
@@ -60,19 +66,17 @@ namespace PEAKQuickResume
                     return;
                 }
 
-                // Items already claimed by an earlier (closer-to-the-campfire) box in
-                // this same pass aren't eligible for a later one - keeps two nearby
-                // boxes from both grabbing the same physical item
-                var claimed = new HashSet<Item>();
                 foreach (Luggage box in boxes)
                 {
                     var state = new OwnSavedLuggageState { opened = box.IsOpen };
                     if (box.IsOpen)
                     {
-                        foreach (Item item in CampfireAreaHelpers.FindFreeItemsWithin(box.transform.position, ItemSearchRadius))
+                        // Items already claimed by an earlier (closer-to-the-campfire) box
+                        // in this same pass, or by the statue, aren't eligible for this one -
+                        // keeps two nearby containers from both grabbing the same physical item
+                        foreach (Item item in CampfireAreaHelpers.FindFreeItemsWithin(box.transform.position, ItemSearchRadius, exclude: claimed))
                         {
-                            if (claimed.Contains(item)) continue;
-                            state.items.Add(new OwnSavedLuggageItem
+                            var positioned = new OwnSavedPositionedItem
                             {
                                 itemId = item.itemID,
                                 posX = item.transform.position.x,
@@ -82,8 +86,12 @@ namespace PEAKQuickResume
                                 rotY = item.transform.rotation.y,
                                 rotZ = item.transform.rotation.z,
                                 rotW = item.transform.rotation.w,
-                            });
-                            claimed.Add(item);
+                            };
+                            foreach (var kv in OwnItemStateIO.ReadItemStateValues(item.data, item.itemID))
+                                positioned.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
+
+                            state.items.Add(positioned);
+                            claimed?.Add(item);
                         }
                     }
                     states.Add(state);
@@ -160,7 +168,7 @@ namespace PEAKQuickResume
 
             if (state.items.Count == 0) return;
 
-            foreach (OwnSavedLuggageItem saved in state.items)
+            foreach (OwnSavedPositionedItem saved in state.items)
             {
                 if (!ItemDatabase.TryGetItem(saved.itemId, out Item prefab) || prefab == null)
                 {
@@ -169,7 +177,7 @@ namespace PEAKQuickResume
                 }
 
                 // Spawn at the item's OWN captured position/rotation, not a configured
-                // spawn spot or a slot index - see OwnSavedLuggageItem's remarks
+                // spawn spot or a slot index - see OwnSavedPositionedItem's remarks
                 Vector3 spawnPos = new Vector3(saved.posX, saved.posY, saved.posZ);
                 Quaternion spawnRot = new Quaternion(saved.rotX, saved.rotY, saved.rotZ, saved.rotW);
 
@@ -182,6 +190,8 @@ namespace PEAKQuickResume
 
                 if (box.isKinematic && spawned.TryGetComponent<PhotonView>(out PhotonView itemView))
                     itemView.RPC("SetKinematicRPC", RpcTarget.AllBuffered, true, spawnPos, spawnRot);
+
+                CampfireAreaHelpers.ApplySavedItemValues(spawned, saved.values, log);
 
                 log?.LogInfo($"LuggageRestore: respawned saved item {saved.itemId} at {spawnPos} for luggage '{box.name}'.");
             }

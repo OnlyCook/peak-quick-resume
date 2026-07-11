@@ -226,8 +226,17 @@ namespace PEAKQuickResume
             // from the save data on EVERY load, including the first one, since
             // ResetWorldLoot just unconditionally closed it a moment ago regardless of
             // which load this is
+            // WorldItemRestore's own delete pass unconditionally clears every loose item
+            // within range, so it has to run BEFORE AncientStatueRestore/LuggageRestore
+            // place anything, or it would immediately destroy what they just restored -
+            // see its own class remarks. Known limitation, not a correctness risk: on a
+            // REPEAT load specifically, the spawner-retrigger loop further down (guarded
+            // on LoadedSaveFileThisRound) can spawn a little more natural clutter in this
+            // same area AFTER this cleanup already ran - accepted rather than risk moving
+            // the statue/luggage restore call site, which is proven working as placed
             if (RunLauncher.IsHost)
             {
+                WorldItemRestore.Restore(data, savedPos, _log);
                 AncientStatueRestore.Restore(data, savedPos, _log);
                 LuggageRestore.Restore(data, savedPos, _log);
             }

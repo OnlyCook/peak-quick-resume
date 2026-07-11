@@ -61,6 +61,7 @@ namespace PEAKQuickResume
             public string UserId;
             public SaveTarget Target;
             public JArray BackpackItemStates;
+            public int BackpackViewId;
         }
         private static readonly List<PendingRestore> _pending = new List<PendingRestore>();
 
@@ -151,7 +152,13 @@ namespace PEAKQuickResume
                     // silently patches an unrelated save file instead
                     SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
 
-                    _pending.Add(new PendingRestore { UserId = drop.UserId, Target = target, BackpackItemStates = states });
+                    _pending.Add(new PendingRestore
+                    {
+                        UserId = drop.UserId,
+                        Target = target,
+                        BackpackItemStates = states,
+                        BackpackViewId = drop.Backpack.photonView.ViewID,
+                    });
                     _log?.LogInfo($"[backpack-mitigation] Queued a backpack restore for userId '{drop.UserId}' ({target}, {states.Count} item(s)).");
                 }
             }
@@ -189,6 +196,23 @@ namespace PEAKQuickResume
                     log?.LogWarning($"[backpack-mitigation] Could not find a save file for userId '{restore.UserId}' to restore the dropped backpack into.");
             }
             _pending.Clear();
+        }
+
+        /// <summary>
+        /// PhotonView IDs of every dropped Backpack currently queued for a phantom-
+        /// equip restore (see <see cref="ApplyPendingRestores"/>) - called from
+        /// <see cref="WorldItemRestore"/>'s capture, BEFORE this class's own
+        /// <see cref="ApplyPendingRestores"/> clears <c>_pending</c> (both run from
+        /// within the same OwnSaveCapture call, this one first), so WorldItemRestore's
+        /// generic ground-item sweep doesn't ALSO save the same physical backpack as a
+        /// plain world item - that would restore it twice: once equipped on the owner
+        /// (this class's job) and once dropped on the ground again (WorldItemRestore's)
+        /// </summary>
+        public static HashSet<int> GetPendingBackpackViewIds()
+        {
+            var ids = new HashSet<int>();
+            foreach (var restore in _pending) ids.Add(restore.BackpackViewId);
+            return ids;
         }
 
         private static bool TryBuildBackpackItemStates(Backpack backpack, out JArray states)
