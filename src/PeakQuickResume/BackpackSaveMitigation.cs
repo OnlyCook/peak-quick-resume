@@ -44,11 +44,25 @@ namespace PEAKQuickResume
             public Backpack Backpack;
         }
 
-        // The single unlit campfire currently being watched, and every backpack drop
-        // seen near it since we started watching it (cleared whenever a DIFFERENT
-        // campfire becomes the nearest unlit one, or this one gets lit - see remarks)
+        // The single unlit campfire currently being watched, and the most recent
+        // backpack drop seen near it per player since we started watching it (cleared
+        // whenever a DIFFERENT campfire becomes the nearest unlit one, or this one gets
+        // lit - see remarks). Keyed by owner userId, NOT by backpack ViewID: a player
+        // can drop one backpack, pick up and drop a second before the fire lights, and
+        // only the latest of those is still meaningfully "their" dropped backpack. This
+        // class's own phantom-equip restore (and the exclusion it makes WorldItemRestore
+        // apply, see GetPendingBackpackViewIds) can only ever apply ONE backpack per
+        // user - a save's backpackItemStates field has room for exactly one. Keying by
+        // ViewID instead (tracking both drops) queued two PendingRestores for the same
+        // user; ApplyPendingRestores patched the save file twice, so the second silently
+        // clobbered the first in the JSON, while GetPendingBackpackViewIds still told
+        // WorldItemRestore both were "already handled" and excluded both from the normal
+        // ground-item save - the first backpack was excluded from everywhere and lost
+        // entirely. Keying by user makes the second drop replace the first in tracking,
+        // so the superseded backpack is no longer excluded and falls through to
+        // WorldItemRestore's ordinary ground-item capture instead
         private static Campfire _watchedCampfire;
-        private static readonly Dictionary<int, TrackedDrop> _tracked = new Dictionary<int, TrackedDrop>();
+        private static readonly Dictionary<string, TrackedDrop> _tracked = new Dictionary<string, TrackedDrop>();
 
         // Restorations decided the instant a watched campfire lights, but not yet
         // written to disk: our own autosave only runs AFTER Interact_CastFinished (and
@@ -108,7 +122,9 @@ namespace PEAKQuickResume
                 }
 
                 string userId = SafeUserId(___character);
-                _tracked[backpack.photonView.ViewID] = new TrackedDrop { UserId = userId, Backpack = backpack };
+                if (_tracked.ContainsKey(userId))
+                    _log?.LogInfo($"[backpack-mitigation] Replacing an earlier tracked drop for userId '{userId}' with this newer one (the earlier one now falls through to WorldItemRestore's normal ground-item save).");
+                _tracked[userId] = new TrackedDrop { UserId = userId, Backpack = backpack };
                 _log?.LogInfo($"[backpack-mitigation] Tracking a dropped backpack near the unlit campfire (owner userId '{userId}').");
             }
             catch (Exception e)
