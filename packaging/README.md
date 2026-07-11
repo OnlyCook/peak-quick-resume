@@ -59,7 +59,7 @@ Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split int
 ## Notes
 
 - **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons.
-- Loading a checkpoint can grant Steam achievements. Don't use it if you want to earn everything unassisted.
+- Achievement progress (Plunderer, Foraging, Mycology, Knot Tying, First Aid, Clutch, Gourmand, the "without ever X" badges, and more) is saved and restored correctly when you load a checkpoint - and teleporting no longer inflates the High Altitude Badge's climbed-height total. This only applies per-player to whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
 - Translations were done by AI, so if something is off in your language you are free to open a GitHub Issue (see below).
 
