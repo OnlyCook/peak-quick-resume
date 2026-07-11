@@ -63,7 +63,7 @@ Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split int
 ## Notes
 
 - **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons.
-- Achievement progress (Plunderer, Foraging, Mycology, Knot Tying, First Aid, Clutch, Gourmand, the "without ever X" badges, and more) is saved and restored correctly when you load a checkpoint - and teleporting no longer inflates the High Altitude Badge's climbed-height total. This only applies per-player to whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
+- Achievement progress is saved and restored correctly when you load a checkpoint. This only applies per-player to **whoever has PEAK Quick Resume installed themselves**. A co-op player without it keeps the old behavior for their own achievements, which may falsely unlock some Steam achievements, but also not restore the progress/state of other achievements.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
 - Translations were done by AI, so if something is off in your language you are free to open a GitHub Issue (see below).
 
@@ -106,7 +106,7 @@ No other mods are required. [PEAK Checkpoint Save](https://thunderstore.io/c/pea
 - You can install the mod through r2modman as `PEAK_Quick_Resume`
 - Or on Thunderstore as `PEAK Quick Resume` ([Website](https://thunderstore.io/c/peak/p/OnlyCook/PEAK_Quick_Resume/))
 
-Achievement progress is saved and restored correctly when you load a checkpoint (this also fixes teleporting inflating the High Altitude Badge's climbed-height total) - but only for whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
+Achievement progress is saved and restored correctly when you load a checkpoint, but only for whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
 
 ## For developers
 
