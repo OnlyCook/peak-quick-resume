@@ -112,6 +112,7 @@ namespace PEAKQuickResume
 
                     List<OwnSavedItemState> inventoryStates = CaptureInventory(player, cfg, log);
                     List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(player, cfg, log);
+                    OwnSavedItemState heldItemState = CaptureHeldItem(player, log);
 
                     CharacterAfflictions afflictions = character.refs.afflictions;
                     float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -156,6 +157,7 @@ namespace PEAKQuickResume
                         isSkeleton = character.data.isSkeleton,
                         inventoryItemStates = inventoryStates,
                         backpackItemStates = backpackStates,
+                        heldItemState = heldItemState,
                         afflictions_current = currentStatuses,
                         extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
                         ancientStatue = statueState,
@@ -213,6 +215,7 @@ namespace PEAKQuickResume
 
                 List<OwnSavedItemState> inventoryStates = CaptureInventory(localPlayer, cfg, log);
                 List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(localPlayer, cfg, log);
+                OwnSavedItemState heldItemState = CaptureHeldItem(localPlayer, log);
 
                 var claimedItems = new HashSet<Item>();
                 AncientStatueRestore.Capture(pos, claimedItems, log, out OwnSavedStatueState statueState);
@@ -266,6 +269,7 @@ namespace PEAKQuickResume
                     isSkeleton = Character.localCharacter.data.isSkeleton,
                     inventoryItemStates = inventoryStates,
                     backpackItemStates = backpackStates,
+                    heldItemState = heldItemState,
                     afflictions_current = currentStatuses,
                     extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
                     ancientStatue = statueState,
@@ -343,6 +347,24 @@ namespace PEAKQuickResume
                 log?.LogWarning($"OwnSaveCapture: backpackData capture failed (non-fatal): {e.Message}");
             }
             return result;
+        }
+
+        // New capture, not a port (see OwnSaveData.heldItemState remarks): the item
+        // sitting in Player.tempFullSlot (slot ID 250), i.e. the 4th item held in
+        // hand when all 3 regular itemSlots are already full. Same shape as
+        // CaptureInventory's per-item state but for the single fixed temp slot instead
+        // of a loop - slotIndex is stamped as 250 purely for readability in the saved
+        // JSON, restore never reads it back
+        private static OwnSavedItemState CaptureHeldItem(Player localPlayer, ManualLogSource log)
+        {
+            ItemSlot slot = localPlayer?.tempFullSlot;
+            if (slot == null || slot.IsEmpty() || slot.prefab == null) return null;
+            ItemInstanceData instanceData = slot.data;
+            if (instanceData == null) return null;
+
+            var state = new OwnSavedItemState { itemId = slot.prefab.itemID, slotIndex = 250 };
+            CaptureItemStateValues(instanceData, slot.prefab.itemID, state.values, log);
+            return state;
         }
 
         // Mirrors the 13 repeated per-key blocks exactly (see class remarks)

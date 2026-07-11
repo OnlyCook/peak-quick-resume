@@ -36,6 +36,15 @@ namespace PEAKQuickResume
         public float[] afflictions_current;
         public float extraStamina;
 
+        // The game's own 4th-item "held in hands" mechanic: with all 3 regular
+        // itemSlots full, a further pickup lands in Player.tempFullSlot (slot ID 250,
+        // TemporaryItemSlot) instead - carried, but blocks climbing until dropped/
+        // stashed. Neither the checkpoint mod nor our own capture ever looked at this
+        // slot before, so it's a genuinely new field, not a port - null when nothing
+        // was held, or on any save predating this feature (treated identically). See
+        // OwnInventoryRestore's remarks for why restoring it is safe to bolt on
+        public OwnSavedItemState heldItemState;
+
         // World-object restore around the loaded campfire (see AncientStatueRestore).
         // Null on any save predating this feature or where no statue was found nearby -
         // treated the same as "nothing to restore"

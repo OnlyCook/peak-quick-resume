@@ -368,6 +368,24 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.ApplyAfflictionsTo failed: {e.Message}"); }
         }
 
+        /// <summary>
+        /// Own addition (no decompile counterpart - see OwnSaveData.heldItemState
+        /// remarks): tells the SPECIFIC player who owns this Player/PhotonView to equip
+        /// their own restored tempFullSlot (slot 250) item locally - same targeted-RPC
+        /// shape as <see cref="ApplyAfflictionsTo"/>, for the same reason (host writing
+        /// another client's Character state directly never becomes visible on that
+        /// client's own machine)
+        /// </summary>
+        public void EquipHeldItemFor(PhotonView playerView, string userId)
+        {
+            try
+            {
+                if (playerView == null || playerView.Owner == null) return;
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_EquipHeldItem), playerView.Owner, userId);
+            }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.EquipHeldItemFor failed: {e.Message}"); }
+        }
+
         /// <summary>Mirrors decompile line 162: RpcTarget.Others (1), sent by whichever machine actually saved</summary>
         public void RecentlyLitCampfireOthers()
         {
@@ -544,6 +562,34 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 Owner?.LogError($"RPC_ApplyAfflictions error: {e}");
+            }
+        }
+
+        /// <summary>
+        /// Own addition (no decompile counterpart), see <see cref="OwnNetwork.EquipHeldItemFor"/>.
+        /// Runs on the receiving client's own machine, where photonView.IsMine is
+        /// actually true for this character, so CharacterItems.EquipSlot's own network
+        /// spawn + EquipSlotRpc broadcast work correctly - unlike calling it from the
+        /// host for a Character it doesn't own. Requires the local tempFullSlot copy to
+        /// already hold the restored item (the sender times this after that player's own
+        /// SyncInventoryRPC), otherwise EquipSlot would just clear currentSelectedSlot
+        /// instead - checked defensively here too, not just trusted from the sender
+        /// </summary>
+        [PunRPC]
+        public void RPC_EquipHeldItem(string userId)
+        {
+            try
+            {
+                Character localCharacter = Character.localCharacter;
+                if (localCharacter == null) return;
+                if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
+                if (localCharacter.player?.tempFullSlot == null || localCharacter.player.tempFullSlot.IsEmpty()) return;
+
+                localCharacter.refs.items.EquipSlot(Zorro.Core.Optionable<byte>.Some((byte)250));
+            }
+            catch (Exception e)
+            {
+                Owner?.LogError($"RPC_EquipHeldItem error: {e}");
             }
         }
     }
