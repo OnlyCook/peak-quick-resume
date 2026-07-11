@@ -113,6 +113,8 @@ namespace PEAKQuickResume
                     List<OwnSavedItemState> inventoryStates = CaptureInventory(player, cfg, log);
                     List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(player, cfg, log);
                     OwnSavedItemState heldItemState = CaptureHeldItem(player, log);
+                    List<ushort> stuckThornIndices = ThornsAndTicksRestore.CaptureThorns(character);
+                    bool hasTick = ThornsAndTicksRestore.CaptureTick(character);
 
                     CharacterAfflictions afflictions = character.refs.afflictions;
                     float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -158,6 +160,8 @@ namespace PEAKQuickResume
                         inventoryItemStates = inventoryStates,
                         backpackItemStates = backpackStates,
                         heldItemState = heldItemState,
+                        stuckThornIndices = stuckThornIndices,
+                        hasTick = hasTick,
                         afflictions_current = currentStatuses,
                         extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
                         ancientStatue = statueState,
@@ -216,6 +220,8 @@ namespace PEAKQuickResume
                 List<OwnSavedItemState> inventoryStates = CaptureInventory(localPlayer, cfg, log);
                 List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(localPlayer, cfg, log);
                 OwnSavedItemState heldItemState = CaptureHeldItem(localPlayer, log);
+                List<ushort> stuckThornIndices = ThornsAndTicksRestore.CaptureThorns(localCharacter);
+                bool hasTick = ThornsAndTicksRestore.CaptureTick(localCharacter);
 
                 var claimedItems = new HashSet<Item>();
                 AncientStatueRestore.Capture(pos, claimedItems, log, out OwnSavedStatueState statueState);
@@ -270,6 +276,8 @@ namespace PEAKQuickResume
                     inventoryItemStates = inventoryStates,
                     backpackItemStates = backpackStates,
                     heldItemState = heldItemState,
+                    stuckThornIndices = stuckThornIndices,
+                    hasTick = hasTick,
                     afflictions_current = currentStatuses,
                     extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
                     ancientStatue = statueState,

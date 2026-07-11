@@ -386,6 +386,29 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.EquipHeldItemFor failed: {e.Message}"); }
         }
 
+        /// <summary>
+        /// Own addition (no decompile counterpart - see OwnSaveData.stuckThornIndices
+        /// remarks): tells the SPECIFIC player who owns this Player/PhotonView to
+        /// re-apply their own restored physical thorns locally - same targeted-RPC
+        /// shape/reason as <see cref="EquipHeldItemFor"/> (CharacterAfflictions.AddThorn
+        /// silently no-ops unless called on the owning client). Takes <c>int[]</c>, not
+        /// <c>ushort[]</c>: Photon's RPC parameter serializer has a dedicated path for
+        /// <c>int[]</c> but no case for <c>ushort[]</c> at all (confirmed against the
+        /// Photon3Unity3D.dll decompile - it's exactly why the game's own
+        /// <c>ThornSyncData</c> wraps its <c>List&lt;ushort&gt;</c> in a custom
+        /// IBinarySerializable blob instead of passing it directly) - sending ushort[]
+        /// here would silently fail to serialize at runtime
+        /// </summary>
+        public void RestoreThornsFor(PhotonView playerView, string userId, int[] thornIndices)
+        {
+            try
+            {
+                if (playerView == null || playerView.Owner == null) return;
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_RestoreThorns), playerView.Owner, userId, thornIndices);
+            }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.RestoreThornsFor failed: {e.Message}"); }
+        }
+
         /// <summary>Mirrors decompile line 162: RpcTarget.Others (1), sent by whichever machine actually saved</summary>
         public void RecentlyLitCampfireOthers()
         {
@@ -590,6 +613,32 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 Owner?.LogError($"RPC_EquipHeldItem error: {e}");
+            }
+        }
+
+        /// <summary>
+        /// Own addition (no decompile counterpart), see
+        /// <see cref="OwnNetwork.RestoreThornsFor"/>. Runs on the receiving client's own
+        /// machine, where photonView.IsMine is actually true for this character, so
+        /// CharacterAfflictions.AddThorn's own IsMine guard passes and its RPC_EnableThorn
+        /// broadcast (RpcTarget.All) reaches everyone correctly
+        /// </summary>
+        [PunRPC]
+        public void RPC_RestoreThorns(string userId, int[] thornIndices)
+        {
+            try
+            {
+                Character localCharacter = Character.localCharacter;
+                if (localCharacter == null) return;
+                if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
+                if (thornIndices == null) return;
+
+                foreach (int index in thornIndices)
+                    localCharacter.refs.afflictions.AddThorn((ushort)index);
+            }
+            catch (Exception e)
+            {
+                Owner?.LogError($"RPC_RestoreThorns error: {e}");
             }
         }
     }

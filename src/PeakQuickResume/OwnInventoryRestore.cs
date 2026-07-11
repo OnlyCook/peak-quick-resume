@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using BepInEx.Logging;
 using Newtonsoft.Json;
@@ -141,6 +142,48 @@ namespace PEAKQuickResume
                     {
                         log?.LogWarning($"OwnInventoryRestore: failed to send afflictions RPC: {e.Message}");
                     }
+                }
+
+                // Physical thorns restore (own addition, no decompile counterpart - see
+                // OwnSaveData.stuckThornIndices/ThornsAndTicksRestore's remarks).
+                // Deliberately does NOT touch STATUSTYPE.Thorns directly - it's recomputed
+                // every frame purely from which physicalThorns are stuckIn, so setting it
+                // ourselves would just be overwritten within a frame; re-adding the
+                // physical thorns via AddThorn is what brings the correct status level
+                // back on its own. RemoveAllThorns() near the top of this loop (pre-
+                // existing, unconditional) already cleared any stale thorns from before
+                // the reload. Must run AFTER the skeleton restore above - AddThorn no-ops
+                // for skeletons - and on the OWNING client, same offline/coop-RPC split as
+                // the held-item equip step below
+                if (cfg.OwnAfflictions.Value && data != null && data.stuckThornIndices != null && data.stuckThornIndices.Count > 0)
+                {
+                    try
+                    {
+                        if (offline || (playerView != null && playerView.IsMine))
+                            ThornsAndTicksRestore.ApplyThorns(ch, data.stuckThornIndices, log);
+                        else if (PhotonNetwork.IsMasterClient && playerView != null)
+                            entryPoints?.Network?.RestoreThornsFor(playerView, userId, data.stuckThornIndices.Select(i => (int)i).ToArray());
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"OwnInventoryRestore: thorn restore failed: {e.Message}");
+                    }
+                }
+
+                // Tick (Bugfix) restore (own addition, no decompile counterpart - see
+                // ThornsAndTicksRestore's remarks). Unlike thorns, no owner-side RPC
+                // needed: any client (the host, here) can PhotonNetwork.Instantiate the
+                // room object and broadcast AttachBug, exactly like vanilla's own
+                // TickTrigger does it. Clears any leftover tick first - defensive, since
+                // Bugfix.AllAttachedBugs is static/global, not scene-scoped, so a stale
+                // entry could otherwise theoretically survive a level reload
+                if (cfg.OwnAfflictions.Value && data != null)
+                {
+                    try { ThornsAndTicksRestore.RemoveExistingTick(ch, log); }
+                    catch (Exception e) { log?.LogWarning($"OwnInventoryRestore: tick cleanup failed: {e.Message}"); }
+
+                    if (data.hasTick)
+                        ThornsAndTicksRestore.ApplyTick(ch, log);
                 }
 
                 // Mirrors decompile 2939-2942 (SendSyncInventory, coop-only): a vanilla

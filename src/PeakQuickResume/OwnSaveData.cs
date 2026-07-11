@@ -45,6 +45,20 @@ namespace PEAKQuickResume
         // OwnInventoryRestore's remarks for why restoring it is safe to bolt on
         public OwnSavedItemState heldItemState;
 
+        // Physical thorns stuck to this player's body (Cactus/Tumbleweed hazard) -
+        // indices into CharacterAfflictions.physicalThorns' fixed pool of pre-placed
+        // body-mesh slots (see ThornsAndTicksRestore). The "Thorns" status effect is
+        // entirely DERIVED from these every frame (CharacterAfflictions.UpdateWeight),
+        // so it must never be restored directly - only via this list, see
+        // ThornsAndTicksRestore's remarks. Null/empty on saves predating this feature
+        // or a player with no thorns stuck
+        public List<ushort> stuckThornIndices;
+
+        // Whether a tick (Bugfix) is attached to this player - see
+        // ThornsAndTicksRestore. A character can only ever carry one at a time
+        // (vanilla's own TickTrigger enforces this), so a bool is enough
+        public bool hasTick;
+
         // World-object restore around the loaded campfire (see AncientStatueRestore).
         // Null on any save predating this feature or where no statue was found nearby -
         // treated the same as "nothing to restore"
