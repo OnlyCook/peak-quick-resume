@@ -227,7 +227,10 @@ namespace PEAKQuickResume
             // ResetWorldLoot just unconditionally closed it a moment ago regardless of
             // which load this is
             if (RunLauncher.IsHost)
+            {
                 AncientStatueRestore.Restore(data, savedPos, _log);
+                LuggageRestore.Restore(data, savedPos, _log);
+            }
 
             if (RunLauncher.IsHost)
             {

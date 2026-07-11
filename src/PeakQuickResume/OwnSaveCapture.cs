@@ -84,7 +84,9 @@ namespace PEAKQuickResume
                 // position and stamped identically into every connected player's file,
                 // see AncientStatueRestore for why
                 Vector3 statueSearchPos = Character.localCharacter != null ? Character.localCharacter.Head : Vector3.zero;
-                AncientStatueRestore.Capture(statueSearchPos, log, out bool statueBroken, out bool statueHasItem, out ushort statueItemId);
+                AncientStatueRestore.Capture(statueSearchPos, log, out bool statueBroken, out bool statueHasItem,
+                    out ushort statueItemId, out Vector3 statueItemPos, out Quaternion statueItemRot);
+                LuggageRestore.Capture(statueSearchPos, log, out List<OwnSavedLuggageState> luggageStates);
 
                 foreach (Player player in allPlayers)
                 {
@@ -155,6 +157,14 @@ namespace PEAKQuickResume
                         ancientStatueBroken = statueBroken,
                         ancientStatueHasItem = statueHasItem,
                         ancientStatueItemId = statueItemId,
+                        ancientStatueItemPosX = statueItemPos.x,
+                        ancientStatueItemPosY = statueItemPos.y,
+                        ancientStatueItemPosZ = statueItemPos.z,
+                        ancientStatueItemRotX = statueItemRot.x,
+                        ancientStatueItemRotY = statueItemRot.y,
+                        ancientStatueItemRotZ = statueItemRot.z,
+                        ancientStatueItemRotW = statueItemRot.w,
+                        luggageStates = luggageStates,
                         extModsPeakapaloozaPEAKTOBEACH = false,
                     };
 
@@ -208,7 +218,9 @@ namespace PEAKQuickResume
                 List<OwnSavedItemState> inventoryStates = CaptureInventory(localPlayer, cfg, log);
                 List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(localPlayer, cfg, log);
 
-                AncientStatueRestore.Capture(pos, log, out bool statueBroken, out bool statueHasItem, out ushort statueItemId);
+                AncientStatueRestore.Capture(pos, log, out bool statueBroken, out bool statueHasItem,
+                    out ushort statueItemId, out Vector3 statueItemPos, out Quaternion statueItemRot);
+                LuggageRestore.Capture(pos, log, out List<OwnSavedLuggageState> luggageStates);
 
                 CharacterAfflictions afflictions = Character.localCharacter.refs.afflictions;
                 float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -262,6 +274,14 @@ namespace PEAKQuickResume
                     ancientStatueBroken = statueBroken,
                     ancientStatueHasItem = statueHasItem,
                     ancientStatueItemId = statueItemId,
+                    ancientStatueItemPosX = statueItemPos.x,
+                    ancientStatueItemPosY = statueItemPos.y,
+                    ancientStatueItemPosZ = statueItemPos.z,
+                    ancientStatueItemRotX = statueItemRot.x,
+                    ancientStatueItemRotY = statueItemRot.y,
+                    ancientStatueItemRotZ = statueItemRot.z,
+                    ancientStatueItemRotW = statueItemRot.w,
+                    luggageStates = luggageStates,
                     extModsPeakapaloozaPEAKTOBEACH = false,
                 };
 

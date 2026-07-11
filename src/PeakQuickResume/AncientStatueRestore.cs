@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using BepInEx.Logging;
 using Peak.Network;
 using Photon.Pun;
@@ -72,14 +71,17 @@ namespace PEAKQuickResume
         /// player's own position - whoever lit the campfire is standing right next to
         /// it), falling back to that raw position if no Campfire is found nearby at all
         /// </summary>
-        public static void Capture(Vector3 fallbackPos, ManualLogSource log, out bool broken, out bool hasItem, out ushort itemId)
+        public static void Capture(Vector3 fallbackPos, ManualLogSource log, out bool broken, out bool hasItem,
+            out ushort itemId, out Vector3 itemPos, out Quaternion itemRot)
         {
             broken = false;
             hasItem = false;
             itemId = 0;
+            itemPos = default;
+            itemRot = default;
             try
             {
-                Vector3 searchCenter = ResolveCampfirePos(fallbackPos);
+                Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
                 RespawnChest statue = FindNearestStatue(searchCenter);
                 if (statue == null)
                 {
@@ -92,7 +94,7 @@ namespace PEAKQuickResume
                     + $"({Vector3.Distance(statue.transform.position, searchCenter):F1}m from search center), broken={broken}.");
                 if (!broken) return;
 
-                Item groundItem = FindNearestGroundItem(statue.transform.position);
+                Item groundItem = CampfireAreaHelpers.FindNearestFreeItem(statue.transform.position, ItemSearchRadius);
                 if (groundItem == null)
                 {
                     log?.LogInfo("AncientStatueRestore.Capture: statue is broken but no unclaimed ground item found nearby.");
@@ -101,7 +103,9 @@ namespace PEAKQuickResume
 
                 hasItem = true;
                 itemId = groundItem.itemID;
-                log?.LogInfo($"AncientStatueRestore.Capture: statue holds item '{groundItem.name}' (id={itemId}).");
+                itemPos = groundItem.transform.position;
+                itemRot = groundItem.transform.rotation;
+                log?.LogInfo($"AncientStatueRestore.Capture: statue holds item '{groundItem.name}' (id={itemId}) at {itemPos}.");
             }
             catch (Exception e)
             {
@@ -128,7 +132,7 @@ namespace PEAKQuickResume
             }
             try
             {
-                Vector3 searchCenter = ResolveCampfirePos(fallbackPos);
+                Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
                 RespawnChest statue = FindNearestStatue(searchCenter);
                 if (statue == null)
                 {
@@ -150,19 +154,15 @@ namespace PEAKQuickResume
                 if (data.ancientStatueHasItem
                     && ItemDatabase.TryGetItem(data.ancientStatueItemId, out Item prefab) && prefab != null)
                 {
-                    // Use the statue's OWN configured spawn spot (session-reported: our
-                    // earlier transform.position + transform.up guess landed the item
-                    // floating well off to the side and in the air - transform.up isn't
-                    // reliably "the hands" for a statue placed on uneven terrain). This
-                    // is exactly what Spawner.SpawnItems itself uses (GetSpawnSpots(),
-                    // decompile ~23604/31752 for Luggage specifically), so it lands in
-                    // the same spot the vanilla open flow would have put it
-                    if (!TryGetSpawnTransform(statue, out Vector3 spawnPos, out Quaternion spawnRot))
-                    {
-                        spawnPos = statue.transform.position + statue.transform.up * 1.5f;
-                        spawnRot = statue.transform.rotation;
-                        log?.LogWarning("AncientStatueRestore: statue has no configured spawn spot, falling back to an offset above its transform.");
-                    }
+                    // Spawn at the item's OWN captured position/rotation (see
+                    // OwnSavedLuggageItem's remarks, same reasoning applies here) rather
+                    // than the statue's configured spawn spot or a transform.up offset -
+                    // both were tried and reverted (session-confirmed): a spawn spot is
+                    // where physics DROPS the item, not necessarily where it settles,
+                    // and transform.up isn't reliably "the hands" on uneven terrain
+                    Vector3 spawnPos = new Vector3(data.ancientStatueItemPosX, data.ancientStatueItemPosY, data.ancientStatueItemPosZ);
+                    Quaternion spawnRot = new Quaternion(data.ancientStatueItemRotX, data.ancientStatueItemRotY,
+                        data.ancientStatueItemRotZ, data.ancientStatueItemRotW);
 
                     GameObject spawned = PhotonNetwork.InstantiateItemRoom(prefab.name, spawnPos, spawnRot);
                     if (spawned != null)
@@ -189,78 +189,6 @@ namespace PEAKQuickResume
             }
         }
 
-        // Deliberately NOT MapHandler.CurrentCampfire here (tried first, reverted -
-        // session-confirmed broken): that resolves off Singleton<MapHandler>.Instance.
-        // currentSegment, which only advances inside JumpToSegmentLogic - i.e. during
-        // an actual teleport. At CAPTURE time (Campfire.Interact_CastFinished just
-        // fired) no teleport has happened yet, so currentSegment is still the PREVIOUS
-        // segment and CurrentCampfire silently resolved to the wrong, already-passed
-        // campfire instead of the one that was just lit. Finding the nearest real
-        // Campfire object to the given position sidesteps that bookkeeping entirely and
-        // is reliable both at capture time (the player is standing right at the
-        // campfire they just lit) and at restore time (the player's saved position was
-        // captured right next to that same campfire)
-        private const float CampfireSearchRadius = 30f;
-        private static Vector3 ResolveCampfirePos(Vector3 fallbackPos)
-        {
-            try
-            {
-                Campfire nearest = null;
-                float best = float.MaxValue;
-                foreach (Campfire c in UnityEngine.Object.FindObjectsByType<Campfire>(FindObjectsSortMode.None))
-                {
-                    if (c == null) continue;
-                    float d = Vector3.Distance(c.transform.position, fallbackPos);
-                    if (d <= CampfireSearchRadius && d < best) { best = d; nearest = c; }
-                }
-                if (nearest != null) return nearest.transform.position;
-            }
-            catch { /* fall through to the fallback below */ }
-            return fallbackPos;
-        }
-
-        // Reads the statue's own configured spawn point(s) directly off Spawner's public
-        // fields (spawnPointMode/spawnSpots/weightedSpawnSpots), mirroring what
-        // Spawner.GetSpawnSpots() (protected, decompile ~23604) itself returns - so an
-        // item we spawn here lands exactly where the vanilla open flow would put it,
-        // rather than guessing an offset from the statue's transform
-        private static bool TryGetSpawnTransform(RespawnChest statue, out Vector3 pos, out Quaternion rot)
-        {
-            pos = default;
-            rot = default;
-
-            List<Transform> spots = statue.spawnPointMode == Spawner.SpawnPointMode.WeightedLists
-                ? PickWeightedSpots(statue.weightedSpawnSpots)
-                : statue.spawnSpots;
-
-            if (spots == null) return false;
-            foreach (Transform t in spots)
-            {
-                if (t == null) continue;
-                pos = t.position;
-                rot = t.rotation;
-                return true;
-            }
-            return false;
-        }
-
-        private static List<Transform> PickWeightedSpots(List<Spawner.WeightedSpawnPointEntry> entries)
-        {
-            if (entries == null || entries.Count == 0) return null;
-
-            int totalWeight = 0;
-            foreach (Spawner.WeightedSpawnPointEntry e in entries) totalWeight += Mathf.Max(0, e.weight);
-            if (totalWeight <= 0) return entries[0].spawnSpots;
-
-            int roll = UnityEngine.Random.Range(0, totalWeight);
-            foreach (Spawner.WeightedSpawnPointEntry e in entries)
-            {
-                roll -= Mathf.Max(0, e.weight);
-                if (roll < 0) return e.spawnSpots;
-            }
-            return entries[entries.Count - 1].spawnSpots;
-        }
-
         private static RespawnChest FindNearestStatue(Vector3 nearPos)
         {
             RespawnChest nearest = null;
@@ -270,19 +198,6 @@ namespace PEAKQuickResume
                 if (chest == null) continue;
                 float d = Vector3.Distance(chest.transform.position, nearPos);
                 if (d <= StatueSearchRadius && d < best) { best = d; nearest = chest; }
-            }
-            return nearest;
-        }
-
-        private static Item FindNearestGroundItem(Vector3 statuePos)
-        {
-            Item nearest = null;
-            float best = float.MaxValue;
-            foreach (Item item in UnityEngine.Object.FindObjectsByType<Item>(FindObjectsSortMode.None))
-            {
-                if (item == null || item.itemState != ItemState.Ground) continue;
-                float d = Vector3.Distance(item.transform.position, statuePos);
-                if (d <= ItemSearchRadius && d < best) { best = d; nearest = item; }
             }
             return nearest;
         }
