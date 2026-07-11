@@ -245,14 +245,16 @@ namespace PEAKQuickResume
             if (!loadOk) { Fail("Load call failed"); yield break; }
 
             // TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's coroutine and
-            // returns immediately), so wait for the ENTIRE sequence - including its wake-up +
-            // loading-screen presentation at the end - to actually finish before declaring
-            // success. Showing the message right after TryLoadPlayer returns would print it
-            // well before the player has even seen the loading screen appear. Don't hard-fail
-            // on a timeout here (the load itself already succeeded); just show the message anyway
-            yield return WaitFor(() => !_ownLoadEntryPoints.TeleportInProgress, timeout, "teleport + wake-up sequence to finish");
+            // returns immediately), so wait for the restore to actually finish before declaring
+            // success. Showing the message right after TryLoadPlayer returns would print it well
+            // before the player has even seen the loading screen appear. Session-requested change:
+            // wait on RestoreComplete (items/backpacks/afflictions actually in place), NOT the
+            // full TeleportInProgress flag - that also waits out the purely-cosmetic wake-up
+            // fade-out/stand-up beat, which is pure decoration by then. Don't hard-fail on a
+            // timeout here (the load itself already succeeded); just show the message anyway
+            yield return WaitFor(() => _ownLoadEntryPoints.RestoreComplete, timeout, "restore to finish");
             if (!_lastWaitOk)
-                _log.LogWarning("[stage] Teleport sequence didn't report done in time; showing the completion message anyway.");
+                _log.LogWarning("[stage] Restore didn't report done in time; showing the completion message anyway.");
 
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
             Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);

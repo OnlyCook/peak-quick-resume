@@ -75,7 +75,7 @@ namespace PEAKQuickResume
 
                 if (PhotonNetwork.OfflineMode)
                 {
-                    OwnSaveCapture.SavePlayerOffline(_cfg, _log);
+                    OwnSaveCapture.SavePlayerOffline(_cfg, _log, _network?.MessageOverlay);
                 }
                 else if (PhotonNetwork.IsMasterClient)
                 {

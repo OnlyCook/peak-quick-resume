@@ -85,7 +85,7 @@ namespace PEAKQuickResume
         // checkpoint mod's abrupt instant on/off overlay
         public readonly ConfigEntry<bool> OwnWakeUpAnimationEnabled;
         public readonly ConfigEntry<float> OwnLoadingScreenFadeInDelay;
-        public readonly ConfigEntry<float> OwnWakeUpSettleHoldTime;
+        public readonly ConfigEntry<float> OwnLoadingScreenFadeOutDelay;
         public readonly ConfigEntry<float> OwnWakeUpStandTime;
         public readonly ConfigEntry<float> OwnLoadingScreenFadeTime;
 
@@ -160,26 +160,38 @@ namespace PEAKQuickResume
                 + "one you actually need off the bottom. Disabled by default since it relocates a vanilla button.");
 
             SettleAfterAirport = cfg.Bind("Timing", "settle-after-airport", 0.75f,
-                "Seconds to wait after the Airport scene loads before starting the new run (advanced).");
+                new ConfigDescription(
+                    "Seconds to wait after the Airport scene loads before starting the new run (advanced).",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             SettleAfterLevel = cfg.Bind("Timing", "settle-after-level", 1.5f,
-                "Seconds to wait after the level scene loads (and the local character exists) before triggering "
-                + "the checkpoint load (advanced).");
+                new ConfigDescription(
+                    "Seconds to wait after the level scene loads (and the local character exists) before triggering "
+                    + "the checkpoint load (advanced).",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             StepTimeout = cfg.Bind("Timing", "step-timeout", 30f,
-                "Max seconds to wait for each stage (Airport load, kiosk, level load, character spawn) before "
-                + "aborting the resume sequence (advanced).");
+                new ConfigDescription(
+                    "Max seconds to wait for each stage (Airport load, kiosk, level load, character spawn) before "
+                    + "aborting the resume sequence (advanced).",
+                    new AcceptableValueRange<float>(1f, 120f)));
 
             CoopAirportSettle = cfg.Bind("Timing", "coop-airport-settle", 2f,
-                "COOP ONLY: extra seconds to wait at the Airport before starting the fresh run, so other "
-                + "players have finished loading the Airport and will receive the run-start (advanced). "
-                + "Raise this if a client occasionally gets left behind on a slow connection.");
+                new ConfigDescription(
+                    "COOP ONLY: extra seconds to wait at the Airport before starting the fresh run, so other "
+                    + "players have finished loading the Airport and will receive the run-start (advanced). "
+                    + "Raise this if a client occasionally gets left behind on a slow connection.",
+                    new AcceptableValueRange<float>(0f, 15f)));
 
             OwnTeleportFramesToWait = cfg.Bind("Teleport", "teleport-frames-to-wait", 30,
-                "Frames to wait between teleport-correction tries in our own restore path (advanced).");
+                new ConfigDescription(
+                    "Frames to wait between teleport-correction tries in our own restore path (advanced).",
+                    new AcceptableValueRange<int>(0, 300)));
 
             OwnJumpLogicWaitTime = cfg.Bind("Teleport", "jump-logic-wait-time", 1f,
-                "Seconds to wait between steps of our own restore path's teleport sequence (advanced).");
+                new ConfigDescription(
+                    "Seconds to wait between steps of our own restore path's teleport sequence (advanced).",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             OwnCampfireReset = cfg.Bind("Teleport", "campfire-reset", true,
                 "If enabled, the campfire resets after loading more than once in the current run.");
@@ -196,20 +208,24 @@ namespace PEAKQuickResume
                 + "Disable to restore the original slower, more conservative cadence. Has no effect in co-op.");
 
             OwnMaxClientWarpResends = cfg.Bind("Teleport", "max-client-warp-resends", 10,
-                "COOP ONLY: the maximum number of EXTRA 'safety' teleport RPCs the host will send a single "
-                + "client after the first one, if the host still doesn't see that client near the target. The "
-                + "host judges this from its own network-lagged view of the client, so a client on a slow "
-                + "connection (whose teleport hasn't reported back yet) could otherwise be spammed with warps it "
-                + "has already acted on. Once this cap is hit the host stops re-warping that client and leaves the "
-                + "rest to the client's own teleport watchdog / position recovery. Set to 0 to send only the "
-                + "initial warp and never re-send (advanced).");
+                new ConfigDescription(
+                    "COOP ONLY: the maximum number of EXTRA 'safety' teleport RPCs the host will send a single "
+                    + "client after the first one, if the host still doesn't see that client near the target. The "
+                    + "host judges this from its own network-lagged view of the client, so a client on a slow "
+                    + "connection (whose teleport hasn't reported back yet) could otherwise be spammed with warps it "
+                    + "has already acted on. Once this cap is hit the host stops re-warping that client and leaves the "
+                    + "rest to the client's own teleport watchdog / position recovery. Set to 0 to send only the "
+                    + "initial warp and never re-send (advanced).",
+                    new AcceptableValueRange<int>(0, 50)));
 
             OwnClientWarpResendGraceSeconds = cfg.Bind("Teleport", "client-warp-resend-grace-seconds", 1.5f,
-                "COOP ONLY: minimum seconds the host waits after warping a client before it may re-send that "
-                + "client another safety warp. Gives the client's teleport time to actually take effect AND "
-                + "propagate back over the network before the host decides it 'didn't work' and fires again - the "
-                + "direct fix for a slow-connection client being re-warped faster than a round trip can complete "
-                + "(advanced).");
+                new ConfigDescription(
+                    "COOP ONLY: minimum seconds the host waits after warping a client before it may re-send that "
+                    + "client another safety warp. Gives the client's teleport time to actually take effect AND "
+                    + "propagate back over the network before the host decides it 'didn't work' and fires again - the "
+                    + "direct fix for a slow-connection client being re-warped faster than a round trip can complete "
+                    + "(advanced).",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             OwnInventory = cfg.Bind("Teleport", "inventory", true,
                 "If enabled, restores saved inventory and backpack items.");
@@ -232,22 +248,30 @@ namespace PEAKQuickResume
                 + "all teleport-bug detection.");
 
             WatchdogWindowSeconds = cfg.Bind("Teleport-Mitigation", "watchdog-window-seconds", 30f,
-                "How long after a teleport to keep watching for the bad-teleport symptoms below (advanced).");
+                new ConfigDescription(
+                    "How long after a teleport to keep watching for the bad-teleport symptoms below (advanced).",
+                    new AcceptableValueRange<float>(1f, 120f)));
 
             FallDistanceThreshold = cfg.Bind("Teleport-Mitigation", "fall-distance-threshold", 150f,
-                "How far below the actual teleport target (in meters) counts as \"falling through the world\". "
-                + "Measured against the fixed teleport target, not a rolling peak, since a re-teleport correction "
-                + "would otherwise keep resetting a rolling peak upward (advanced).");
+                new ConfigDescription(
+                    "How far below the actual teleport target (in meters) counts as \"falling through the world\". "
+                    + "Measured against the fixed teleport target, not a rolling peak, since a re-teleport correction "
+                    + "would otherwise keep resetting a rolling peak upward (advanced).",
+                    new AcceptableValueRange<float>(10f, 500f)));
 
             GlitchOscillationCount = cfg.Bind("Teleport-Mitigation", "glitch-oscillation-count", 4,
-                "How many times you get re-warped within a few seconds AFTER a load already reported itself "
-                + "done counts as the up/down warp-loop glitch (advanced).");
+                new ConfigDescription(
+                    "How many times you get re-warped within a few seconds AFTER a load already reported itself "
+                    + "done counts as the up/down warp-loop glitch (advanced).",
+                    new AcceptableValueRange<int>(1, 20)));
 
             NeverTeleportedDistanceThreshold = cfg.Bind("Teleport-Mitigation", "never-teleported-distance-threshold", 200f,
-                "Checked once right after a load finishes: if you're still this many meters (or more) from the "
-                + "save's teleport target, you were never actually moved there. The nearest campfire to spawn is "
-                + "~500m out and you can't light one (which is what creates a save) unless everyone is within 30m "
-                + "of it, so this threshold has a wide safety buffer under a real miss (advanced).");
+                new ConfigDescription(
+                    "Checked once right after a load finishes: if you're still this many meters (or more) from the "
+                    + "save's teleport target, you were never actually moved there. The nearest campfire to spawn is "
+                    + "~500m out and you can't light one (which is what creates a save) unless everyone is within 30m "
+                    + "of it, so this threshold has a wide safety buffer under a real miss (advanced).",
+                    new AcceptableValueRange<float>(10f, 1000f)));
 
             EnableFallDamageRevert = cfg.Bind("Teleport-Mitigation", "enable-fall-damage-revert", true,
                 "When the watchdog flags a bad teleport, snapshots your Injury status and, after "
@@ -257,8 +281,10 @@ namespace PEAKQuickResume
                 + "visible - an accepted trade-off given how rarely a fight breaks out right after loading in.");
 
             DamageRevertDelaySeconds = cfg.Bind("Teleport-Mitigation", "damage-revert-delay-seconds", 20f,
-                "Seconds to wait after a flagged bad teleport before comparing Injury status and refunding any "
-                + "increase (advanced).");
+                new ConfigDescription(
+                    "Seconds to wait after a flagged bad teleport before comparing Injury status and refunding any "
+                    + "increase (advanced).",
+                    new AcceptableValueRange<float>(0f, 120f)));
 
             EnablePositionRecovery = cfg.Bind("Teleport-Mitigation", "enable-position-recovery", true,
                 "When the watchdog flags a bad teleport, checks again after position-recovery-delay-seconds and, "
@@ -267,12 +293,16 @@ namespace PEAKQuickResume
                 + "resume teleport somehow didn't land you at the checkpoint.");
 
             PositionRecoveryDelaySeconds = cfg.Bind("Teleport-Mitigation", "position-recovery-delay-seconds", 5f,
-                "Seconds after a flagged bad teleport before checking whether a forced position recovery is "
-                + "needed (advanced).");
+                new ConfigDescription(
+                    "Seconds after a flagged bad teleport before checking whether a forced position recovery is "
+                    + "needed (advanced).",
+                    new AcceptableValueRange<float>(0f, 60f)));
 
             PositionRecoveryDistanceThreshold = cfg.Bind("Teleport-Mitigation", "position-recovery-distance-threshold", 5f,
-                "How far (in meters) from the intended target still counts as \"not settled\" when the position "
-                + "recovery check above runs (advanced).");
+                new ConfigDescription(
+                    "How far (in meters) from the intended target still counts as \"not settled\" when the position "
+                    + "recovery check above runs (advanced).",
+                    new AcceptableValueRange<float>(0f, 100f)));
 
             OwnWakeUpAnimationEnabled = cfg.Bind("Wake-Up", "wake-up-animation-enabled", true,
                 "If enabled, the teleport step of our own restore path plays a native-feeling "
@@ -282,27 +312,35 @@ namespace PEAKQuickResume
                 + "Disable to go back to the plain instant teleport.");
 
             OwnLoadingScreenFadeInDelay = cfg.Bind("Wake-Up", "loading-screen-fade-in-delay", 0.5f,
-                "Seconds to wait before starting the crossfade into our own loading screen "
-                + "(advanced). Without this, our screen can start covering things up slightly "
-                + "before the game's own level-load screen has actually finished clearing, "
-                + "cutting it off a beat too early.");
+                new ConfigDescription(
+                    "Seconds to wait before starting the crossfade into our own loading screen "
+                    + "(advanced). Without this, our screen can start covering things up slightly "
+                    + "before the game's own level-load screen has actually finished clearing, "
+                    + "cutting it off a beat too early.",
+                    new AcceptableValueRange<float>(0f, 5f)));
 
-            OwnWakeUpSettleHoldTime = cfg.Bind("Wake-Up", "wake-up-settle-hold-time", 1.4f,
-                "Seconds to keep the loading screen fully opaque AFTER collapsing into the "
-                + "passed-out pose, before it starts fading out (advanced). Covers up two things "
-                + "that would otherwise still be visible right as the screen clears: the tail end "
-                + "of the real teleport's small landing drop/settle, and the collapse into the "
-                + "passed-out pose itself. Raise this if you still catch either one; lower it if "
-                + "the loading screen feels like it lingers too long after you've actually arrived.");
+            OwnLoadingScreenFadeOutDelay = cfg.Bind("Wake-Up", "loading-screen-fade-out-delay", 0.4f,
+                new ConfigDescription(
+                    "Seconds to keep the loading screen fully opaque AFTER everything (items, "
+                    + "backpacks, afflictions, world state) has finished restoring, before it starts "
+                    + "fading out (advanced). A small pause here avoids the screen clearing to reveal "
+                    + "the player completely static for a beat right before the stand-up recovery "
+                    + "kicks in - raise it if you still catch that; lower it if the loading screen "
+                    + "feels like it lingers too long after everything is actually ready.",
+                    new AcceptableValueRange<float>(0f, 3f)));
 
             OwnWakeUpStandTime = cfg.Bind("Wake-Up", "wake-up-stand-time", 1.8f,
-                "Seconds to let the native stand-up recovery play out (after the loading screen "
-                + "clears, revealing the player already lying at the new position) before the "
-                + "resume sequence considers itself fully done (advanced). The recovery itself "
-                + "ramps over roughly 2 seconds.");
+                new ConfigDescription(
+                    "Seconds to let the native stand-up recovery play out (after the loading screen "
+                    + "clears, revealing the player already lying at the new position) before the "
+                    + "resume sequence considers itself fully done (advanced). The recovery itself "
+                    + "ramps over roughly 1.5-2 seconds.",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             OwnLoadingScreenFadeTime = cfg.Bind("Wake-Up", "loading-screen-fade-time", 0.4f,
-                "Seconds for each crossfade into/out of the loading screen (advanced).");
+                new ConfigDescription(
+                    "Seconds for each crossfade into/out of the loading screen (advanced).",
+                    new AcceptableValueRange<float>(0f, 5f)));
 
             EnableDebugLogging = cfg.Bind("Debug", "enable-debug-logging", true,
                 "Verbose logging of every step of the resume sequence. Very useful while the mod is young, "

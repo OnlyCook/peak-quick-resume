@@ -58,23 +58,37 @@ namespace PEAKQuickResume
         /// <summary>
         /// True for the whole duration of a Begin()-triggered sequence, including the wake-up +
         /// loading-screen presentation at the end. <c>Begin</c>/<c>TryLoadPlayer</c> are
-        /// fire-and-forget (they start the coroutine and return immediately), so
-        /// <see cref="ResumeOrchestrator"/> polls this (via <c>OwnLoadEntryPoints.TeleportInProgress</c>)
-        /// to know when it's actually safe to show the "Save loaded" message - showing it
-        /// immediately after Begin() returns would print it well before the player has even seen
-        /// the loading screen appear
+        /// fire-and-forget (they start the coroutine and return immediately) - other code that
+        /// needs to know the WHOLE sequence (including the cosmetic wake-up beat) has finished,
+        /// not just the restore, polls this via <c>OwnLoadEntryPoints.TeleportInProgress</c>.
+        /// See <see cref="RestoreComplete"/> for the one <see cref="ResumeOrchestrator"/> actually
+        /// polls for its "Save loaded" message
         /// </summary>
         public bool IsRunning { get; private set; }
+
+        /// <summary>
+        /// True once inventory/backpack/afflictions/etc. have actually finished restoring for
+        /// this Begin()-triggered sequence - set well before <see cref="IsRunning"/> goes false
+        /// (that also waits out the purely-cosmetic fade-out/stand-up beat below). Session
+        /// request: <see cref="ResumeOrchestrator"/> polls THIS (not <c>IsRunning</c>) to show
+        /// the "Save loaded. Welcome back!" message right after the restore is actually done
+        /// instead of waiting for the wake-up animation to finish playing too
+        /// </summary>
+        public bool RestoreComplete { get; private set; }
 
         public void Begin(OwnSaveData data, SaveTarget target, bool offline) => StartCoroutine(RunSequenceWrapper(data, target, offline));
 
         private IEnumerator RunSequenceWrapper(OwnSaveData data, SaveTarget target, bool offline)
         {
             IsRunning = true;
+            RestoreComplete = false;
             // try/finally so IsRunning always resets even if RunSequence throws partway
             // through: ResumeOrchestrator polls TeleportInProgress (backed by IsRunning)
             // to know when to show its completion message, and a stuck-true flag would
-            // leave it waiting out its whole StepTimeout on every subsequent resume
+            // leave it waiting out its whole StepTimeout on every subsequent resume.
+            // RestoreComplete is force-set true here too (not just on the happy path further
+            // down) for the same reason - a throw partway through must never leave it stuck
+            // false, or ResumeOrchestrator's own wait on it would hang out its full timeout
             try
             {
                 yield return RunSequence(data, target, offline);
@@ -82,6 +96,7 @@ namespace PEAKQuickResume
             finally
             {
                 IsRunning = false;
+                RestoreComplete = true;
             }
         }
 
@@ -333,28 +348,89 @@ namespace PEAKQuickResume
             // load window stuck open forever (mitigation silently dead) and the load flag never
             // cleared. Split so each restore honours only its OWN toggle: time-of-day is applied
             // much earlier now (right after the segment jump above, gated on OwnDaytime), and
-            // RestoreAll (fire-and-forget, NOT yielded on, matching the original's cadence)
-            // always runs on the host regardless of the daytime setting
+            // RestoreAll always runs on the host regardless of the daytime setting
+            //
+            // Still started fire-and-forget (not yielded on directly) so it runs CONCURRENTLY
+            // with the collapse below rather than blocking it outright - the hold just below
+            // gates on inventoryRestoreDone directly, so the fade-out can never reveal the player
+            // before their items have actually finished restoring
+            bool inventoryRestoreDone = !RunLauncher.IsHost;
             if (RunLauncher.IsHost)
-                StartCoroutine(OwnInventoryRestore.RestoreAll(target, offline, _cfg, _entryPoints, _log));
+                StartCoroutine(RunInventoryRestoreAndSignal());
+
+            IEnumerator RunInventoryRestoreAndSignal()
+            {
+                try
+                {
+                    yield return StartCoroutine(OwnInventoryRestore.RestoreAll(target, offline, _cfg, _entryPoints, _log));
+                }
+                finally
+                {
+                    inventoryRestoreDone = true;
+                }
+            }
 
             if (isFoggedSegment)
                 StartCoroutine(OwnEnvironmentReset.ResetFogAfterLoad(index, finalSegment, _log, extendedTime: true));
 
             // Everything above is unchanged/hidden behind the loading screen. NOW collapse into
             // the passed-out pose (safe here - well after ReviveDeadPlayers, nothing left in the
-            // sequence resets passedOut/fullyPassedOut). Hold BEHIND the still-fully-opaque
-            // loading screen a bit longer before fading out (see OwnWakeUpSettleHoldTime) - the
-            // real teleport's small landing drop and the collapse itself both need a moment to
-            // physically settle, and without this hold the fade-out reveals that motion still in
-            // progress (session-reported: visible collapsing + a mid-air fall/landing shake right
-            // after the screen cleared). Only once fully settled do we reveal the player already
-            // lying at the new position and let them visibly stand back up
+            // sequence resets passedOut/fullyPassedOut) and hold BEHIND the still-fully-opaque
+            // loading screen until inventoryRestoreDone, capped by a generous safety timeout so a
+            // stuck/failed restore can never hang the sequence forever. Nothing else happens
+            // during this hold - the player is already collapsed behind an opaque screen - so
+            // items/backpacks/afflictions always end up fully in place BEFORE the fade-out ever
+            // reveals the player, instead of racing it
             if (wakeUpEnabled && _wakeUpEffect != null)
                 _wakeUpEffect.Collapse();
             if (wakeUpEnabled)
-                yield return new WaitForSeconds(Mathf.Max(0f, _cfg.OwnWakeUpSettleHoldTime.Value));
+            {
+                const float maxWaitForRestore = 10f;
+                float elapsed = 0f;
+                while (!inventoryRestoreDone && elapsed < maxWaitForRestore)
+                {
+                    // Re-stamps data.lastPassedOut every frame (see OwnWakeUpEffect's class
+                    // remarks): without this, the vanilla "not really hurt" auto-revive failsafe
+                    // force-clears passedOut back to false within a couple of frames of Collapse()
+                    // - session-confirmed via logging that this was silently defeating the whole
+                    // wake-up beat, independent of any of the timing below
+                    _wakeUpEffect?.RefreshHold();
+                    yield return null;
+                    elapsed += Time.unscaledDeltaTime;
+                }
+            }
+
+            // Items/backpacks/afflictions are now confirmed in place - ResumeOrchestrator polls
+            // this to show "Save loaded. Welcome back!" right here: after the restore, but
+            // before the fade-out/stand-up below (matches the requested step order: load state,
+            // fade out, welcome message, wake up)
+            RestoreComplete = true;
+
             if (wakeUpEnabled) _entryPoints.Network?.ClientPresentationOthers(false);
+
+            // A short extra pause BEHIND the still-opaque screen (loading-screen-fade-out-delay)
+            // before the fade-out itself starts - purely cosmetic breathing room, requested so the
+            // reveal doesn't feel like it's cutting straight from "everything just finished
+            // loading" into the fade with zero beat in between. Still refreshes the hold each
+            // frame, same as the restore-wait above
+            if (wakeUpEnabled)
+            {
+                float delayElapsed = 0f;
+                float fadeOutDelay = Mathf.Max(0f, _cfg.OwnLoadingScreenFadeOutDelay.Value);
+                while (delayElapsed < fadeOutDelay)
+                {
+                    _wakeUpEffect?.RefreshHold();
+                    yield return null;
+                    delayElapsed += Time.unscaledDeltaTime;
+                }
+            }
+
+            // Fade the loading screen out FIRST, fully revealing the player still collapsed at
+            // the new position, THEN start the stand-up recovery - so the recovery plays out
+            // entirely in full view once the screen is already gone, instead of racing (or being
+            // raced by) the fade. See OwnWakeUpEffect's class remarks for why the recovery itself
+            // is reliable now (the real bug was never this ordering - it was a vanilla failsafe
+            // silently cancelling the collapse before any of this ever ran)
             if (showLoadingScreen && _loadingScreen != null)
                 yield return _loadingScreen.FadeOut(_cfg.OwnLoadingScreenFadeTime.Value);
             if (wakeUpEnabled && _wakeUpEffect != null)

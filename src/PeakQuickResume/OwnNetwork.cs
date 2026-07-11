@@ -229,15 +229,33 @@ namespace PEAKQuickResume
 
         private IEnumerator RunClientPresentationExit()
         {
-            // Mirrors the host's own ordering exactly, including the settle hold before fading
-            // out (see OwnTeleportSequence.cs remarks) - each client manages its own local timing
+            // Mirrors the host's own ordering exactly (see OwnTeleportSequence.cs remarks) -
+            // each client manages its own local timing. Fade-out runs fully before the stand-up
+            // recovery starts, so the recovery plays out entirely in full view
             bool showLoadingScreen = _cfg != null && !_cfg.DebugDisableLoadingScreen.Value;
             if (WakeUpEffect != null) WakeUpEffect.Collapse();
+
+            // A short pause BEHIND the still-opaque screen before the fade-out itself starts -
+            // same cosmetic breathing room as the host (see OwnTeleportSequence.cs remarks).
+            // Per-frame loop (not a flat WaitForSeconds) so we can re-stamp data.lastPassedOut
+            // every frame - see OwnWakeUpEffect's class remarks: without this, the vanilla "not
+            // really hurt" auto-revive failsafe force-clears passedOut back to false within a
+            // couple of frames of Collapse()
             if (_cfg != null)
-                yield return new WaitForSeconds(Mathf.Max(0f, _cfg.OwnWakeUpSettleHoldTime.Value));
+            {
+                float delayElapsed = 0f;
+                float fadeOutDelay = Mathf.Max(0f, _cfg.OwnLoadingScreenFadeOutDelay.Value);
+                while (delayElapsed < fadeOutDelay)
+                {
+                    WakeUpEffect?.RefreshHold();
+                    yield return null;
+                    delayElapsed += Time.unscaledDeltaTime;
+                }
+            }
+
             if (showLoadingScreen && LoadingScreen != null)
                 yield return LoadingScreen.FadeOut(_cfg.OwnLoadingScreenFadeTime.Value);
-            if (_cfg != null && WakeUpEffect != null)
+            if (WakeUpEffect != null && _cfg != null)
                 yield return WakeUpEffect.Wake(_cfg.OwnWakeUpStandTime.Value);
         }
 

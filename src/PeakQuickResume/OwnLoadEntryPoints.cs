@@ -51,6 +51,15 @@ namespace PEAKQuickResume
         /// </summary>
         public bool TeleportInProgress => _teleportSequence != null && _teleportSequence.IsRunning;
 
+        /// <summary>
+        /// True once the CURRENT (or most recent) <see cref="OwnTeleportSequence"/> has actually
+        /// finished restoring inventory/backpacks/afflictions/etc., well before
+        /// <see cref="TeleportInProgress"/> goes false (that also waits out the purely-cosmetic
+        /// wake-up fade-out/stand-up beat). <see cref="ResumeOrchestrator"/> polls THIS to show
+        /// "Save loaded. Welcome back!" right after the restore is actually done
+        /// </summary>
+        public bool RestoreComplete => _teleportSequence == null || _teleportSequence.RestoreComplete;
+
         /// <summary>Exposes the shared <see cref="OwnNetwork"/> channel (RPCs, watchdog/checkpoint refs attached to it) to <see cref="OwnTeleportSequence"/>/<see cref="OwnInventoryRestore"/></summary>
         internal OwnNetwork Network => _network;
 

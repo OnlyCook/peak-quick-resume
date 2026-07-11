@@ -211,8 +211,13 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>Mirrors SavePlayerOffline exactly (decompile 3715-4137)</summary>
-        public static void SavePlayerOffline(PluginConfig cfg, ManualLogSource log)
+        /// <summary>
+        /// Mirrors SavePlayerOffline (decompile 3715-4137), plus one deliberate deviation:
+        /// the original shows no on-screen confirmation for a solo autosave, but
+        /// SavePlayerCoop's host/client branches both do - an inconsistency players
+        /// noticed, so we show the same "Saved game progress" message here too
+        /// </summary>
+        public static void SavePlayerOffline(PluginConfig cfg, ManualLogSource log, OwnMessageOverlay messageOverlay = null)
         {
             try
             {
@@ -316,10 +321,10 @@ namespace PEAKQuickResume
 
                 log?.LogInfo($"OwnSaveCapture: position + inventory saved. Pos: {pos} Scene: {sceneName}, Items: {inventoryStates.Count}.");
 
+                messageOverlay?.Show("Saved game progress", new Color(0.5f, 1f, 0.5f, 1f), 4f);
+
                 // As the canonical writer, patch the just-written file for any pending
-                // dropped-backpack restores, then copy it into the F7 archive.
-                // Matches the original SavePlayerOffline exactly: no on-screen message
-                // for a solo autosave (silent), unlike SavePlayerCoop's above
+                // dropped-backpack restores, then copy it into the F7 archive
                 BackpackSaveMitigation.ApplyPendingRestores(offline: true, log);
                 SaveArchive.Sync(offline: true, log);
             }

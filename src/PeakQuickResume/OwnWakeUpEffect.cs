@@ -42,6 +42,22 @@ namespace PEAKQuickResume
     /// (and, on wake-up, reverting) that same cosmetic ourselves via direct method calls BEFORE
     /// flipping the data bool, so its own guard (<c>!isPassedOut</c>) is already false by the time
     /// its Update() runs and it never fires its own broadcast
+    ///
+    /// SESSION-DISCOVERED LANDMINE: <c>Character.HandlePassedOut()</c> (only reached while
+    /// <c>data.passedOut</c> is true) runs an "you're not actually hurt enough to be passed out"
+    /// failsafe every frame: <c>if (refs.afflictions.statusSum &lt; 1f &amp;&amp; Time.time -
+    /// data.lastPassedOut &gt; 3f) view.RPC("RPCA_UnPassOut", ...)</c>. Since we set
+    /// <c>data.passedOut</c> directly (bypassing <c>RPCA_PassOut</c>, see above), <c>data
+    /// .lastPassedOut</c> is never stamped with the current time by us, so it's whatever stale (or
+    /// default 0) value was already there - meaning that failsafe's 3-second grace period is
+    /// already long since expired the INSTANT we collapse, and the game auto-reverts our fake
+    /// collapse within a frame or two, entirely independent of when <see cref="Wake"/> is later
+    /// called. Confirmed via targeted logging: <c>currentRagdollControll</c> never visibly left
+    /// 1.0 across an entire artificially-extended hold, and <c>passedOut</c> read back false well
+    /// before our own <see cref="Wake"/> ever ran. <see cref="Collapse"/> now stamps
+    /// <c>data.lastPassedOut</c> itself, and <see cref="RefreshHold"/> re-stamps it every frame
+    /// the caller is holding the pose, so the failsafe's timer never accumulates past 3 seconds
+    /// while we're deliberately in control
     /// </summary>
     public class OwnWakeUpEffect : MonoBehaviour
     {
@@ -70,7 +86,22 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Clears the passed-out pose (starting the native ~1.5-2s stand-up recovery) and waits
+        /// Re-stamps <c>data.lastPassedOut</c> to now, so the vanilla "not really hurt" auto-revive
+        /// failsafe (see class remarks) never sees more than a frame's worth of elapsed time and
+        /// can't fire while the caller is still deliberately holding the collapsed pose. Safe to
+        /// call every frame (e.g. from the caller's own hold-wait loop); no-ops if there's no local
+        /// character or it's not currently passed out via this effect
+        /// </summary>
+        public void RefreshHold()
+        {
+            Character character = null;
+            try { character = Character.localCharacter; } catch { /* best-effort, see ResolveCharacter */ }
+            if (character != null && character.data.passedOut)
+                character.data.lastPassedOut = Time.time;
+        }
+
+        /// <summary>
+        /// Clears the passed-out pose, starting the native ~1.5-2s stand-up recovery, and waits
         /// for it to play out. Meant to be called right after <see cref="OwnLoadingScreen.FadeOut"/>
         /// reveals the player already lying at the new position, so the stand-up itself is what
         /// the player sees first
@@ -78,10 +109,11 @@ namespace PEAKQuickResume
         public IEnumerator Wake(float standTime)
         {
             Character character = ResolveCharacter("Wake");
-            if (character == null) yield break;
-
-            _log?.LogInfo("OwnWakeUpEffect: waking up (starting the native stand-up recovery).");
-            SnapPassOut(character, false);
+            if (character != null)
+            {
+                _log?.LogInfo("OwnWakeUpEffect: waking up (starting the native stand-up recovery).");
+                SnapPassOut(character, false);
+            }
 
             yield return new WaitForSeconds(Mathf.Max(0f, standTime));
         }
@@ -115,6 +147,11 @@ namespace PEAKQuickResume
                 character.data.passedOut = value;
                 // Deliberately never set: MainCameraMovement switches the local player's own
                 // camera into spectate mode while fullyPassedOut is true (see class remarks)
+
+                // Defeats the vanilla auto-revive failsafe (see class remarks) - without this,
+                // the game force-clears passedOut back to false within a frame or two of us
+                // setting it true, regardless of anything RefreshHold does afterward
+                if (value) character.data.lastPassedOut = Time.time;
             }
             catch (Exception e)
             {
