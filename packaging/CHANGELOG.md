@@ -2,7 +2,7 @@
 
 ## 2.0.0
 
-**TL;DR:** You don't need `PEAK Checkpoint Save` anymore (I'd recommend removing that mod). The loading screen is now pretty clean, save loading should be more stable and slightly faster. Items on the ground, luggage, the Ancient Statue, some deployables, player attached entities, a player's temporary 4th slot and achievement progress is now being saved and restored (at least while close to the campfire).
+**TL;DR:** You don't need `PEAK Checkpoint Save` anymore (I'd recommend removing that mod). The loading screen is now pretty clean, save loading should be more stable and in solo slightly faster. Items on the ground, backpacks, luggage, the Ancient Statue, some deployables, player attached entities, a player's temporary 4th slot and achievement progress is now being saved and restored (at least while close to the campfire).
 
 > **This update declares independence!** It's recommended to delete `PEAK Quick Resume` and `PEAK Checkpoint Save` and then just reinstall `PEAK Quick Resume` so that your config is reset and the dependency is dropped (although PEAK Checkpoint Save won't conflict with this mod if still installed).
 
