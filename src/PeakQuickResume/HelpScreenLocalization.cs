@@ -93,23 +93,27 @@ namespace PEAKQuickResume
                 "Czy po wczytaniu coś poszło nie tak? (pusta mapa, odbijanie się góra-dół, przepadanie przez podłogę, albo w ogóle nie dotarłeś do ogniska)\nNiech wszyscy opuszczą grę i dołączą ponownie (albo całkowicie ją zrestartują), a następnie wczytajcie ten sam zapis. Samo to rozwiązuje większość problemów.",
                 "Yükledikten sonra bir şeyler ters mi gitti? (boş harita, yukarı aşağı zıplama, zeminin içinden düşme, veya aslında hiç kamp ateşine ulaşmama)\nHerkesin oyundan çıkıp yeniden katılmasını (veya oyunu tamamen yeniden başlatmasını) sağlayın, ardından aynı kaydı tekrar yükleyin. Bu tek başına çoğu sorunu çözer.",
             },
+            // The bold clause in each of these is marked up as accent-colored text
+            // (matching Accent in HelpScreenContent, "#FFF2B8") rather than actual <b>
+            // tags - the game's font has no real bold face, see HelpScreenContent's own
+            // class remarks for why that was a deliberate earlier decision
             [HelpText.AchievementsNote] = new[]
             {
-                "Loading a save may unlock Steam achievements. Skip it if you want to earn everything yourself.",
-                "Charger une sauvegarde peut débloquer des succès Steam. Évitez-le si vous voulez tout obtenir par vous-même.",
-                "Caricare un salvataggio potrebbe sbloccare obiettivi Steam. Evitalo se vuoi ottenere tutto da solo.",
-                "Das Laden eines Speicherstands kann Steam-Erfolge freischalten. Verzichte darauf, wenn du alles selbst erspielen möchtest.",
-                "Cargar una partida puede desbloquear logros de Steam. Evítalo si quieres conseguirlo todo por ti mismo.",
-                "Cargar una partida puede desbloquear logros de Steam. Evítalo si quieres conseguirlo todo por ti mismo.",
-                "Carregar um save pode desbloquear conquistas da Steam. Evite isso se quiser conquistar tudo por conta própria.",
-                "Загрузка сохранения может разблокировать достижения Steam. Пропустите это, если хотите получить всё сами.",
-                "Завантаження збереження може розблокувати досягнення Steam. Пропустіть це, якщо хочете отримати все самостійно.",
-                "加载存档可能会解锁 Steam 成就。如果你想靠自己获得所有成就，请跳过此功能。",
+                "Achievement progress is saved and restored correctly when you load a checkpoint, but <color=#FFF2B8>only for players who have PEAK Quick Resume installed themselves</color>.",
+                "La progression des succès est sauvegardée et restaurée correctement lorsque vous chargez un point de contrôle, mais <color=#FFF2B8>uniquement pour les joueurs ayant eux-mêmes PEAK Quick Resume installé</color>.",
+                "I progressi degli obiettivi vengono salvati e ripristinati correttamente quando carichi un checkpoint, ma <color=#FFF2B8>solo per i giocatori che hanno PEAK Quick Resume installato personalmente</color>.",
+                "Der Erfolgsfortschritt wird beim Laden eines Checkpoints korrekt gespeichert und wiederhergestellt, aber <color=#FFF2B8>nur für Spieler, die PEAK Quick Resume selbst installiert haben</color>.",
+                "El progreso de los logros se guarda y se restaura correctamente al cargar un punto de control, pero <color=#FFF2B8>solo para los jugadores que tengan PEAK Quick Resume instalado ellos mismos</color>.",
+                "El progreso de los logros se guarda y se restaura correctamente al cargar un punto de control, pero <color=#FFF2B8>solo para los jugadores que tengan PEAK Quick Resume instalado ellos mismos</color>.",
+                "O progresso das conquistas é salvo e restaurado corretamente ao carregar um checkpoint, mas <color=#FFF2B8>apenas para jogadores que tiverem o PEAK Quick Resume instalado</color>.",
+                "Прогресс достижений корректно сохраняется и восстанавливается при загрузке чекпоинта, но <color=#FFF2B8>только для игроков, у которых сам установлен PEAK Quick Resume</color>.",
+                "Прогрес досягнень коректно зберігається та відновлюється під час завантаження чекпоінта, але <color=#FFF2B8>лише для гравців, які самі встановили PEAK Quick Resume</color>.",
+                "加载存档点时，成就进度会被正确保存和恢复，但<color=#FFF2B8>仅限自己安装了 PEAK Quick Resume 的玩家</color>。",
                 "",
-                "セーブをロードするとSteam実績が解除されることがあります。自分の力だけで実績をすべて獲得したい場合は使用しないでください。",
-                "저장 파일을 불러오면 Steam 업적이 잠금 해제될 수 있습니다. 스스로 모든 업적을 획득하고 싶다면 사용하지 마세요.",
-                "Wczytanie zapisu może odblokować osiągnięcia Steam. Pomiń to, jeśli chcesz zdobyć wszystko samodzielnie.",
-                "Bir kaydı yüklemek Steam başarımlarının kilidini açabilir. Her şeyi kendi başına kazanmak istiyorsan bunu atla.",
+                "チェックポイントをロードすると実績の進行状況が正しく保存・復元されますが、<color=#FFF2B8>これはPEAK Quick Resumeを自分自身でインストールしているプレイヤーにのみ適用されます</color>。",
+                "체크포인트를 불러오면 업적 진행 상황이 올바르게 저장 및 복원되지만, <color=#FFF2B8>본인이 직접 PEAK Quick Resume를 설치한 플레이어에게만 해당됩니다</color>.",
+                "Postęp osiągnięć jest poprawnie zapisywany i przywracany podczas wczytywania punktu kontrolnego, ale <color=#FFF2B8>tylko dla graczy, którzy sami mają zainstalowany PEAK Quick Resume</color>.",
+                "Bir kontrol noktası yüklediğinizde başarım ilerlemesi doğru şekilde kaydedilir ve geri yüklenir, ancak <color=#FFF2B8>bu yalnızca PEAK Quick Resume'u kendisi yüklemiş oyuncular için geçerlidir</color>.",
             },
         };
 

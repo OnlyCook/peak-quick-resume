@@ -91,6 +91,13 @@ namespace PEAKQuickResume
             Vector3 savedPos = new Vector3(data.posX, data.posY, data.posZ);
             float waitTime = Mathf.Max(0f, _cfg.OwnJumpLogicWaitTime.Value);
 
+            // Must run BEFORE any segment/position warp below - see
+            // AchievementProgressIO's class remarks for why the ordering matters
+            // (RUNBASEDVALUETYPE.MaxHeightReached has to already reflect this run's real
+            // prior progress before the character's altitude jumps, or the teleport
+            // itself gets miscounted as climbed height towards the High Altitude Badge)
+            AchievementProgressIO.RestoreAllPlayers(target, offline, _entryPoints, _log);
+
             // Inter-step wait between the map/campfire warp (JumpToSegment/SetSegmentOnSpawn,
             // below) and the final precise teleport. In solo there are no networked clients
             // to keep in sync across these steps, so the original's full waitTime-per-step
@@ -213,6 +220,34 @@ namespace PEAKQuickResume
             yield return new WaitForSeconds(stepWait);
             OwnWorldLootReset.ResetWorldLoot(_log);
 
+            // World state (not per-player) - only restore it once, host-only. Right after
+            // ResetWorldLoot so it can't be wiped out again - see AncientStatueRestore
+            // for why this has to run here specifically.
+            //
+            // Deliberately NOT gated on _entryPoints.LoadedSaveFileThisRound like the
+            // steps below (tried first, reverted - session-confirmed broken): that flag
+            // means "this is a REPEAT load within the same run" (false on the very
+            // first load after a fresh run start, see its own doc comment), which is
+            // right for THOSE steps (they clean up duplicate state left over from an
+            // earlier load THIS session) but wrong here - the statue needs restoring
+            // from the save data on EVERY load, including the first one, since
+            // ResetWorldLoot just unconditionally closed it a moment ago regardless of
+            // which load this is
+            // WorldItemRestore's own delete pass unconditionally clears every loose item
+            // within range, so it has to run BEFORE AncientStatueRestore/LuggageRestore
+            // place anything, or it would immediately destroy what they just restored -
+            // see its own class remarks. Known limitation, not a correctness risk: on a
+            // REPEAT load specifically, the spawner-retrigger loop further down (guarded
+            // on LoadedSaveFileThisRound) can spawn a little more natural clutter in this
+            // same area AFTER this cleanup already ran - accepted rather than risk moving
+            // the statue/luggage restore call site, which is proven working as placed
+            if (RunLauncher.IsHost)
+            {
+                WorldItemRestore.Restore(data, savedPos, _log);
+                AncientStatueRestore.Restore(data, savedPos, _log);
+                LuggageRestore.Restore(data, savedPos, _log);
+            }
+
             if (RunLauncher.IsHost)
             {
                 if (_entryPoints.LoadedSaveFileThisRound && targetSegment != null)
@@ -232,6 +267,24 @@ namespace PEAKQuickResume
 
             if (_entryPoints.LoadedSaveFileThisRound)
                 OwnWorldLootReset.DestroyStaleWorldObjects(_log);
+
+            // Deployable restore (Portable Stove / Scout Cannon) - own addition, no
+            // decompile counterpart (see DeployableRestore class remarks). Checkpoint
+            // Flag was tried here too and reverted (session-confirmed broken in solo -
+            // see OwnSaveData.portableStoves' remarks for why). MUST run after
+            // DestroyStaleWorldObjects just above, not alongside the
+            // AncientStatue/Luggage/WorldItem restore block earlier in this method:
+            // that destroy pass matches these exact prefab names on every REPEAT load
+            // and would immediately delete whatever was just restored here if this ran
+            // any earlier. Same "every load, not just repeat loads" reasoning as the
+            // earlier restore block otherwise applies - ResetWorldLoot doesn't touch
+            // these objects at all (only DestroyStaleWorldObjects, repeat-load-only,
+            // does), so there's no earlier "run every load" hazard to guard against here
+            if (RunLauncher.IsHost)
+            {
+                DeployableRestore.RestoreStoves(data, savedPos, _log);
+                DeployableRestore.RestoreCannons(data, savedPos, _log);
+            }
 
             bool isFoggedSegment = (int)finalSegment >= 0 && (int)finalSegment <= 4;
             if (isFoggedSegment)

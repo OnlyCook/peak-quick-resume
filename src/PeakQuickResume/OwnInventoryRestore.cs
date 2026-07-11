@@ -1,12 +1,14 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using BepInEx.Logging;
 using Newtonsoft.Json;
 using Peak.Network;
 using Photon.Pun;
 using UnityEngine;
+using Zorro.Core;
 using Zorro.Core.Serizalization;
 
 namespace PEAKQuickResume
@@ -84,6 +86,12 @@ namespace PEAKQuickResume
                         try { ((ItemSlot)ch.player.backpackSlot).EmptyOut(); }
                         catch { /* matches the original's own swallow */ }
                     }
+                    // Not part of the original's own EmptyOut sweep (it never touched
+                    // tempFullSlot at all - see class remarks) - clearing it here is new,
+                    // needed so a stale held item from before the reload can't survive
+                    // underneath whatever LoadPlayerInventory restores into it below
+                    try { ch.player.tempFullSlot?.EmptyOut(); }
+                    catch { /* matches the original's own swallow */ }
 
                     for (int k = 0; k < 30; k++) yield return null;
 
@@ -136,6 +144,48 @@ namespace PEAKQuickResume
                     }
                 }
 
+                // Physical thorns restore (own addition, no decompile counterpart - see
+                // OwnSaveData.stuckThornIndices/ThornsAndTicksRestore's remarks).
+                // Deliberately does NOT touch STATUSTYPE.Thorns directly - it's recomputed
+                // every frame purely from which physicalThorns are stuckIn, so setting it
+                // ourselves would just be overwritten within a frame; re-adding the
+                // physical thorns via AddThorn is what brings the correct status level
+                // back on its own. RemoveAllThorns() near the top of this loop (pre-
+                // existing, unconditional) already cleared any stale thorns from before
+                // the reload. Must run AFTER the skeleton restore above - AddThorn no-ops
+                // for skeletons - and on the OWNING client, same offline/coop-RPC split as
+                // the held-item equip step below
+                if (cfg.OwnAfflictions.Value && data != null && data.stuckThornIndices != null && data.stuckThornIndices.Count > 0)
+                {
+                    try
+                    {
+                        if (offline || (playerView != null && playerView.IsMine))
+                            ThornsAndTicksRestore.ApplyThorns(ch, data.stuckThornIndices, log);
+                        else if (PhotonNetwork.IsMasterClient && playerView != null)
+                            entryPoints?.Network?.RestoreThornsFor(playerView, userId, data.stuckThornIndices.Select(i => (int)i).ToArray());
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"OwnInventoryRestore: thorn restore failed: {e.Message}");
+                    }
+                }
+
+                // Tick (Bugfix) restore (own addition, no decompile counterpart - see
+                // ThornsAndTicksRestore's remarks). Unlike thorns, no owner-side RPC
+                // needed: any client (the host, here) can PhotonNetwork.Instantiate the
+                // room object and broadcast AttachBug, exactly like vanilla's own
+                // TickTrigger does it. Clears any leftover tick first - defensive, since
+                // Bugfix.AllAttachedBugs is static/global, not scene-scoped, so a stale
+                // entry could otherwise theoretically survive a level reload
+                if (cfg.OwnAfflictions.Value && data != null)
+                {
+                    try { ThornsAndTicksRestore.RemoveExistingTick(ch, log); }
+                    catch (Exception e) { log?.LogWarning($"OwnInventoryRestore: tick cleanup failed: {e.Message}"); }
+
+                    if (data.hasTick)
+                        ThornsAndTicksRestore.ApplyTick(ch, log);
+                }
+
                 // Mirrors decompile 2939-2942 (SendSyncInventory, coop-only): a vanilla
                 // game RPC on the player's own PhotonView, no checkpoint-mod/OwnNetwork
                 // dependency - resyncs the inventory writes above (made authoritatively
@@ -158,6 +208,38 @@ namespace PEAKQuickResume
                     }
                 }
                 for (int k = 0; k < 20; k++) yield return null;
+
+                // New restore step, not present in the original at all (see
+                // OwnSaveData.heldItemState remarks): the data LoadHeldItem wrote into
+                // tempFullSlot above only sits in the inventory until something actively
+                // equips it - vanilla only ever reaches slot 250 via a live pickup, which
+                // always immediately calls CharacterItems.EquipSlot(250) right after (see
+                // OnPickupAccepted, decompile ~6320-6346). Skipping that step left the
+                // held item showing in the UI's item data but not actually spawned
+                // in-hand, not blocking climbing, and silently overwritten by the next
+                // pickup - confirmed exactly this in-game. EquipSlot is what spawns the
+                // physical held item and sets currentSelectedSlot/currentItem. Must run
+                // on the OWNING client: EquipSlot's own network spawn + RPC are gated on
+                // photonView.IsMine, so calling it from the host for another player's
+                // Character would silently no-op over the network - same problem/solution
+                // shape as the afflictions branch above. Sent after the SyncInventoryRPC
+                // wait above so a remote client's own local tempFullSlot copy is already
+                // populated by the time it runs EquipSlot itself
+                if (cfg.OwnInventory.Value && data != null && data.heldItemState != null
+                    && ch.player?.tempFullSlot != null && !ch.player.tempFullSlot.IsEmpty())
+                {
+                    try
+                    {
+                        if (offline || (playerView != null && playerView.IsMine))
+                            ch.refs.items.EquipSlot(Optionable<byte>.Some((byte)250));
+                        else if (PhotonNetwork.IsMasterClient && playerView != null)
+                            entryPoints?.Network?.EquipHeldItemFor(playerView, userId);
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"OwnInventoryRestore: held-item equip failed: {e.Message}");
+                    }
+                }
 
                 // M5: time-played sync (decompile 2947-2955)
                 if (ch.photonView != null && ch.photonView.Owner != null && ch.photonView.Owner.IsMasterClient && data != null && data.timePlayed > 0f)
@@ -214,23 +296,66 @@ namespace PEAKQuickResume
                 }
             }
 
-            if (data.inventoryItemStates == null || data.inventoryItemStates.Count <= 0) return;
-
-            foreach (OwnSavedItemState itemState in data.inventoryItemStates)
+            if (data.inventoryItemStates != null && data.inventoryItemStates.Count > 0)
             {
-                if (itemState == null || !AddItemToInventory_GetSlot(player, itemState.itemId, out ItemSlot createdSlot, log) || createdSlot == null)
-                    continue;
-
-                ItemInstanceData instanceData = createdSlot.data;
-                if (instanceData == null || !cfg.OwnItemStats.Value) continue;
-
-                foreach (var kv in itemState.values)
+                foreach (OwnSavedItemState itemState in data.inventoryItemStates)
                 {
-                    if (!OwnItemStateIO.TryGetKey(kv.Key, out DataEntryKey key)) continue;
-                    OwnSavedEntry entry = kv.Value;
-                    if (entry != null && !OwnItemStateIO.TrySetOrCreateEntry(instanceData, key, entry.type, entry.value, log))
-                        log?.LogWarning($"OwnInventoryRestore: could not apply '{kv.Key}' for item {itemState.itemId}.");
+                    if (itemState == null || !AddItemToInventory_GetSlot(player, itemState.itemId, out ItemSlot createdSlot, log) || createdSlot == null)
+                        continue;
+
+                    ItemInstanceData instanceData = createdSlot.data;
+                    if (instanceData == null || !cfg.OwnItemStats.Value) continue;
+
+                    foreach (var kv in itemState.values)
+                    {
+                        if (!OwnItemStateIO.TryGetKey(kv.Key, out DataEntryKey key)) continue;
+                        OwnSavedEntry entry = kv.Value;
+                        if (entry != null && !OwnItemStateIO.TrySetOrCreateEntry(instanceData, key, entry.type, entry.value, log))
+                            log?.LogWarning($"OwnInventoryRestore: could not apply '{kv.Key}' for item {itemState.itemId}.");
+                    }
                 }
+            }
+
+            if (data.heldItemState != null)
+            {
+                try { LoadHeldItem(data.heldItemState, player, cfg, log); }
+                catch (Exception e) { log?.LogWarning($"OwnInventoryRestore.LoadPlayerInventory: held-item restore failed: {e}"); }
+            }
+        }
+
+        /// <summary>
+        /// New restore, not a port (see OwnSaveData.heldItemState remarks): puts the
+        /// saved 4th item straight into Player.tempFullSlot via ItemSlot.SetItem,
+        /// rather than going through Player.AddItem's slot-selection logic (which would
+        /// require the 3 regular slots to already be full and reflection to invoke) -
+        /// direct and unconditional, so the held item lands back in the hand slot even
+        /// if one of the 3 regular-slot restores above happened to fail. Same shape as
+        /// LoadBackpackFromSave's direct BackpackData.AddItem call. Only sets the DATA -
+        /// the actual equip step (spawning it in-hand, setting currentSelectedSlot) is
+        /// done separately by <see cref="RestoreAll"/> once this player's inventory sync
+        /// has gone out, see its own remarks for why that has to happen later and on the
+        /// owning client
+        /// </summary>
+        private static void LoadHeldItem(OwnSavedItemState itemState, Player player, PluginConfig cfg, ManualLogSource log)
+        {
+            if (player?.tempFullSlot == null) return;
+            if (!ItemDatabase.TryGetItem(itemState.itemId, out Item item) || item == null)
+            {
+                log?.LogWarning($"OwnInventoryRestore: held item {itemState.itemId} not found in ItemDatabase, skipping.");
+                return;
+            }
+
+            ItemInstanceData instanceData = new ItemInstanceData(Guid.NewGuid());
+            ItemInstanceDataHandler.AddInstanceData(instanceData);
+            player.tempFullSlot.SetItem(item, instanceData);
+
+            if (!cfg.OwnItemStats.Value) return;
+            foreach (var kv in itemState.values)
+            {
+                if (!OwnItemStateIO.TryGetKey(kv.Key, out DataEntryKey key)) continue;
+                OwnSavedEntry entry = kv.Value;
+                if (entry != null && !OwnItemStateIO.TrySetOrCreateEntry(instanceData, key, entry.type, entry.value, log))
+                    log?.LogWarning($"OwnInventoryRestore: could not apply held-item '{kv.Key}' for item {itemState.itemId}.");
             }
         }
 

@@ -36,10 +36,81 @@ namespace PEAKQuickResume
         public float[] afflictions_current;
         public float extraStamina;
 
+        // The game's own 4th-item "held in hands" mechanic: with all 3 regular
+        // itemSlots full, a further pickup lands in Player.tempFullSlot (slot ID 250,
+        // TemporaryItemSlot) instead - carried, but blocks climbing until dropped/
+        // stashed. Neither the checkpoint mod nor our own capture ever looked at this
+        // slot before, so it's a genuinely new field, not a port - null when nothing
+        // was held, or on any save predating this feature (treated identically). See
+        // OwnInventoryRestore's remarks for why restoring it is safe to bolt on
+        public OwnSavedItemState heldItemState;
+
+        // Physical thorns stuck to this player's body (Cactus/Tumbleweed hazard) -
+        // indices into CharacterAfflictions.physicalThorns' fixed pool of pre-placed
+        // body-mesh slots (see ThornsAndTicksRestore). The "Thorns" status effect is
+        // entirely DERIVED from these every frame (CharacterAfflictions.UpdateWeight),
+        // so it must never be restored directly - only via this list, see
+        // ThornsAndTicksRestore's remarks. Null/empty on saves predating this feature
+        // or a player with no thorns stuck
+        public List<ushort> stuckThornIndices;
+
+        // Whether a tick (Bugfix) is attached to this player - see
+        // ThornsAndTicksRestore. A character can only ever carry one at a time
+        // (vanilla's own TickTrigger enforces this), so a bool is enough
+        public bool hasTick;
+
+        // World-object restore around the loaded campfire (see AncientStatueRestore).
+        // Null on any save predating this feature or where no statue was found nearby -
+        // treated the same as "nothing to restore"
+        public OwnSavedStatueState ancientStatue;
+
+        // Luggage restore around the loaded campfire (see LuggageRestore). Null on any
+        // save predating this feature - treated identically to an empty list (nothing
+        // to restore)
+        public List<OwnSavedLuggageState> luggageStates;
+
+        // Generic ground-item restore within 30m of the loaded campfire (see
+        // WorldItemRestore) - backpacks (natural or player-dropped), berries, coconuts,
+        // campfire food, anything else lying free. Deliberately excludes whatever
+        // AncientStatueRestore/LuggageRestore/BackpackSaveMitigation already claimed,
+        // see WorldItemRestore's own remarks. Capped at 50 entries
+        public List<OwnSavedPositionedItem> worldItemStates;
+
         // Kept for round-trip compatibility with checkpoint-mod files during the
         // transition window (see ROADMAP.md). We never support PEAKapalooza, so
         // this is always written false; deliberately not acted on when reading
         public bool extModsPeakapaloozaPEAKTOBEACH;
+
+        // This player's own in-progress achievement/Steam-stat tracking for the
+        // current run (see AchievementProgressIO). Native code (AchievementManager)
+        // resets all of this to empty every time a fresh run starts, which is exactly
+        // what our own "start a fresh run, then load a checkpoint" resume does - so
+        // without this, every run-scoped achievement (Plunderer, Cooking's run-based
+        // half, Foraging, Mycology, First Aid, Clutch, Knot Tying, Advanced Mycology,
+        // and the "without ever X" family) silently loses its progress on every load,
+        // and a teleport's instant altitude jump gets miscounted as climbed height
+        // towards the High Altitude Badge. Null on any save predating this feature -
+        // treated identically to "nothing tracked yet this run" (a fresh baseline)
+        public OwnSavedAchievementProgress achievementProgress;
+
+        // Deployable ("world object") restore around the loaded campfire - own
+        // addition, no decompile counterpart at all: the checkpoint mod only ever
+        // DESTROYED these on a repeat load (see OwnWorldLootReset.StaleSegmentObjectNames),
+        // it never saved or restored their state. See DeployableRestore.
+        // Null on any save predating this feature - treated identically to an empty
+        // list (nothing to restore).
+        //
+        // Checkpoint Flag was deliberately NOT added here (tried, reverted -
+        // session-confirmed broken in solo: a planted flag came back missing after a
+        // save/load): its revival logic hinges on Character.data.checkpointFlags, a
+        // plain per-machine list only ever populated by the vanilla
+        // CheckpointFlag.Initialize, which itself only runs on the planting client -
+        // reconstructing that reliably needs syncing state the game itself never
+        // syncs, and a half-working revive token isn't worth the risk for what's a
+        // minor QoL feature. Stove/Cannon have no such risk (they're just placed
+        // props with no per-player binding), so they're kept
+        public List<OwnSavedDeployableState> portableStoves;
+        public List<OwnSavedDeployableState> scoutCannons;
     }
 
     /// <summary>Decompile: PEAK_Checkpoint_Save.Plugin.SavedItemState (line 434)</summary>
@@ -59,6 +130,66 @@ namespace PEAKQuickResume
     }
 
     /// <summary>
+    /// The Ancient Statue's state near a saved campfire (see AncientStatueRestore).
+    /// <c>item</c> is null when unbroken, or when broken with nothing left unclaimed
+    /// nearby (already picked up, or the touch revived a player instead of spawning
+    /// anything) - only non-null when there's an actual item to restore
+    /// </summary>
+    public class OwnSavedStatueState
+    {
+        public bool broken;
+        public OwnSavedPositionedItem item;
+    }
+
+    /// <summary>
+    /// One Luggage box's state near a saved campfire (see LuggageRestore). A box can
+    /// hold more than one item at once (a "Big Luggage" has 3 spawn spots vs a normal
+    /// one's 2), hence a list
+    /// </summary>
+    public class OwnSavedLuggageState
+    {
+        public bool opened;
+        public List<OwnSavedPositionedItem> items = new List<OwnSavedPositionedItem>();
+    }
+
+    /// <summary>
+    /// One item found near a Luggage box (or, via WorldItemRestore, anywhere within
+    /// range of the campfire), with its OWN observed position/rotation, not just which
+    /// configured spawn spot it's nearest to - session-reported: matching items to
+    /// spawn-spot transforms (by index, or even just "nearest spot") got the wrong
+    /// result once a box's items had settled somewhere other than exactly on their
+    /// original spawn point (gravity, jostling, or simply time passing before the
+    /// player actually lit the campfire) - a spot floating above where an item actually
+    /// rests, or two items close enough together to confuse "nearest spot" matching,
+    /// both produced a wrong result. Recording exactly where the item WAS and putting
+    /// it back there avoids needing to reconstruct that correspondence at all
+    /// </summary>
+    public class OwnSavedPositionedItem
+    {
+        public ushort itemId;
+        public float posX;
+        public float posY;
+        public float posZ;
+        public float rotX;
+        public float rotY;
+        public float rotZ;
+        public float rotW;
+
+        // Per-item "extra stats" (CookedAmount, Fuel, ItemUses, ...) - same
+        // OwnItemStateIO mechanism/key set already used for inventory/backpack items
+        // and BackpackSaveMitigation's phantom backpack restore. Without this, a
+        // cooked marshmallow/hotdog sitting near the campfire came back raw on load
+        public Dictionary<string, OwnSavedEntry> values = new Dictionary<string, OwnSavedEntry>();
+
+        // Only populated when this item is itself a dropped/naturally-spawned Backpack
+        // (see WorldItemRestore) - its own contents, same shape as a player's equipped
+        // backpackItemStates. Null for every other item. A backpack's contents live in
+        // a separate BackpackData entry, not in "values" above (which only covers flat
+        // numeric stats like CookedAmount - irrelevant to the backpack itself)
+        public List<OwnSavedBackpackItemState> backpackContents;
+    }
+
+    /// <summary>
     /// Decompile: PEAK_Checkpoint_Save.Plugin.SavedEntry (line 454). <c>type</c> is a
     /// <see cref="System.Type.AssemblyQualifiedName"/> string used by the checkpoint
     /// mod's own <c>TrySetOrCreateEntry</c> (Activator.CreateInstance) to rebuild the
@@ -68,5 +199,49 @@ namespace PEAKQuickResume
     {
         public string type;
         public float value;
+    }
+
+    /// <summary>
+    /// Own addition, no decompile counterpart in the checkpoint mod (it never touched
+    /// achievements at all) - a JSON-friendly mirror of the game's own
+    /// <c>SerializableRunBasedValues</c> (decompile ~43602), which
+    /// <c>AchievementManager.runBasedValueData</c> is typed as. That struct's fields
+    /// are all <c>internal</c>, so we can't reference them directly from this
+    /// assembly - <see cref="AchievementProgressIO"/> reflects them in/out of this
+    /// class instead. Deliberately omits <c>steamAchievementsPreviouslyUnlocked</c>:
+    /// that list is always rebuilt fresh from the LOCAL client's actual current Steam
+    /// achievement state on restore (see AchievementProgressIO.ApplyLocal's remarks),
+    /// never trusted from a save file, so an achievement earned by other means between
+    /// saving and loading is never miscounted as "not yet had it"
+    /// </summary>
+    public class OwnSavedAchievementProgress
+    {
+        public Dictionary<int, int> runBasedInts = new Dictionary<int, int>();
+        public Dictionary<int, float> runBasedFloats = new Dictionary<int, float>();
+        public List<ushort> runBasedFruitsEaten = new List<ushort>();
+        public List<ushort> shroomBerriesEaten = new List<ushort>();
+        public List<ushort> nonToxicMushroomsEaten = new List<ushort>();
+        public List<ushort> gourmandRequirementsEaten = new List<ushort>();
+        public List<int> achievementsEarnedThisRun = new List<int>();
+        public List<int> completedAscentsThisRun = new List<int>();
+    }
+
+    /// <summary>
+    /// One player-placed deployable (Portable Stove or Scout Cannon, see
+    /// DeployableRestore) near a saved campfire. Both are plain <c>Constructable</c>-
+    /// built props with no meaningful persistent runtime state beyond where they are
+    /// (see DeployableRestore's class remarks for why burn/fuel state is deliberately
+    /// NOT captured) - full quaternion kept (not just yaw) so an angled placement
+    /// (Constructable.isAngleable) restores exactly as built
+    /// </summary>
+    public class OwnSavedDeployableState
+    {
+        public float posX;
+        public float posY;
+        public float posZ;
+        public float rotX;
+        public float rotY;
+        public float rotZ;
+        public float rotW;
     }
 }

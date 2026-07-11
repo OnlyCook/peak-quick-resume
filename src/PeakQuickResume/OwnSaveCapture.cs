@@ -80,6 +80,20 @@ namespace PEAKQuickResume
                     if (p != null) playerNames.Add(p.character.characterName);
                 }
 
+                // World state (not per-player) - captured once using the host's own
+                // position and stamped identically into every connected player's file,
+                // see AncientStatueRestore for why. One shared "claimed" set threads
+                // through all three captures so the same physical item never ends up
+                // saved twice under two different mechanics - see WorldItemRestore's
+                // class remarks for why that matters
+                Vector3 statueSearchPos = Character.localCharacter != null ? Character.localCharacter.Head : Vector3.zero;
+                var claimedItems = new HashSet<Item>();
+                AncientStatueRestore.Capture(statueSearchPos, claimedItems, log, out OwnSavedStatueState statueState);
+                LuggageRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
+                WorldItemRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
+                DeployableRestore.CaptureStoves(statueSearchPos, log, out List<OwnSavedDeployableState> portableStoves);
+                DeployableRestore.CaptureCannons(statueSearchPos, log, out List<OwnSavedDeployableState> scoutCannons);
+
                 foreach (Player player in allPlayers)
                 {
                     if (player == null)
@@ -100,6 +114,9 @@ namespace PEAKQuickResume
 
                     List<OwnSavedItemState> inventoryStates = CaptureInventory(player, cfg, log);
                     List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(player, cfg, log);
+                    OwnSavedItemState heldItemState = CaptureHeldItem(player, log);
+                    List<ushort> stuckThornIndices = ThornsAndTicksRestore.CaptureThorns(character);
+                    bool hasTick = ThornsAndTicksRestore.CaptureTick(character);
 
                     CharacterAfflictions afflictions = character.refs.afflictions;
                     float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -125,6 +142,19 @@ namespace PEAKQuickResume
                         else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                     }
 
+                    // AchievementManager is a client-LOCAL singleton - we only ever see
+                    // our OWN achievement progress directly. For every other player,
+                    // ReconnectHandler.TryGetReconnectData gives us the game's own
+                    // native, already-kept-up-to-date host-side copy of that player's
+                    // progress (the same one the game uses for its own disconnect/
+                    // reconnect support) - see AchievementProgressIO's remarks
+                    PhotonView playerPv = player.GetComponent<PhotonView>();
+                    OwnSavedAchievementProgress achievementProgress = (playerPv != null && playerPv.IsMine)
+                        ? AchievementProgressIO.CaptureLocal(log)
+                        : (ReconnectHandler.TryGetReconnectData(userId, out _, out SerializableRunBasedValues remoteProgress)
+                            ? AchievementProgressIO.ToSaved(remoteProgress, log)
+                            : null);
+
                     var data = new OwnSaveData
                     {
                         settingsVersion = 6,
@@ -144,8 +174,17 @@ namespace PEAKQuickResume
                         isSkeleton = character.data.isSkeleton,
                         inventoryItemStates = inventoryStates,
                         backpackItemStates = backpackStates,
+                        heldItemState = heldItemState,
+                        stuckThornIndices = stuckThornIndices,
+                        hasTick = hasTick,
                         afflictions_current = currentStatuses,
                         extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                        ancientStatue = statueState,
+                        luggageStates = luggageStates,
+                        worldItemStates = worldItemStates,
+                        achievementProgress = achievementProgress,
+                        portableStoves = portableStoves,
+                        scoutCannons = scoutCannons,
                         extModsPeakapaloozaPEAKTOBEACH = false,
                     };
 
@@ -198,6 +237,16 @@ namespace PEAKQuickResume
 
                 List<OwnSavedItemState> inventoryStates = CaptureInventory(localPlayer, cfg, log);
                 List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(localPlayer, cfg, log);
+                OwnSavedItemState heldItemState = CaptureHeldItem(localPlayer, log);
+                List<ushort> stuckThornIndices = ThornsAndTicksRestore.CaptureThorns(localCharacter);
+                bool hasTick = ThornsAndTicksRestore.CaptureTick(localCharacter);
+
+                var claimedItems = new HashSet<Item>();
+                AncientStatueRestore.Capture(pos, claimedItems, log, out OwnSavedStatueState statueState);
+                LuggageRestore.Capture(pos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
+                WorldItemRestore.Capture(pos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
+                DeployableRestore.CaptureStoves(pos, log, out List<OwnSavedDeployableState> portableStoves);
+                DeployableRestore.CaptureCannons(pos, log, out List<OwnSavedDeployableState> scoutCannons);
 
                 CharacterAfflictions afflictions = Character.localCharacter.refs.afflictions;
                 float[] currentStatuses = afflictions.currentStatuses.ToArray();
@@ -227,6 +276,8 @@ namespace PEAKQuickResume
                     else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                 }
 
+                OwnSavedAchievementProgress achievementProgress = AchievementProgressIO.CaptureLocal(log);
+
                 var data = new OwnSaveData
                 {
                     settingsVersion = 6, // matches the checkpoint mod's own hardcoded settingsVersion (decompile line 699)
@@ -246,8 +297,17 @@ namespace PEAKQuickResume
                     isSkeleton = Character.localCharacter.data.isSkeleton,
                     inventoryItemStates = inventoryStates,
                     backpackItemStates = backpackStates,
+                    heldItemState = heldItemState,
+                    stuckThornIndices = stuckThornIndices,
+                    hasTick = hasTick,
                     afflictions_current = currentStatuses,
                     extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                    ancientStatue = statueState,
+                    luggageStates = luggageStates,
+                    worldItemStates = worldItemStates,
+                    achievementProgress = achievementProgress,
+                    portableStoves = portableStoves,
+                    scoutCannons = scoutCannons,
                     extModsPeakapaloozaPEAKTOBEACH = false,
                 };
 
@@ -320,6 +380,24 @@ namespace PEAKQuickResume
                 log?.LogWarning($"OwnSaveCapture: backpackData capture failed (non-fatal): {e.Message}");
             }
             return result;
+        }
+
+        // New capture, not a port (see OwnSaveData.heldItemState remarks): the item
+        // sitting in Player.tempFullSlot (slot ID 250), i.e. the 4th item held in
+        // hand when all 3 regular itemSlots are already full. Same shape as
+        // CaptureInventory's per-item state but for the single fixed temp slot instead
+        // of a loop - slotIndex is stamped as 250 purely for readability in the saved
+        // JSON, restore never reads it back
+        private static OwnSavedItemState CaptureHeldItem(Player localPlayer, ManualLogSource log)
+        {
+            ItemSlot slot = localPlayer?.tempFullSlot;
+            if (slot == null || slot.IsEmpty() || slot.prefab == null) return null;
+            ItemInstanceData instanceData = slot.data;
+            if (instanceData == null) return null;
+
+            var state = new OwnSavedItemState { itemId = slot.prefab.itemID, slotIndex = 250 };
+            CaptureItemStateValues(instanceData, slot.prefab.itemID, state.values, log);
+            return state;
         }
 
         // Mirrors the 13 repeated per-key blocks exactly (see class remarks)
