@@ -36,6 +36,14 @@ namespace PEAKQuickResume
         public float[] afflictions_current;
         public float extraStamina;
 
+        // World-object restore around the loaded campfire (see AncientStatueRestore).
+        // Not present in checkpoint-mod files or pre-existing saves - Newtonsoft leaves
+        // these at their defaults (false/false/0) when absent, which correctly means
+        // "nothing to restore" for both an old save and a campfire with no statue at all
+        public bool ancientStatueBroken;
+        public bool ancientStatueHasItem;
+        public ushort ancientStatueItemId;
+
         // Kept for round-trip compatibility with checkpoint-mod files during the
         // transition window (see ROADMAP.md). We never support PEAKapalooza, so
         // this is always written false; deliberately not acted on when reading

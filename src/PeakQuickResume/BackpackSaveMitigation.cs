@@ -20,7 +20,7 @@ namespace PEAKQuickResume
     /// Approach: the host watches the single nearest-to-itself unlit campfire (there's
     /// only ever one "next" unlit campfire in play at a time - if a buggy load somehow
     /// produces two, the farther one can't be the real one anyway, so it's ignored) for
-    /// any backpack dropped within 100m of it, by ANY player. If that same campfire is
+    /// any backpack dropped within 50m of it, by ANY player. If that same campfire is
     /// then lit while a tracked drop is still sitting on the ground, un-picked-up, and
     /// its owner hasn't since equipped a different backpack, we inject it (contents and
     /// all) into that owner's just-written save file as a phantom "equipped" backpack -
@@ -34,7 +34,7 @@ namespace PEAKQuickResume
     public static class BackpackSaveMitigation
     {
         private const byte BackpackSlotId = 3; // Player.backpackSlot's own fixed slot index (see Player's ctor)
-        private const float WatchRadius = 100f;
+        private const float WatchRadius = 50f;
 
         private static ManualLogSource _log;
 

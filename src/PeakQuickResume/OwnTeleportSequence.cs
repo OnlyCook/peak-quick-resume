@@ -213,6 +213,22 @@ namespace PEAKQuickResume
             yield return new WaitForSeconds(stepWait);
             OwnWorldLootReset.ResetWorldLoot(_log);
 
+            // World state (not per-player) - only restore it once, host-only. Right after
+            // ResetWorldLoot so it can't be wiped out again - see AncientStatueRestore
+            // for why this has to run here specifically.
+            //
+            // Deliberately NOT gated on _entryPoints.LoadedSaveFileThisRound like the
+            // steps below (tried first, reverted - session-confirmed broken): that flag
+            // means "this is a REPEAT load within the same run" (false on the very
+            // first load after a fresh run start, see its own doc comment), which is
+            // right for THOSE steps (they clean up duplicate state left over from an
+            // earlier load THIS session) but wrong here - the statue needs restoring
+            // from the save data on EVERY load, including the first one, since
+            // ResetWorldLoot just unconditionally closed it a moment ago regardless of
+            // which load this is
+            if (RunLauncher.IsHost)
+                AncientStatueRestore.Restore(data, savedPos, _log);
+
             if (RunLauncher.IsHost)
             {
                 if (_entryPoints.LoadedSaveFileThisRound && targetSegment != null)

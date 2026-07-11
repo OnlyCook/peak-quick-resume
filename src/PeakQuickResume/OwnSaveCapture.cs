@@ -80,6 +80,12 @@ namespace PEAKQuickResume
                     if (p != null) playerNames.Add(p.character.characterName);
                 }
 
+                // World state (not per-player) - captured once using the host's own
+                // position and stamped identically into every connected player's file,
+                // see AncientStatueRestore for why
+                Vector3 statueSearchPos = Character.localCharacter != null ? Character.localCharacter.Head : Vector3.zero;
+                AncientStatueRestore.Capture(statueSearchPos, log, out bool statueBroken, out bool statueHasItem, out ushort statueItemId);
+
                 foreach (Player player in allPlayers)
                 {
                     if (player == null)
@@ -146,6 +152,9 @@ namespace PEAKQuickResume
                         backpackItemStates = backpackStates,
                         afflictions_current = currentStatuses,
                         extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                        ancientStatueBroken = statueBroken,
+                        ancientStatueHasItem = statueHasItem,
+                        ancientStatueItemId = statueItemId,
                         extModsPeakapaloozaPEAKTOBEACH = false,
                     };
 
@@ -199,6 +208,8 @@ namespace PEAKQuickResume
                 List<OwnSavedItemState> inventoryStates = CaptureInventory(localPlayer, cfg, log);
                 List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(localPlayer, cfg, log);
 
+                AncientStatueRestore.Capture(pos, log, out bool statueBroken, out bool statueHasItem, out ushort statueItemId);
+
                 CharacterAfflictions afflictions = Character.localCharacter.refs.afflictions;
                 float[] currentStatuses = afflictions.currentStatuses.ToArray();
                 float extraStamina = Character.localCharacter.GetTotalStamina() - (1f - currentStatuses.Sum());
@@ -248,6 +259,9 @@ namespace PEAKQuickResume
                     backpackItemStates = backpackStates,
                     afflictions_current = currentStatuses,
                     extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                    ancientStatueBroken = statueBroken,
+                    ancientStatueHasItem = statueHasItem,
+                    ancientStatueItemId = statueItemId,
                     extModsPeakapaloozaPEAKTOBEACH = false,
                 };
 
