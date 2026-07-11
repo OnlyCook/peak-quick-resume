@@ -80,6 +80,18 @@ namespace PEAKQuickResume
         // transition window (see ROADMAP.md). We never support PEAKapalooza, so
         // this is always written false; deliberately not acted on when reading
         public bool extModsPeakapaloozaPEAKTOBEACH;
+
+        // This player's own in-progress achievement/Steam-stat tracking for the
+        // current run (see AchievementProgressIO). Native code (AchievementManager)
+        // resets all of this to empty every time a fresh run starts, which is exactly
+        // what our own "start a fresh run, then load a checkpoint" resume does - so
+        // without this, every run-scoped achievement (Plunderer, Cooking's run-based
+        // half, Foraging, Mycology, First Aid, Clutch, Knot Tying, Advanced Mycology,
+        // and the "without ever X" family) silently loses its progress on every load,
+        // and a teleport's instant altitude jump gets miscounted as climbed height
+        // towards the High Altitude Badge. Null on any save predating this feature -
+        // treated identically to "nothing tracked yet this run" (a fresh baseline)
+        public OwnSavedAchievementProgress achievementProgress;
     }
 
     /// <summary>Decompile: PEAK_Checkpoint_Save.Plugin.SavedItemState (line 434)</summary>
@@ -168,5 +180,30 @@ namespace PEAKQuickResume
     {
         public string type;
         public float value;
+    }
+
+    /// <summary>
+    /// Own addition, no decompile counterpart in the checkpoint mod (it never touched
+    /// achievements at all) - a JSON-friendly mirror of the game's own
+    /// <c>SerializableRunBasedValues</c> (decompile ~43602), which
+    /// <c>AchievementManager.runBasedValueData</c> is typed as. That struct's fields
+    /// are all <c>internal</c>, so we can't reference them directly from this
+    /// assembly - <see cref="AchievementProgressIO"/> reflects them in/out of this
+    /// class instead. Deliberately omits <c>steamAchievementsPreviouslyUnlocked</c>:
+    /// that list is always rebuilt fresh from the LOCAL client's actual current Steam
+    /// achievement state on restore (see AchievementProgressIO.ApplyLocal's remarks),
+    /// never trusted from a save file, so an achievement earned by other means between
+    /// saving and loading is never miscounted as "not yet had it"
+    /// </summary>
+    public class OwnSavedAchievementProgress
+    {
+        public Dictionary<int, int> runBasedInts = new Dictionary<int, int>();
+        public Dictionary<int, float> runBasedFloats = new Dictionary<int, float>();
+        public List<ushort> runBasedFruitsEaten = new List<ushort>();
+        public List<ushort> shroomBerriesEaten = new List<ushort>();
+        public List<ushort> nonToxicMushroomsEaten = new List<ushort>();
+        public List<ushort> gourmandRequirementsEaten = new List<ushort>();
+        public List<int> achievementsEarnedThisRun = new List<int>();
+        public List<int> completedAscentsThisRun = new List<int>();
     }
 }

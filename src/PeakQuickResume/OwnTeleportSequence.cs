@@ -91,6 +91,13 @@ namespace PEAKQuickResume
             Vector3 savedPos = new Vector3(data.posX, data.posY, data.posZ);
             float waitTime = Mathf.Max(0f, _cfg.OwnJumpLogicWaitTime.Value);
 
+            // Must run BEFORE any segment/position warp below - see
+            // AchievementProgressIO's class remarks for why the ordering matters
+            // (RUNBASEDVALUETYPE.MaxHeightReached has to already reflect this run's real
+            // prior progress before the character's altitude jumps, or the teleport
+            // itself gets miscounted as climbed height towards the High Altitude Badge)
+            AchievementProgressIO.RestoreAllPlayers(target, offline, _entryPoints, _log);
+
             // Inter-step wait between the map/campfire warp (JumpToSegment/SetSegmentOnSpawn,
             // below) and the final precise teleport. In solo there are no networked clients
             // to keep in sync across these steps, so the original's full waitTime-per-step

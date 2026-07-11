@@ -141,6 +141,12 @@ namespace PEAKQuickResume
             // Vanilla CharacterItems/Campfire hooks only; reads item state via OwnItemStateIO
             BackpackSaveMitigation.Apply(harmony, Logger);
 
+            // Pure observability for achievement-progress restore (see AchievementProgressIO) -
+            // logs run-based counters/steam-stat changes as "[achievement-debug]" lines, no
+            // gameplay effect. TODO: remove once the achievement-progress restore is confirmed
+            // solid across a few real sessions
+            AchievementDebugLogging.Apply(harmony, Logger);
+
             // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
             // target for the watchdog above (Character is a vanilla type). Our own
             // OwnTeleportSequence/OwnInventoryRestore arm the watchdog's load window

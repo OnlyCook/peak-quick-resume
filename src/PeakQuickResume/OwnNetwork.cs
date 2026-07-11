@@ -409,6 +409,29 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.RestoreThornsFor failed: {e.Message}"); }
         }
 
+        /// <summary>
+        /// Own addition (no decompile counterpart - see AchievementProgressIO's
+        /// remarks): tells the SPECIFIC player who owns this Player/PhotonView to
+        /// restore their own achievement progress locally - same targeted-RPC shape/
+        /// reason as <see cref="EquipHeldItemFor"/>/<see cref="RestoreThornsFor"/>
+        /// (AchievementManager is a client-local singleton, so the host writing it
+        /// directly for another client's Character is never visible on that client's
+        /// own machine). Sent as a JSON string rather than the raw registered
+        /// <c>SerializableRunBasedValues</c> Photon type on purpose: that struct's own
+        /// <c>ConstructNew()</c> baseline has to be primed from the RECEIVING client's
+        /// own current Steam achievement state, not the sender's - see
+        /// AchievementProgressIO.ApplyLocal
+        /// </summary>
+        public void RestoreAchievementProgressFor(PhotonView playerView, string userId, string achievementProgressJson)
+        {
+            try
+            {
+                if (playerView == null || playerView.Owner == null) return;
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_ApplyAchievementProgress), playerView.Owner, userId, achievementProgressJson ?? "");
+            }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.RestoreAchievementProgressFor failed: {e.Message}"); }
+        }
+
         /// <summary>Mirrors decompile line 162: RpcTarget.Others (1), sent by whichever machine actually saved</summary>
         public void RecentlyLitCampfireOthers()
         {
@@ -639,6 +662,32 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 Owner?.LogError($"RPC_RestoreThorns error: {e}");
+            }
+        }
+
+        /// <summary>
+        /// Own addition (no decompile counterpart), see
+        /// <see cref="OwnNetwork.RestoreAchievementProgressFor"/>. Runs on the
+        /// receiving client's own machine, where AchievementManager.Instance IS that
+        /// client's own local achievement tracker - an empty string means "no saved
+        /// progress for this player" (matches AchievementProgressIO.ApplyLocal's own
+        /// null-safe fresh-baseline behavior)
+        /// </summary>
+        [PunRPC]
+        public void RPC_ApplyAchievementProgress(string userId, string achievementProgressJson)
+        {
+            try
+            {
+                Character localCharacter = Character.localCharacter;
+                if (localCharacter == null) return;
+                if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
+
+                OwnSavedAchievementProgress saved = AchievementProgressIO.FromJson(achievementProgressJson, null);
+                AchievementProgressIO.ApplyLocal(saved, null);
+            }
+            catch (Exception e)
+            {
+                Owner?.LogError($"RPC_ApplyAchievementProgress error: {e}");
             }
         }
     }

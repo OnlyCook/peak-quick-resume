@@ -140,6 +140,19 @@ namespace PEAKQuickResume
                         else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                     }
 
+                    // AchievementManager is a client-LOCAL singleton - we only ever see
+                    // our OWN achievement progress directly. For every other player,
+                    // ReconnectHandler.TryGetReconnectData gives us the game's own
+                    // native, already-kept-up-to-date host-side copy of that player's
+                    // progress (the same one the game uses for its own disconnect/
+                    // reconnect support) - see AchievementProgressIO's remarks
+                    PhotonView playerPv = player.GetComponent<PhotonView>();
+                    OwnSavedAchievementProgress achievementProgress = (playerPv != null && playerPv.IsMine)
+                        ? AchievementProgressIO.CaptureLocal(log)
+                        : (ReconnectHandler.TryGetReconnectData(userId, out _, out SerializableRunBasedValues remoteProgress)
+                            ? AchievementProgressIO.ToSaved(remoteProgress, log)
+                            : null);
+
                     var data = new OwnSaveData
                     {
                         settingsVersion = 6,
@@ -167,6 +180,7 @@ namespace PEAKQuickResume
                         ancientStatue = statueState,
                         luggageStates = luggageStates,
                         worldItemStates = worldItemStates,
+                        achievementProgress = achievementProgress,
                         extModsPeakapaloozaPEAKTOBEACH = false,
                     };
 
@@ -256,6 +270,8 @@ namespace PEAKQuickResume
                     else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                 }
 
+                OwnSavedAchievementProgress achievementProgress = AchievementProgressIO.CaptureLocal(log);
+
                 var data = new OwnSaveData
                 {
                     settingsVersion = 6, // matches the checkpoint mod's own hardcoded settingsVersion (decompile line 699)
@@ -283,6 +299,7 @@ namespace PEAKQuickResume
                     ancientStatue = statueState,
                     luggageStates = luggageStates,
                     worldItemStates = worldItemStates,
+                    achievementProgress = achievementProgress,
                     extModsPeakapaloozaPEAKTOBEACH = false,
                 };
 
