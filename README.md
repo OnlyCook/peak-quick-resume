@@ -38,11 +38,13 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 
 ## Configuration
 
+Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`.
+
 <details>
 
 <summary><b>View config information</b></summary>
 
-Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below is also editable in the game's settings under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
+If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below is also editable in the game's settings under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
 
 - **resume-key**: the key to open the picker / load the highlighted save (default **F7**). Rebindable directly in ModConfig's menu.
 - **resume-key-also-confirms-load**: if disabled, pressing the resume key while the picker is open does nothing, only Enter confirms a load (useful if you keep accidentally reloading while trying to close the picker).
@@ -51,7 +53,7 @@ Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`. If you have [PEAKLib
 - **panel-opacity**: how see-through the picker's background panel is (0 = fully see-through; 1 = fully opaque, default).
 - **Pause-Menu**: disable/re-enable any of the 3 added QoL pause menu buttons, and optionally enable `move-rebind-controls-to-settings` to move the 'Rebind Controls' button away from the pause menu.
 - **Timing**: advanced settle/timeout values; raise `coop-airport-settle` if a client occasionally gets left behind on a slow connection.
-- **Teleport**: advanced settings for the restore itself (inventory/afflictions/campfire reset/time of day toggles, retry timing). Rarely needs touching.
+- **Teleport**: advanced settings for the restore itself (inventory/afflictions/campfire/... reset/time of day toggles, retry timing). Rarely needs touching.
 - **Network**: advanced co-op networking settings, currently just the readiness-check toggle used before a co-op load starts.
 - **Teleport-Mitigation**: detects and helps recover from occasional teleport glitching after a load (brief up/down snapping, or rarely falling through the world). Everything here is on by default and rarely needs touching; thresholds and delays are all individually configurable if you want to tune them.
 - **Debug**: verbose logging of every step of the resume sequence, on by default. Please keep this on when reporting issues.

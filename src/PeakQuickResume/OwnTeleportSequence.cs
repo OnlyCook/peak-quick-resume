@@ -111,7 +111,8 @@ namespace PEAKQuickResume
             // (RUNBASEDVALUETYPE.MaxHeightReached has to already reflect this run's real
             // prior progress before the character's altitude jumps, or the teleport
             // itself gets miscounted as climbed height towards the High Altitude Badge)
-            AchievementProgressIO.RestoreAllPlayers(target, offline, _entryPoints, _log);
+            if (_cfg.RestoreAchievements.Value)
+                AchievementProgressIO.RestoreAllPlayers(target, offline, _entryPoints, _log);
 
             // Inter-step wait between the map/campfire warp (JumpToSegment/SetSegmentOnSpawn,
             // below) and the final precise teleport. In solo there are no networked clients
@@ -221,10 +222,23 @@ namespace PEAKQuickResume
             // this is a single field write, so there's no cost/overload concern moving it up.
             // Host-only, same guard as the original's own time restore (the inventory/
             // affliction restore + post-load cleanup stays later in RestoreAll, untouched)
-            if (RunLauncher.IsHost && _cfg.OwnDaytime.Value && data.timeOfDay != 0f)
+            if (RunLauncher.IsHost && (_cfg.RestoreDaytime.Value || _cfg.RestoreDay.Value))
             {
                 DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
-                dayNight?.setTimeOfDay(data.timeOfDay);
+                if (dayNight != null)
+                {
+                    if (_cfg.RestoreDaytime.Value && data.timeOfDay != 0f)
+                        dayNight.setTimeOfDay(data.timeOfDay);
+
+                    // dayCount has no vanilla RPC keeping it in sync (unlike timeOfDay's
+                    // own periodic heartbeat) - apply locally then broadcast to clients
+                    // ourselves, see OwnNetwork.SyncDayCountAll's remarks
+                    if (_cfg.RestoreDay.Value && data.dayCount != 0)
+                    {
+                        dayNight.dayCount = data.dayCount;
+                        _entryPoints.Network?.SyncDayCountAll(data.dayCount);
+                    }
+                }
             }
 
             if (RunLauncher.IsHost && _entryPoints.LoadedSaveFileThisRound)
@@ -258,9 +272,9 @@ namespace PEAKQuickResume
             // the statue/luggage restore call site, which is proven working as placed
             if (RunLauncher.IsHost)
             {
-                WorldItemRestore.Restore(data, savedPos, _log);
-                AncientStatueRestore.Restore(data, savedPos, _log);
-                LuggageRestore.Restore(data, savedPos, _log);
+                WorldItemRestore.Restore(data, savedPos, _cfg, _log);
+                if (_cfg.RestoreAncientStatue.Value) AncientStatueRestore.Restore(data, savedPos, _log);
+                if (_cfg.RestoreLuggage.Value) LuggageRestore.Restore(data, savedPos, _log);
             }
 
             if (RunLauncher.IsHost)
@@ -295,7 +309,7 @@ namespace PEAKQuickResume
             // earlier restore block otherwise applies - ResetWorldLoot doesn't touch
             // these objects at all (only DestroyStaleWorldObjects, repeat-load-only,
             // does), so there's no earlier "run every load" hazard to guard against here
-            if (RunLauncher.IsHost)
+            if (RunLauncher.IsHost && _cfg.RestoreDeployables.Value)
             {
                 DeployableRestore.RestoreStoves(data, savedPos, _log);
                 DeployableRestore.RestoreCannons(data, savedPos, _log);
@@ -335,9 +349,6 @@ namespace PEAKQuickResume
                     StartCoroutine(OwnEnvironmentReset.SpawnFlaresAtPeak());
             }
 
-            if (_entryPoints.LoadedSaveFileThisRound && _cfg.OwnCampfireReset.Value)
-                yield return StartCoroutine(OwnEnvironmentReset.ResetCampfire());
-
             // Deliberate DEVIATION from the original (decompile 2546-2553), not a port gap:
             // the original nests both the time-of-day restore AND LoadInventoryDelayed inside
             // `configDaytime.Value`, so turning the "restore time of day" setting off ALSO
@@ -347,7 +358,7 @@ namespace PEAKQuickResume
             // clears CurrentlyLoading. Left coupled, disabling daytime would leave the watchdog's
             // load window stuck open forever (mitigation silently dead) and the load flag never
             // cleared. Split so each restore honours only its OWN toggle: time-of-day is applied
-            // much earlier now (right after the segment jump above, gated on OwnDaytime), and
+            // much earlier now (right after the segment jump above, gated on RestoreDaytime), and
             // RestoreAll always runs on the host regardless of the daytime setting
             //
             // Still started fire-and-forget (not yielded on directly) so it runs CONCURRENTLY

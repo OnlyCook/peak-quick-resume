@@ -10,10 +10,14 @@ namespace PEAKQuickResume
     /// <summary>
     /// Our own port of the checkpoint mod's post-load environment resets: fog
     /// (<c>ResetFogAfterLoad</c>, decompile 2563-2599), lava
-    /// (<c>ResetLavaAfterLoad</c>, 2601-2627), campfire extinguishing
-    /// (<c>ResetCampfire</c>, 2239-2261), and the Peak flare spawn
+    /// (<c>ResetLavaAfterLoad</c>, 2601-2627), and the Peak flare spawn
     /// (<c>SpawnFlaresAtPeak</c>, 2218-2237). All ported field-for-field; called from
-    /// <see cref="OwnTeleportSequence"/> as coroutines on its own MonoBehaviour
+    /// <see cref="OwnTeleportSequence"/> as coroutines on its own MonoBehaviour.
+    /// <c>ResetCampfire</c> (originally decompile 2239-2261) was dropped in v2.0.0 -
+    /// it only mattered for the checkpoint mod's own non-fresh-reload model; our own
+    /// resume flow already starts a brand new session on every load, so there's never
+    /// a stale lit campfire left over for it to extinguish (see the removed
+    /// "campfire-reset" config setting's own history)
     /// </summary>
     public static class OwnEnvironmentReset
     {
@@ -71,26 +75,6 @@ namespace PEAKQuickResume
             typeof(LavaRising).GetField("shownLavaRisingMessage", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(lava, false);
 
             log?.LogInfo("OwnEnvironmentReset: lava fully reset.");
-        }
-
-        /// <summary>Mirrors ResetCampfire exactly (decompile 2239-2261)</summary>
-        public static IEnumerator ResetCampfire()
-        {
-            foreach (Campfire campfire in UnityEngine.Object.FindObjectsByType<Campfire>(FindObjectsSortMode.None))
-            {
-                if (campfire.EveryoneInRange() && !campfire.name.Contains("PortableStovetop_Placed"))
-                {
-                    MethodInfo method = typeof(Campfire).GetMethod("Extinguish_Rpc", BindingFlags.Instance | BindingFlags.NonPublic);
-                    method?.Invoke(campfire, null);
-
-                    yield return new WaitForSeconds(0.3f);
-                    campfire.state = Campfire.FireState.Off;
-                    Transform logRoot = campfire.logRoot;
-                    for (int j = 0; j < logRoot.childCount; j++)
-                        logRoot.GetChild(j).gameObject.SetActive(true);
-                }
-                yield return new WaitForSeconds(0.05f);
-            }
         }
 
         /// <summary>Mirrors SpawnFlaresAtPeak exactly (decompile 2218-2237)</summary>

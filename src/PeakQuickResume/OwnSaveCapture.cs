@@ -129,6 +129,7 @@ namespace PEAKQuickResume
 
                     DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
                     float timeOfDay = (float)Math.Round(dayNight.timeOfDay, 3);
+                    int dayCount = dayNight.dayCount;
 
                     MapHandler mapHandler = UnityEngine.Object.FindFirstObjectByType<MapHandler>();
                     Segment currentSegment = mapHandler != null ? mapHandler.GetCurrentSegment() : Segment.Beach;
@@ -166,6 +167,7 @@ namespace PEAKQuickResume
                         campfireName = campfireName,
                         timePlayed = timePlayed,
                         timeOfDay = timeOfDay,
+                        dayCount = dayCount,
                         sceneName = sceneName,
                         biomes = mapHandler.biomes,
                         biome_names = biomeNames,
@@ -264,6 +266,7 @@ namespace PEAKQuickResume
 
                 DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
                 float timeOfDay = (float)Math.Round(dayNight.timeOfDay, 3);
+                int dayCount = dayNight.dayCount;
 
                 MapHandler mapHandler = UnityEngine.Object.FindFirstObjectByType<MapHandler>();
                 Segment currentSegment = mapHandler != null ? mapHandler.GetCurrentSegment() : Segment.Beach;
@@ -294,6 +297,7 @@ namespace PEAKQuickResume
                     campfireName = campfireName,
                     timePlayed = timePlayed,
                     timeOfDay = timeOfDay,
+                    dayCount = dayCount,
                     sceneName = sceneName,
                     biomes = mapHandler.biomes,
                     biome_names = biomeNames,

@@ -71,7 +71,7 @@ namespace PEAKQuickResume
 
                 ch.refs.afflictions.RemoveAllThorns();
 
-                if (cfg.OwnInventory.Value && data != null)
+                if (cfg.RestoreInventory.Value && data != null)
                 {
                     if (ch.player.itemSlots != null)
                     {
@@ -86,18 +86,30 @@ namespace PEAKQuickResume
                         try { ((ItemSlot)ch.player.backpackSlot).EmptyOut(); }
                         catch { /* matches the original's own swallow */ }
                     }
-                    // Not part of the original's own EmptyOut sweep (it never touched
-                    // tempFullSlot at all - see class remarks) - clearing it here is new,
-                    // needed so a stale held item from before the reload can't survive
-                    // underneath whatever LoadPlayerInventory restores into it below
-                    try { ch.player.tempFullSlot?.EmptyOut(); }
-                    catch { /* matches the original's own swallow */ }
 
                     for (int k = 0; k < 30; k++) yield return null;
 
                     LoadPlayerInventory(data, ch.player, ch, playerView, cfg, log);
                     if (playerView != null && playerView.Owner != null && data.backpackItemStates.Count > 0)
                         LoadBackpackFromSave(ch.player, data, cfg, log);
+                }
+
+                // v2.0.0: split off its own restore-player-temp-slot toggle (was bundled
+                // under RestoreInventory before) - not part of the original's own
+                // EmptyOut sweep (it never touched tempFullSlot at all - see class
+                // remarks), clearing it here is new, needed so a stale held item from
+                // before the reload can't survive underneath whatever LoadHeldItem
+                // restores into it below
+                if (cfg.RestorePlayerTempSlot.Value && data != null)
+                {
+                    try { ch.player.tempFullSlot?.EmptyOut(); }
+                    catch { /* matches the original's own swallow */ }
+
+                    if (data.heldItemState != null)
+                    {
+                        try { LoadHeldItem(data.heldItemState, ch.player, cfg, log); }
+                        catch (Exception e) { log?.LogWarning($"OwnInventoryRestore: held-item restore failed: {e.Message}"); }
+                    }
                 }
 
                 // M5/M7: afflictions/skeleton/extra-stamina restore (decompile 2845-2934).
@@ -107,7 +119,7 @@ namespace PEAKQuickResume
                 // to that player's own owner instead (decompile 2889-2933) - the skeleton
                 // flag is the one exception, applied directly here since it's master-
                 // authoritative networked state, not local-only Character data
-                if (cfg.OwnAfflictions.Value && data != null && offline)
+                if (cfg.RestoreAfflictions.Value && data != null && offline)
                 {
                     try
                     {
@@ -126,7 +138,7 @@ namespace PEAKQuickResume
                     }
                     catch { /* matches the original's own outer swallow */ }
                 }
-                else if (cfg.OwnAfflictions.Value && data != null && !offline && PhotonNetwork.IsMasterClient && data.afflictions_current != null)
+                else if (cfg.RestoreAfflictions.Value && data != null && !offline && PhotonNetwork.IsMasterClient && data.afflictions_current != null)
                 {
                     try { ch.data.SetSkeleton(data.isSkeleton); }
                     catch { /* matches the original's own swallow */ }
@@ -155,7 +167,7 @@ namespace PEAKQuickResume
                 // the reload. Must run AFTER the skeleton restore above - AddThorn no-ops
                 // for skeletons - and on the OWNING client, same offline/coop-RPC split as
                 // the held-item equip step below
-                if (cfg.OwnAfflictions.Value && data != null && data.stuckThornIndices != null && data.stuckThornIndices.Count > 0)
+                if (cfg.RestorePlayerEntities.Value && data != null && data.stuckThornIndices != null && data.stuckThornIndices.Count > 0)
                 {
                     try
                     {
@@ -177,7 +189,7 @@ namespace PEAKQuickResume
                 // TickTrigger does it. Clears any leftover tick first - defensive, since
                 // Bugfix.AllAttachedBugs is static/global, not scene-scoped, so a stale
                 // entry could otherwise theoretically survive a level reload
-                if (cfg.OwnAfflictions.Value && data != null)
+                if (cfg.RestorePlayerEntities.Value && data != null)
                 {
                     try { ThornsAndTicksRestore.RemoveExistingTick(ch, log); }
                     catch (Exception e) { log?.LogWarning($"OwnInventoryRestore: tick cleanup failed: {e.Message}"); }
@@ -225,7 +237,7 @@ namespace PEAKQuickResume
                 // shape as the afflictions branch above. Sent after the SyncInventoryRPC
                 // wait above so a remote client's own local tempFullSlot copy is already
                 // populated by the time it runs EquipSlot itself
-                if (cfg.OwnInventory.Value && data != null && data.heldItemState != null
+                if (cfg.RestorePlayerTempSlot.Value && data != null && data.heldItemState != null
                     && ch.player?.tempFullSlot != null && !ch.player.tempFullSlot.IsEmpty())
                 {
                     try
@@ -304,7 +316,7 @@ namespace PEAKQuickResume
                         continue;
 
                     ItemInstanceData instanceData = createdSlot.data;
-                    if (instanceData == null || !cfg.OwnItemStats.Value) continue;
+                    if (instanceData == null || !cfg.RestoreItemStats.Value) continue;
 
                     foreach (var kv in itemState.values)
                     {
@@ -314,12 +326,6 @@ namespace PEAKQuickResume
                             log?.LogWarning($"OwnInventoryRestore: could not apply '{kv.Key}' for item {itemState.itemId}.");
                     }
                 }
-            }
-
-            if (data.heldItemState != null)
-            {
-                try { LoadHeldItem(data.heldItemState, player, cfg, log); }
-                catch (Exception e) { log?.LogWarning($"OwnInventoryRestore.LoadPlayerInventory: held-item restore failed: {e}"); }
             }
         }
 
@@ -349,7 +355,7 @@ namespace PEAKQuickResume
             ItemInstanceDataHandler.AddInstanceData(instanceData);
             player.tempFullSlot.SetItem(item, instanceData);
 
-            if (!cfg.OwnItemStats.Value) return;
+            if (!cfg.RestoreItemStats.Value) return;
             foreach (var kv in itemState.values)
             {
                 if (!OwnItemStateIO.TryGetKey(kv.Key, out DataEntryKey key)) continue;
@@ -378,7 +384,7 @@ namespace PEAKQuickResume
                 backpackData.AddItem(item, instanceData, itemState.slotIndex);
 
                 ItemInstanceData slotData = backpackData.itemSlots[itemState.slotIndex]?.data;
-                if (slotData == null || !cfg.OwnItemStats.Value) continue;
+                if (slotData == null || !cfg.RestoreItemStats.Value) continue;
 
                 foreach (var kv in itemState.values)
                 {

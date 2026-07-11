@@ -22,6 +22,15 @@ namespace PEAKQuickResume
         public string campfireName;
         public float timePlayed;
         public float timeOfDay;
+
+        // v2.0.0: DayNightManager.dayCount - the run's day counter (distinct from
+        // timeOfDay's intra-day clock), shown alongside a new biome's title card.
+        // Not synced by any vanilla RPC (unlike timeOfDay's own periodic heartbeat -
+        // see OwnNetwork.SyncDayCountAll), so restoring it needs our own explicit
+        // broadcast to clients. 0 on any save predating this feature - treated as
+        // "nothing to restore" (a fresh run's own dayCount starts at 1, never 0)
+        public int dayCount;
+
         public float posX;
         public float posY;
         public float posZ;

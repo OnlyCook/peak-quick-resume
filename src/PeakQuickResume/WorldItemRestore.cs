@@ -123,12 +123,24 @@ namespace PEAKQuickResume
         /// FIRST, before those two place anything, or it would immediately destroy what
         /// they just restored. A no-op for saves predating this feature (data.worldItemStates
         /// is null, not just empty - see remarks on that field in OwnSaveData)
+        ///
+        /// v2.0.0: split into two independently-toggleable categories (restore-grounded-items,
+        /// restore-grounded-backpacks). A category that's disabled is skipped on BOTH sides
+        /// (neither cleared nor restored) - so turning off backpack restore leaves whatever
+        /// naturally spawned there alone, rather than deleting it with nothing put back
         /// </summary>
-        public static void Restore(OwnSaveData data, Vector3 fallbackPos, ManualLogSource log)
+        public static void Restore(OwnSaveData data, Vector3 fallbackPos, PluginConfig cfg, ManualLogSource log)
         {
             if (data?.worldItemStates == null)
             {
                 log?.LogInfo("WorldItemRestore.Restore: no saved data for this feature (old save, or nothing was ever captured), skipping.");
+                return;
+            }
+            bool restoreItems = cfg.RestoreGroundedItems.Value;
+            bool restoreBackpacks = cfg.RestoreGroundedBackpacks.Value;
+            if (!restoreItems && !restoreBackpacks)
+            {
+                log?.LogInfo("WorldItemRestore.Restore: both restore-grounded-items and restore-grounded-backpacks are disabled, skipping.");
                 return;
             }
             try
@@ -138,12 +150,14 @@ namespace PEAKQuickResume
                 // Clear out whatever naturally (re)spawned here on this fresh map
                 // regeneration - berries, coconuts, campfire food, naturally-placed
                 // backpacks, anything left behind - so restoring our own saved items
-                // below doesn't end up duplicating them
+                // below doesn't end up duplicating them. Only within whichever
+                // category(ies) are enabled - see class remarks
                 List<Item> stale = CampfireAreaHelpers.FindFreeItemsWithin(searchCenter, SearchRadius, includeBackpacks: true);
                 int destroyed = 0;
                 foreach (Item item in stale)
                 {
                     if (item == null) continue;
+                    if (item is Backpack ? !restoreBackpacks : !restoreItems) continue;
                     try
                     {
                         PhotonView pv = item.GetComponent<PhotonView>();
@@ -166,6 +180,7 @@ namespace PEAKQuickResume
                         log?.LogWarning($"WorldItemRestore: could not find item prefab for id {saved.itemId}, skipping.");
                         continue;
                     }
+                    if (prefab is Backpack ? !restoreBackpacks : !restoreItems) continue;
 
                     Vector3 spawnPos = new Vector3(saved.posX, saved.posY, saved.posZ);
                     Quaternion spawnRot = new Quaternion(saved.rotX, saved.rotY, saved.rotZ, saved.rotW);

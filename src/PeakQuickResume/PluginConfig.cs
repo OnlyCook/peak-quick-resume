@@ -34,8 +34,6 @@ namespace PEAKQuickResume
         // checkpoint mod's instance
         public readonly ConfigEntry<int> OwnTeleportFramesToWait;
         public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
-        public readonly ConfigEntry<bool> OwnCampfireReset;
-        public readonly ConfigEntry<bool> OwnDaytime;
 
         // Solo-only speed-up: collapse the per-step waits between the map/campfire warp
         // and the final precise teleport (see OwnTeleportSequence). Off = the original,
@@ -52,11 +50,26 @@ namespace PEAKQuickResume
         // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
         // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
         // checkpoint mod's instance
-        public readonly ConfigEntry<bool> OwnInventory;
-        public readonly ConfigEntry<bool> OwnItemStats;
+        public readonly ConfigEntry<bool> RestoreInventory;
+        public readonly ConfigEntry<bool> RestoreItemStats;
 
         // Phase 8 M5: our own copy of configAfflictions (decompile line 1081)
-        public readonly ConfigEntry<bool> OwnAfflictions;
+        public readonly ConfigEntry<bool> RestoreAfflictions;
+
+        // v2.0.0: per-mechanic restore toggles for everything else OwnTeleportSequence
+        // restores around/alongside the campfire - each independently gates just its
+        // own mechanic's RESTORE step (capture always still runs, matching every
+        // existing toggle above - see PluginConfig ctor for why)
+        public readonly ConfigEntry<bool> RestoreGroundedItems;
+        public readonly ConfigEntry<bool> RestoreGroundedBackpacks;
+        public readonly ConfigEntry<bool> RestoreDeployables;
+        public readonly ConfigEntry<bool> RestoreLuggage;
+        public readonly ConfigEntry<bool> RestoreAncientStatue;
+        public readonly ConfigEntry<bool> RestoreDay;
+        public readonly ConfigEntry<bool> RestoreDaytime;
+        public readonly ConfigEntry<bool> RestorePlayerEntities;
+        public readonly ConfigEntry<bool> RestorePlayerTempSlot;
+        public readonly ConfigEntry<bool> RestoreAchievements;
 
         // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
         // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
@@ -193,12 +206,6 @@ namespace PEAKQuickResume
                     "Seconds to wait between steps of our own restore path's teleport sequence (advanced).",
                     new AcceptableValueRange<float>(0f, 10f)));
 
-            OwnCampfireReset = cfg.Bind("Teleport", "campfire-reset", true,
-                "If enabled, the campfire resets after loading more than once in the current run.");
-
-            OwnDaytime = cfg.Bind("Teleport", "daytime", true,
-                "If enabled, restores the saved in-game time of day.");
-
             OwnFastSoloTeleport = cfg.Bind("Teleport", "fast-solo-teleport", true,
                 "SOLO ONLY: once the map has loaded and you've been warped to the campfire, skip the extra "
                 + "per-step waits before the final precise teleport. Those waits only matter in co-op, where "
@@ -227,14 +234,51 @@ namespace PEAKQuickResume
                     + "(advanced).",
                     new AcceptableValueRange<float>(0f, 10f)));
 
-            OwnInventory = cfg.Bind("Teleport", "inventory", true,
+            RestoreInventory = cfg.Bind("Teleport", "restore-inventory", true,
                 "If enabled, restores saved inventory and backpack items.");
 
-            OwnItemStats = cfg.Bind("Teleport", "item-stats", true,
+            RestoreItemStats = cfg.Bind("Teleport", "restore-item-stats", true,
                 "If enabled, restores saved item stats (cooking amount, fuel, rope length...).");
 
-            OwnAfflictions = cfg.Bind("Teleport", "afflictions", true,
+            RestoreAfflictions = cfg.Bind("Teleport", "restore-afflictions", true,
                 "If enabled, restores your saved afflictions (hunger, poison, cold, sleep, skeleton...).");
+
+            RestoreGroundedItems = cfg.Bind("Teleport", "restore-grounded-items", true,
+                "If enabled, restores loose items (berries, coconuts, campfire food, and anything else "
+                + "dropped or lying free) found within range of the loaded campfire.");
+
+            RestoreGroundedBackpacks = cfg.Bind("Teleport", "restore-grounded-backpacks", true,
+                "If enabled, restores backpacks (natural spawns or player drops) found lying on the ground "
+                + "within range of the loaded campfire, contents included.");
+
+            RestoreDeployables = cfg.Bind("Teleport", "restore-deployables", true,
+                "If enabled, restores player-placed Portable Stoves and Scout Cannons found near the loaded campfire.");
+
+            RestoreLuggage = cfg.Bind("Teleport", "restore-luggage", true,
+                "If enabled, restores Luggage boxes near the loaded campfire (open/closed state and any items "
+                + "already taken out of them).");
+
+            RestoreAncientStatue = cfg.Bind("Teleport", "restore-ancient-statue", true,
+                "If enabled, restores the Ancient Statue near the loaded campfire (broken/unbroken state and "
+                + "any unclaimed item it dropped).");
+
+            RestoreDay = cfg.Bind("Teleport", "restore-day", true,
+                "If enabled, restores the saved in-game day count (the number shown alongside a new biome's "
+                + "title card).");
+
+            RestoreDaytime = cfg.Bind("Teleport", "restore-daytime", true,
+                "If enabled, restores the saved in-game time of day.");
+
+            RestorePlayerEntities = cfg.Bind("Teleport", "restore-player-entities", true,
+                "If enabled, restores physical thorns (Cactus/Tumbleweed) and ticks (Bugfix) attached to your body.");
+
+            RestorePlayerTempSlot = cfg.Bind("Teleport", "restore-player-temp-slot", true,
+                "If enabled, restores the 4th item held in your hands (the temporary slot used when all 3 "
+                + "regular item slots are already full).");
+
+            RestoreAchievements = cfg.Bind("Teleport", "restore-achievements", true,
+                "If enabled, restores this run's in-progress achievement/Steam-stat tracking (Plunderer, "
+                + "Foraging, Mycology, First Aid, Clutch, Knot Tying, and the \"without ever X\" family).");
 
             OwnEnableClientReadyStatusCheck = cfg.Bind("Network", "enable-client-ready-status-check", true,
                 "COOP ONLY: if enabled, our own save/load restore waits until every connected client has "

@@ -375,6 +375,21 @@ namespace PEAKQuickResume
             return null;
         }
 
+        /// <summary>
+        /// Own addition (no decompile counterpart - see OwnSaveData.dayCount remarks):
+        /// unlike timeOfDay, DayNightManager.dayCount has no vanilla RPC keeping it in
+        /// sync across clients, so restoring it needs an explicit broadcast of our own.
+        /// The host applies the value to its own DayNightManager.dayCount directly
+        /// (same instant-local-write pattern as timeOfDay's setTimeOfDay) BEFORE calling
+        /// this, so RpcTarget.Others (not All) is correct here - same shape as
+        /// LoadingScreenOthers/ClientPresentationOthers above
+        /// </summary>
+        public void SyncDayCountAll(int dayCount)
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_SyncDayCount), RpcTarget.Others, dayCount); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.SyncDayCountAll failed: {e.Message}"); }
+        }
+
         /// <summary>Mirrors decompile line 2909: targeted at the specific player's owner</summary>
         public void ApplyAfflictionsTo(PhotonView playerView, string userId, float[] statuses, float extraStamina)
         {
@@ -590,6 +605,26 @@ namespace PEAKQuickResume
                 // End the window, passing the host-forwarded real target so a client that
                 // never got warped can still recover to it - see OwnNetwork.LoadingScreenOthers
                 Owner?.Watchdog?.ArmPendingWatch(OwnNetwork.ParseVector(targetPayload));
+            }
+        }
+
+        /// <summary>
+        /// Own addition (no decompile counterpart), see <see cref="OwnNetwork.SyncDayCountAll"/>.
+        /// Runs on the receiving client's own machine - DayNightManager.dayCount is a
+        /// plain instance field with no owner/IsMine gating (unlike thorns/held-item
+        /// equip above), so a direct write here is enough, no further RPC needed
+        /// </summary>
+        [PunRPC]
+        public void RPC_SyncDayCount(int dayCount)
+        {
+            try
+            {
+                DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
+                if (dayNight != null) dayNight.dayCount = dayCount;
+            }
+            catch (Exception e)
+            {
+                Owner?.LogError($"RPC_SyncDayCount error: {e}");
             }
         }
 
