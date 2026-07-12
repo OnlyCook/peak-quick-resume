@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This mod depends on and interoperates with "PEAK Checkpoint Save" by dominik0207,
-which is a separate work distributed under its own license. PEAK Quick Resume does
-not include or redistribute any of that mod's code; it is required as a separate
-dependency. All credit for the underlying save/load functionality goes to dominik0207.
