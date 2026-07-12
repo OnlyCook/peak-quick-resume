@@ -2,7 +2,7 @@
 
 ## 2.0.0
 
-**TL;DR:** You don't need `PEAK Checkpoint Save` anymore (I'd recommend removing that mod). The loading screen is now pretty clean, save loading should be more stable and in solo slightly faster. Items on the ground, backpacks, luggage, the Ancient Statue, some deployables, player attached entities, a player's temporary 4th slot, the day and achievement progress' are now being saved and restored (at least while close to the campfire).
+**TL;DR:** You don't need `PEAK Checkpoint Save` anymore (I'd recommend removing that mod). The loading screen is now pretty clean, save loading should be more stable and in solo slightly faster. Items on the ground, backpacks, luggage, the Ancient Statue, some deployables, player attached entities, a player's temporary 4th slot, the day and achievement progress' are now being saved and restored (at least while they are close to the campfire).
 
 > **This update declares independence!** It's recommended to delete `PEAK Checkpoint Save` and the config file of this mod `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`, so that the dependency is dropped (although PEAK Checkpoint Save won't conflict with this mod if still installed) and your old config won't cause issues.
 

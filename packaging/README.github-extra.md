@@ -6,8 +6,9 @@ No other mods are required. [PEAK Checkpoint Save](https://thunderstore.io/c/pea
 
 ## For players
 
-- You can install the mod through r2modman as `PEAK_Quick_Resume`
-- Or on Thunderstore as `PEAK Quick Resume` ([Website](https://thunderstore.io/c/peak/p/OnlyCook/PEAK_Quick_Resume/))
+- You can install the mod through r2modman as `PEAK_Quick_Resume`,
+- On [Thunderstore](https://thunderstore.io/c/peak/p/OnlyCook/PEAK_Quick_Resume/),
+- Or on [Nexus Mods](https://www.nexusmods.com/peak/mods/189)
 
 Achievement progress is saved and restored correctly when you load a checkpoint, but only for whoever has PEAK Quick Resume installed themselves; a co-op player without it keeps the old, unrestored behavior for their own achievements.
 
