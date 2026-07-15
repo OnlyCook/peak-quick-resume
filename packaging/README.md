@@ -32,6 +32,22 @@ This mod started as an automation layer on top of [PEAK Checkpoint Save](https:/
 
 In co-op, only the **host** can use F7 and everyone is restored together.
 
+## What will be saved/restored?
+
+- **Everything within 30m** of the campfire when saving will be saved, and restored upon loading the save (excluding most deployables that won't be of help anyways). This includes: all players and their inventories as well as all their status effects, everything on trees/bushes or the ground, the state/items of luggage and the Ancient Statue, the in-game time and day, and the playtime.
+- The **whole island/map** with all its biomes and levels/seeds will be saved exactly as is. Which means you are even able to replay islands more than a week after they've already been rotated (although you must have a save of them).
+- Achievement progress is saved and restored correctly when you load a checkpoint. This only applies per-player to **whoever has PEAK Quick Resume installed themselves**. A co-op player without it keeps the old behavior for their own achievements, which may falsely unlock some Steam achievements, but also not restore the progress/state of other achievements.
+
+## Notes
+
+- **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons.
+- Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
+- Translations were done by AI, so if something is off in your language you are free to open a GitHub Issue (see below).
+
+## Feedback & bug reports
+
+Found a bug or have a suggestion? Please **[fill out this form](https://forms.gle/sUt4Nz7LtvPMa8eE8)** or send me an email at `theactualcooker@gmail.com`.
+
 ## Configuration
 
 Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`.
@@ -57,32 +73,6 @@ If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/Mod
 </details>
 
 Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split into `Offline/` and `Coop/`).
-
-## Notes
-
-- **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons.
-- **Everything within 30m** of the campfire when saving will be saved, and restored upon loading the save (excluding most deployables that won't be of help anyways). This includes: all players and their inventories as well as all their status effects, everything on trees/bushes or the ground, the state/items of luggage and the Ancient Statue, the in-game time and day, and the playtime.
-- The **whole island/map** with all its biomes and levels/seeds will be saved exactly as is. Which means you are even able to replay islands more than a week after they've already been rotated (although you must have a save of them).
-- Achievement progress is saved and restored correctly when you load a checkpoint. This only applies per-player to **whoever has PEAK Quick Resume installed themselves**. A co-op player without it keeps the old behavior for their own achievements, which may falsely unlock some Steam achievements, but also not restore the progress/state of other achievements.
-- Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
-- Translations were done by AI, so if something is off in your language you are free to open a GitHub Issue (see below).
-
-## Feedback & bug reports
-
-Found a bug or have a suggestion? Please **[open an issue on GitHub](https://github.com/OnlyCook/peak-quick-resume/issues/new)** or send me an email at `theactualcooker@gmail.com`. It helps a lot to include:
-
-- what you did and what happened (solo or co-op; if co-op, whether you were the host),
-- your **`LogOutput.log`** (Quick Resume logs every step of a resume, this file is what makes bugs fixable).
-
-### Where is `LogOutput.log`?
-
-BepInEx rewrites this file every time you launch the game, so **reproduce the bug, then quit and grab the file** before playing again.
-
-#### r2modman / Thunderstore Manager:
-- Open the manager, pick PEAK, choose your profile, then go to **Settings** and search for the following setting: `Copy log file contents to clipboard`, click on that setting and paste it in your GitHub Issue.  
-
-#### Manual install?
-- Find out where your `LogOutput.log` file is on your OS. You can for example use [**Everything**](https://www.voidtools.com/downloads/) on Windows or use this command `find ~ -name "LogOutput.log"` on Linux/Mac.
 
 ## Miscellaneous Pause Menu Buttons
 
