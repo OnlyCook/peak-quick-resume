@@ -16,10 +16,6 @@ Works **after you die**, **from the Airport**, or **mid-run** (so no need to die
 
 ---
 
-## Credit where it's due
-
-This mod started as an automation layer on top of [PEAK Checkpoint Save](https://thunderstore.io/c/peak/p/dominik0207/PEAK_Checkpoint_Save/) by **dominik0207**, and its save file format is still based directly on that mod's own. As of version 2.0.0, Quick Resume has its own independent save/load/teleport implementation and **no longer requires PEAK Checkpoint Save to be installed**. Huge thanks to dominik0207, this mod wouldn't exist without their original work.
-
 ## How to use
 
 1. Play as normal. Lighting a campfire saves automatically. Each save is added to your history.
@@ -73,6 +69,10 @@ If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/Mod
 </details>
 
 Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split into `Offline/` and `Coop/`).
+
+## Credit where it's due
+
+This mod started as an automation layer on top of [PEAK Checkpoint Save](https://thunderstore.io/c/peak/p/dominik0207/PEAK_Checkpoint_Save/) by **dominik0207**, and its save file format is still based directly on that mod's own. As of version 2.0.0, Quick Resume has its own independent save/load/teleport implementation and **no longer requires PEAK Checkpoint Save to be installed**. Huge thanks to dominik0207, this mod wouldn't exist without their original work.
 
 ## Miscellaneous Pause Menu Buttons
 
