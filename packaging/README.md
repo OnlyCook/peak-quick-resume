@@ -1,5 +1,3 @@
-# PEAK Quick Resume
-
 **Automatically saves when you light a campfire. Press F7 to browse your campfires and jump straight back to any of them.**
 
 Press **F7** anywhere and a **save picker** opens listing all your checkpoints for the current mode. Choose one with the arrow keys and press **F7** (or Enter) and it will:
@@ -38,7 +36,7 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 
 - **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
-- Translations were done by AI, so if something is off in your language you are free to open a GitHub Issue (see below).
+- Translations were done by AI, so if something is off in your language you are free to contact me (see below).
 
 ## Feedback & bug reports
 

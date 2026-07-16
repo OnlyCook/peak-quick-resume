@@ -1,5 +1,3 @@
-# Changelog
-
 ## 2.0.0
 
 **TL;DR:** You don't need `PEAK Checkpoint Save` anymore (I'd recommend removing that mod). The loading screen is now pretty clean, save loading should be more stable and in solo slightly faster. Items on the ground, backpacks, luggage, the Ancient Statue, some deployables, player attached entities, a player's temporary 4th slot, the day and achievement progress' are now being saved and restored (at least while they are close to the campfire).
