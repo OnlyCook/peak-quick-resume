@@ -185,6 +185,7 @@ namespace PEAKQuickResume
 
                 var text = MakeText("LoadingText", TitleFontSize, TextAlignmentOptions.Center, SavePicker.TitleColor);
                 text.transform.SetParent(_loadingRoot.transform, false);
+                SavePicker.ApplyChromeTextStyle(text);
                 text.text = SavePickerLocalization.Get(PickerText.Loading);
                 SavePicker.StretchFull((RectTransform)text.transform);
 
@@ -255,6 +256,7 @@ namespace PEAKQuickResume
                 _grainImage = grain;
 
                 _titleText = MakeText("Title", TitleFontSize, TextAlignmentOptions.Top, SavePicker.TitleColor);
+                SavePicker.ApplyChromeTextStyle(_titleText);
                 _titleText.textWrappingMode = TextWrappingModes.Normal;
                 var titleRect = (RectTransform)_titleText.transform;
                 titleRect.SetParent(panelGo.transform, false);
@@ -334,6 +336,7 @@ namespace PEAKQuickResume
 
             _footerLabelText = MakeText("Label", 17f, TextAlignmentOptions.Midline, SavePicker.FooterColor);
             _footerLabelText.transform.SetParent(rowGo.transform, false);
+            SavePicker.ApplyChromeTextStyle(_footerLabelText);
             var labelFitter = _footerLabelText.gameObject.AddComponent<ContentSizeFitter>();
             labelFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             labelFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;

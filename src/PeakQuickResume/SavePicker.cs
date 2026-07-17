@@ -500,6 +500,7 @@ namespace PEAKQuickResume
                 StretchFull((RectTransform)dimGo.transform);
 
                 var text = MakeText(_loadingRoot.transform, "LoadingText", 30, FontStyles.Normal, TitleColor, TextAlignmentOptions.Center);
+                ApplyChromeTextStyle(text);
                 text.text = SavePickerLocalization.Get(PickerText.Loading);
                 var textRect = (RectTransform)text.transform;
                 StretchFull(textRect);
@@ -824,7 +825,18 @@ namespace PEAKQuickResume
         // against the text the way a normal layout does)
         private const float TitleIconSize = 30f;
         private const float TitleIconSpacing = 10f;
+        // The flame sprite's own art has more headroom above the flame than below it
+        // (the tip tapers to a point near the top of its bounding box), so placing it
+        // dead-center in its box reads as sitting slightly HIGH next to the title
+        // text's own baseline-centered glyphs. Nudged down by a few px to correct that
+        private const float TitleIconVerticalNudge = 3f;
         private static Sprite _campfireIconSprite;
+
+        // Sampled directly from the game's own "DarumaDropOne-Regular SDF Outline"
+        // material (screenshotted title text outline pixels came out ~(59, 58, 55)),
+        // a warm dark gray rather than pure black - used here so the campfire icons'
+        // own outline reads as the exact same "chrome" color as the text beside them
+        internal static readonly Color ChromeOutlineColor = new Color(59f / 255f, 58f / 255f, 55f / 255f);
 
         // Same "Quick Resume" title, now bracketed by the game's own campfire icon
         // (the small flame the vanilla HUD shows on StaminaBar next to the stamina bar
@@ -855,6 +867,7 @@ namespace PEAKQuickResume
             AddTitleIcon(rowGo.transform, iconSprite);
 
             _titleText = MakeText(rowGo.transform, "Title", 30, FontStyles.Normal, TitleColor, TextAlignmentOptions.Center);
+            ApplyChromeTextStyle(_titleText);
             var titleFitter = _titleText.gameObject.AddComponent<ContentSizeFitter>();
             titleFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             titleFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -862,16 +875,89 @@ namespace PEAKQuickResume
             AddTitleIcon(rowGo.transform, iconSprite);
         }
 
+        // How much bigger each backing silhouette copy (see AddTitleIcon) is drawn
+        // than the real icon on top of it. Kept modest on its own - most of the
+        // visible ring comes from the diagonal offset between the two copies below,
+        // not from this alone (a single copy at a scale big enough to read on its own
+        // was the "one big blob" attempt that came before this one)
+        private const float TitleIconOutlineScale = 1.12f;
+        // How far apart (in opposite diagonal directions) the two backing copies sit,
+        // in px. Big enough that their offset does real work toward the ring's
+        // thickness, small enough the two copies still overlap enough almost
+        // everywhere around the shape that no gap or second silhouette becomes visible
+        private const float TitleIconOutlineOffset = 1.1f;
+
         private void AddTitleIcon(Transform parent, Sprite iconSprite)
         {
             if (iconSprite == null) return;
+
+            // A slot GameObject (sized/spaced by the row's HorizontalLayoutGroup) with
+            // the actual images as its children, rather than living directly on the
+            // layout-managed slot: the row's layout group re-centers/repositions its
+            // direct children on every rebuild (RebuildUi runs on every open/move),
+            // which would silently undo any manual offset placed on it. The vertical
+            // nudge below lives on these nested, layout-untouched children instead
+            var slotGo = new GameObject("IconSlot", typeof(RectTransform));
+            slotGo.transform.SetParent(parent, false);
+            ((RectTransform)slotGo.transform).sizeDelta = new Vector2(TitleIconSize, TitleIconSize);
+
+            // Outline, take three. UGUI's built-in Outline component draws 4 diagonal
+            // offset copies at once, which needed a big offset to read next to the
+            // title's own heavy SDF outline and split into 2 distinct ghost flames
+            // instead of a ring. A SINGLE scaled-up silhouette copy (the attempt right
+            // before this one) avoided the ghosting but needed to be scaled up so much
+            // to be noticeable that it read as one big blob rather than a slim border.
+            // Splitting the difference: two silhouette copies, each just slightly
+            // scaled up AND offset in opposite diagonal directions. Neither the scale
+            // nor the offset alone has to do all the work, so both can stay small - the
+            // two copies' silhouettes overlap almost everywhere except right at the
+            // icon's own edge, which is exactly where the combined ring shows through
+            AddIconSilhouette(slotGo.transform, iconSprite, new Vector2(TitleIconOutlineOffset, TitleIconOutlineOffset));
+            AddIconSilhouette(slotGo.transform, iconSprite, new Vector2(-TitleIconOutlineOffset, -TitleIconOutlineOffset));
+
             var iconGo = new GameObject("Icon", typeof(RectTransform));
-            iconGo.transform.SetParent(parent, false);
+            iconGo.transform.SetParent(slotGo.transform, false);
             var iconImage = iconGo.AddComponent<Image>();
             iconImage.sprite = iconSprite;
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
-            ((RectTransform)iconGo.transform).sizeDelta = new Vector2(TitleIconSize, TitleIconSize);
+            var iconRect = (RectTransform)iconGo.transform;
+            iconRect.anchorMin = Vector2.zero;
+            iconRect.anchorMax = Vector2.one;
+            iconRect.offsetMin = Vector2.zero;
+            iconRect.offsetMax = Vector2.zero;
+            iconRect.anchoredPosition = new Vector2(0f, -TitleIconVerticalNudge);
+
+            // Drop shadow, same direction and roughly the same visual weight as the
+            // title text's own borrowed SDF material (its underlay reads as a solid,
+            // fairly opaque dark patch bulking out the glyphs' bottom-right side, not
+            // a faint soft blur) - down-and-right, same ChromeOutlineColor, high alpha
+            var shadow = iconGo.AddComponent<UnityEngine.UI.Shadow>();
+            shadow.effectColor = new Color(ChromeOutlineColor.r, ChromeOutlineColor.g, ChromeOutlineColor.b, 0.85f);
+            shadow.effectDistance = new Vector2(2.5f, -2.5f);
+            shadow.useGraphicAlpha = true;
+        }
+
+        // One flat ChromeOutlineColor copy of the icon sprite, slightly scaled up and
+        // offset from center, stretched full over its parent slot. Two of these at
+        // opposite offsets (see AddTitleIcon) are what actually forms the ring; see
+        // that method's comment for why two small nudges beat one big one
+        private static void AddIconSilhouette(Transform parent, Sprite iconSprite, Vector2 offset)
+        {
+            var go = new GameObject("IconOutline", typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var image = go.AddComponent<Image>();
+            image.sprite = iconSprite;
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+            image.color = ChromeOutlineColor;
+            var rect = (RectTransform)go.transform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            rect.anchoredPosition = new Vector2(offset.x, offset.y - TitleIconVerticalNudge);
+            rect.localScale = new Vector3(TitleIconOutlineScale, TitleIconOutlineScale, 1f);
         }
 
         // The campfire icon isn't a bundled asset, it's pulled from the game's own
@@ -956,6 +1042,7 @@ namespace PEAKQuickResume
             var keyText = MakeText(badgeGo.transform, "Key", 15, FontStyles.Normal, KeyTextColor, TextAlignmentOptions.Midline);
 
             var labelText = MakeText(entryGo.transform, "Label", 16, FontStyles.Normal, FooterColor, TextAlignmentOptions.Midline);
+            ApplyChromeTextStyle(labelText);
             var labelFitter = labelText.gameObject.AddComponent<ContentSizeFitter>();
             labelFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             labelFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -1631,6 +1718,49 @@ namespace PEAKQuickResume
                 return all.Length > 0 ? all[0] : null;
             }
             catch { return null; }
+        }
+
+        private static Material _chromeOutlineMaterial;
+
+        // Borrows the game's own pre-baked outline+shadow TMP material (whichever
+        // already-instantiated native UI text happens to be using it) instead of
+        // hand-tuning our own outline/underlay values, same "reuse the game's own art"
+        // approach FindGameFont()/FindCampfireIcon() already use. Not cached as
+        // "not found" if the search comes up empty (retried on demand, like
+        // FindCampfireIcon), since the native UI may not have created any instances of
+        // it yet the first time this is called (e.g. right after a level loads)
+        //
+        // Deliberately used ONLY for this panel's own chrome labels (loading text,
+        // the title, and the footer's action-description labels) - never for the
+        // archived-save row text, help-screen body text, or the key badge text
+        // itself, which all keep their original flat (no outline) style
+        internal static Material FindChromeOutlineMaterial()
+        {
+            if (_chromeOutlineMaterial != null) return _chromeOutlineMaterial;
+            try
+            {
+                var texts = Resources.FindObjectsOfTypeAll<TextMeshProUGUI>();
+                foreach (var t in texts)
+                {
+                    var mat = t != null ? t.materialForRendering : null;
+                    if (mat != null && mat.name.Contains("DarumaDropOne-Regular SDF Outline"))
+                    {
+                        _chromeOutlineMaterial = mat;
+                        break;
+                    }
+                }
+            }
+            catch { /* non-fatal: labels just render without the outline/shadow this open */ }
+            return _chromeOutlineMaterial;
+        }
+
+        // Applies the borrowed outline+shadow material to one of this panel's chrome
+        // labels (see FindChromeOutlineMaterial), a no-op if the material hasn't been
+        // found yet this session
+        internal static void ApplyChromeTextStyle(TextMeshProUGUI tmp)
+        {
+            var mat = FindChromeOutlineMaterial();
+            if (mat != null && tmp != null) tmp.fontSharedMaterial = mat;
         }
     }
 }
