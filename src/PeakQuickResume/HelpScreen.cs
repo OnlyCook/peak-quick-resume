@@ -184,7 +184,7 @@ namespace PEAKQuickResume
 
                 var text = MakeText("LoadingText", TitleFontSize, TextAlignmentOptions.Center, SavePicker.TitleColor);
                 text.transform.SetParent(_loadingRoot.transform, false);
-                text.text = "Loading...";
+                text.text = SavePickerLocalization.Get(PickerText.Loading);
                 SavePicker.StretchFull((RectTransform)text.transform);
 
                 _loadingRoot.SetActive(false);

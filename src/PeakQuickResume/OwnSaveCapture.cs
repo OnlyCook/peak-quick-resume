@@ -199,8 +199,9 @@ namespace PEAKQuickResume
 
                 // Mirrors decompile lines 4585-4586: local ShowMessage on the host, then
                 // RpcTarget.Others so every client sees it too
-                network?.MessageOverlay?.Show("Saved game progress", new Color(0.5f, 1f, 0.5f, 1f), 4f);
-                network?.SendMessageOthers("Saved game progress", "success", 4f);
+                string savedMsg = MessagesLocalization.Get(MsgKey.SavedGameProgress);
+                network?.MessageOverlay?.Show(savedMsg, new Color(0.5f, 1f, 0.5f, 1f), 4f);
+                network?.SendMessageOthers(savedMsg, "success", 4f);
 
                 // As the canonical writer, patch the just-written file for any pending
                 // dropped-backpack restores, then copy it into the F7 archive
@@ -325,7 +326,7 @@ namespace PEAKQuickResume
 
                 log?.LogInfo($"OwnSaveCapture: position + inventory saved. Pos: {pos} Scene: {sceneName}, Items: {inventoryStates.Count}.");
 
-                messageOverlay?.Show("Saved game progress", new Color(0.5f, 1f, 0.5f, 1f), 4f);
+                messageOverlay?.Show(MessagesLocalization.Get(MsgKey.SavedGameProgress), new Color(0.5f, 1f, 0.5f, 1f), 4f);
 
                 // As the canonical writer, patch the just-written file for any pending
                 // dropped-backpack restores, then copy it into the F7 archive

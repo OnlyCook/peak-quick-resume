@@ -21,6 +21,7 @@ namespace PEAKQuickResume
         WaitingForPlayers,
         PlayersTimedOut,
         SaveLoadedWelcomeBack,
+        SavedGameProgress,
         OnlyHostRestart,
         RestartingRun,
         RunRestarted,
@@ -201,6 +202,24 @@ namespace PEAKQuickResume
                 "저장 파일을 불러왔습니다. 다시 오신 것을 환영합니다!",
                 "Zapis wczytany. Witaj z powrotem!",
                 "Kayıt yüklendi. Tekrar hoş geldin!",
+            },
+            [MsgKey.SavedGameProgress] = new[]
+            {
+                "Saved game progress",
+                "Progression sauvegardée",
+                "Progressi salvati",
+                "Spielfortschritt gespeichert",
+                "Progreso guardado",
+                "Progreso guardado",
+                "Progresso salvo",
+                "Прогресс игры сохранён",
+                "Прогрес гри збережено",
+                "游戏进度已保存",
+                "",
+                "ゲームの進行状況を保存しました",
+                "게임 진행 상황이 저장되었습니다",
+                "Zapisano postęp gry",
+                "Oyun ilerlemesi kaydedildi",
             },
             [MsgKey.OnlyHostRestart] = new[]
             {
