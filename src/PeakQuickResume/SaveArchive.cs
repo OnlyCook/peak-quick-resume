@@ -206,6 +206,19 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Userids of connected coop players that <see cref="RestoreCoopSiblings"/>
+        /// could NOT find a close-enough sibling archive for during the most recent
+        /// <see cref="Restore"/> call. <see cref="OwnInventoryRestore.RestoreAll"/>
+        /// checks this and skips force-applying that player's (possibly wildly stale)
+        /// canonical file, leaving their current in-game inventory untouched instead.
+        ///
+        /// Cleared at the top of every <see cref="Restore"/> call so it never leaks
+        /// into an unrelated resume (e.g. a plain "continue" that never goes through
+        /// this class at all, or a later archive restore that doesn't skip anyone)
+        /// </summary>
+        public static readonly HashSet<string> LastSkippedCoopUserIds = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
         /// Copy an archived save back over the checkpoint mod's canonical file for its
         /// difficulty/category, so the mod's own load path reads the chosen checkpoint.
         /// Coop: also rolls back every OTHER connected player's own canonical file to
@@ -214,6 +227,7 @@ namespace PEAKQuickResume
         /// </summary>
         public static bool Restore(ArchivedSave save, ManualLogSource log)
         {
+            LastSkippedCoopUserIds.Clear();
             if (!RestoreOne(save.FilePath, save.Offline, log)) return false;
             if (!save.Offline) RestoreCoopSiblings(save, log);
             return true;
@@ -258,39 +272,77 @@ namespace PEAKQuickResume
         /// milliseconds apart (sequential file writes), not at an identical instant, so
         /// siblings are matched by NEAREST archived write-time to the chosen host save
         /// (restricted to the same ascent/custom-run target), not an exact match
+        ///
+        /// That "nearest" match has no ceiling on how far away it can be: if a client is
+        /// missing an archive from the same save event entirely (never wrote one, wrote
+        /// one for a different target, cleared their archive, etc.), the nearest file for
+        /// their userId could be from a completely different run - hours or days old -
+        /// and would get silently restored as-is, overwriting that client's current
+        /// progress with items/state from a run they weren't even part of. <see
+        /// cref="MaxSiblingDelta"/> bounds the match to a window wide enough to absorb
+        /// real save-event jitter but far too narrow to ever span two different runs; a
+        /// candidate outside it is treated as no match, and that client's canonical file
+        /// is left untouched here (same as if this whole feature didn't run for them)
+        /// rather than restoring the too-far candidate
+        ///
+        /// Untouched is NOT the same as safe, though: <see
+        /// cref="OwnInventoryRestore.RestoreAll"/> unconditionally re-reads and
+        /// force-applies every connected player's own canonical file on every resume,
+        /// regardless of what (if anything) happened here - so a client whose canonical
+        /// file is itself stale (last written in some earlier session, never touched
+        /// this one) would still get that stale state force-applied even though we
+        /// declined to overwrite it with an equally-stale archive. Any currently
+        /// connected coop player who doesn't end up with a verified-close match below -
+        /// whether because the nearest candidate was outside <see
+        /// cref="MaxSiblingDelta"/> or because no candidate for their userId/target
+        /// existed at all - is recorded in <see cref="LastSkippedCoopUserIds"/> so that
+        /// unconditional re-apply can be suppressed for them instead
         /// </summary>
+        private static readonly TimeSpan MaxSiblingDelta = TimeSpan.FromMinutes(2);
+
         private static void RestoreCoopSiblings(ArchivedSave hostSave, ManualLogSource log)
         {
             try
             {
                 string archiveDir = ArchiveDir(offline: false);
-                if (!Directory.Exists(archiveDir)) return;
-
                 string hostUserId = LocalUserId();
                 var bestByUser = new Dictionary<string, (string file, TimeSpan delta)>();
 
-                foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
+                if (Directory.Exists(archiveDir))
                 {
-                    string name = Path.GetFileNameWithoutExtension(file);
-                    int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
-                    if (si <= 0) continue;
-                    string stem = name.Substring(0, si);
-                    string tsStr = name.Substring(si + Sep.Length);
+                    foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
+                    {
+                        string name = Path.GetFileNameWithoutExtension(file);
+                        int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
+                        if (si <= 0) continue;
+                        string stem = name.Substring(0, si);
+                        string tsStr = name.Substring(si + Sep.Length);
 
-                    if (!TryGetCoopUserId(stem, out string uid) || uid == hostUserId) continue;
-                    if (!SaveDiscovery.TryParseStem(stem, offlineMode: false, out SaveTarget target)) continue;
-                    if (target.IsCustom != hostSave.Target.IsCustom || target.Ascent != hostSave.Target.Ascent) continue;
-                    if (!DateTime.TryParseExact(tsStr, TsFormat, CultureInfo.InvariantCulture,
-                            DateTimeStyles.None, out DateTime sortTime))
-                        continue;
+                        if (!TryGetCoopUserId(stem, out string uid) || uid == hostUserId) continue;
+                        if (!SaveDiscovery.TryParseStem(stem, offlineMode: false, out SaveTarget target)) continue;
+                        if (target.IsCustom != hostSave.Target.IsCustom || target.Ascent != hostSave.Target.Ascent) continue;
+                        if (!DateTime.TryParseExact(tsStr, TsFormat, CultureInfo.InvariantCulture,
+                                DateTimeStyles.None, out DateTime sortTime))
+                            continue;
 
-                    TimeSpan delta = (sortTime - hostSave.SortTime).Duration();
-                    if (!bestByUser.TryGetValue(uid, out var current) || delta < current.delta)
-                        bestByUser[uid] = (file, delta);
+                        TimeSpan delta = (sortTime - hostSave.SortTime).Duration();
+                        if (delta > MaxSiblingDelta) continue;
+                        if (!bestByUser.TryGetValue(uid, out var current) || delta < current.delta)
+                            bestByUser[uid] = (file, delta);
+                    }
                 }
 
                 foreach (var kv in bestByUser)
                     RestoreOne(kv.Value.file, offline: false, log);
+
+                foreach (Photon.Realtime.Player p in PhotonNetwork.PlayerList)
+                {
+                    string uid = p?.UserId ?? "";
+                    if (uid.Length == 0 || uid == hostUserId || bestByUser.ContainsKey(uid)) continue;
+                    LastSkippedCoopUserIds.Add(uid);
+                    log?.LogInfo($"[archive] No archived save within {MaxSiblingDelta.TotalMinutes:F0}m of the "
+                        + $"chosen checkpoint for userId '{uid}'; leaving their inventory untouched on restore.");
+                }
             }
             catch (Exception e)
             {

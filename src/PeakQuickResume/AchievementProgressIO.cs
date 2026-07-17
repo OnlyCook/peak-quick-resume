@@ -238,6 +238,16 @@ namespace PEAKQuickResume
         /// ever sees their own), so the host can only apply this directly to itself -
         /// every other player's restore has to be handed to that player's own machine
         /// via a targeted RPC
+        ///
+        /// Coop: mirrors OwnInventoryRestore.RestoreAll's use of
+        /// SaveArchive.LastSkippedCoopUserIds - a player whose own canonical file
+        /// SaveArchive couldn't verify as close to the chosen checkpoint gets `saved`
+        /// left null here too, rather than reading their (possibly unrelated-run) file.
+        /// This is unconditionally safe per ApplyLocal's own remarks: null just primes
+        /// the same fresh baseline a normal run start already would, and this class
+        /// never touches permanent Steam achievement unlocks either way (see class
+        /// remarks) - so skipping can only ever cost a bit of this-run progress
+        /// tracking, never revert or fabricate an actual unlock
         /// </summary>
         public static void RestoreAllPlayers(SaveTarget target, bool offline, OwnLoadEntryPoints entryPoints, ManualLogSource log)
         {
@@ -252,18 +262,25 @@ namespace PEAKQuickResume
                     PhotonView playerView = player.GetComponent<PhotonView>();
 
                     OwnSavedAchievementProgress saved = null;
-                    try
+                    if (offline || !SaveArchive.LastSkippedCoopUserIds.Contains(userId))
                     {
-                        string path = OwnSavePaths.For(target, offline, userId);
-                        if (File.Exists(path))
+                        try
                         {
-                            var data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
-                            saved = data?.achievementProgress;
+                            string path = OwnSavePaths.For(target, offline, userId);
+                            if (File.Exists(path))
+                            {
+                                var data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
+                                saved = data?.achievementProgress;
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            log?.LogWarning($"AchievementProgressIO.RestoreAllPlayers: could not read save for userId '{userId}': {e.Message}");
                         }
                     }
-                    catch (Exception e)
+                    else
                     {
-                        log?.LogWarning($"AchievementProgressIO.RestoreAllPlayers: could not read save for userId '{userId}': {e.Message}");
+                        log?.LogInfo($"AchievementProgressIO: skipping restore for '{userId}' - no verified-close save for this checkpoint; priming a fresh baseline instead.");
                     }
 
                     if (offline || (playerView != null && playerView.IsMine))

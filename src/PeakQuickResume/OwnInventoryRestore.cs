@@ -62,12 +62,24 @@ namespace PEAKQuickResume
                 PhotonView playerView = player.GetComponent<PhotonView>();
 
                 OwnSaveData data = null;
-                try
+                if (offline || !SaveArchive.LastSkippedCoopUserIds.Contains(userId))
                 {
-                    string path = OwnSavePaths.For(target, offline, userId);
-                    data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
+                    try
+                    {
+                        string path = OwnSavePaths.For(target, offline, userId);
+                        data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
+                    }
+                    catch { /* matches the original: null data below is handled per-field */ }
                 }
-                catch { /* matches the original: null data below is handled per-field */ }
+                else
+                {
+                    // SaveArchive couldn't verify this player's own canonical file is close
+                    // enough in time to the checkpoint the host just picked (see
+                    // SaveArchive.LastSkippedCoopUserIds remarks) - leave data null so every
+                    // data-gated restore step below is skipped and this player's current,
+                    // actually-correct inventory/afflictions/etc. are left alone
+                    log?.LogInfo($"OwnInventoryRestore: skipping restore for '{userId}' - no verified-close save for this checkpoint.");
+                }
 
                 ch.refs.afflictions.RemoveAllThorns();
 

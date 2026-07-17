@@ -92,6 +92,14 @@ namespace PEAKQuickResume
         {
             _running = true;
 
+            // Clear any coop skip-list left over from a PRIOR archive-picker restore
+            // this session before deciding anything about THIS resume: SaveArchive.Restore
+            // (which populates it) only runs below when _chosen != null, so a plain
+            // "continue" resume right after an archive-picker one would otherwise still
+            // see stale entries and wrongly skip restoring an unrelated player's own,
+            // perfectly legitimate current save (see SaveArchive.LastSkippedCoopUserIds)
+            SaveArchive.LastSkippedCoopUserIds.Clear();
+
             // Lift any watch window still running from a prior load right away: the
             // Airport-return/fresh-run-start below is US legitimately moving the player,
             // not the checkpoint mod's own teleport, and would otherwise look like a bad
