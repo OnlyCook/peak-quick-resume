@@ -1,6 +1,6 @@
 ## 2.0.1
 
-- Update visual style of some labels in the save picker and the help screen. Also actually centered the campfire icon.
+- Updated visual style of some labels in the save picker and the help screen. Also actually centered the campfire icons in the save picker.
 - Fixed an issue where clients would be matched a save file that is completely unrelated to the loaded one if it was saved without that client in-game.
 - Add widescreen support to the save picker and help screen panels.
 - Fixed two unlocalized thus in english hard-coded strings and added their corresponding translations.
