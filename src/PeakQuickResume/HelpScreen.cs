@@ -175,6 +175,7 @@ namespace PEAKQuickResume
                 var canvas = _loadingRoot.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 30001;
+                SavePicker.ApplyWidescreenScaler(canvas);
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_loadingRoot.transform, false);
@@ -207,6 +208,7 @@ namespace PEAKQuickResume
                 var canvas = _root.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 30001; // above the F7 picker (30000)
+                SavePicker.ApplyWidescreenScaler(canvas);
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_root.transform, false);
@@ -366,7 +368,10 @@ namespace PEAKQuickResume
                 _footerKeyText.text = $"{tutorialKey} / Esc";
                 _footerLabelText.text = HelpScreenLocalization.Get(HelpText.Close);
 
-                float w = Mathf.Min(SavePicker.PanelWidth, Screen.width - 80f) + 2f * SavePicker.PanelOuterMargin;
+                // Same native-widescreen scaler as the F7 picker (see SavePicker.
+                // ApplyWidescreenScaler): the canvas width scales with aspect ratio
+                // rather than 1:1 with Screen.width
+                float w = Mathf.Min(SavePicker.PanelWidth, SavePicker.CanvasWidthUnits - 80f) + 2f * SavePicker.PanelOuterMargin;
 
                 // Force a layout pass at the final width so the body's ContentSizeFitter
                 // reports the correct wrapped height for THIS width, not a stale one
@@ -378,7 +383,7 @@ namespace PEAKQuickResume
                 float bodyHeight = _bodyText.preferredHeight;
                 float chrome = SavePicker.PanelPadding * 2f + SavePicker.TitleHeight + TitleBodyGap
                     + FooterGap + SavePicker.FooterHeight;
-                float h = Mathf.Min(chrome + bodyHeight, Screen.height - 80f) + 2f * SavePicker.PanelOuterMargin;
+                float h = Mathf.Min(chrome + bodyHeight, SavePicker.ReferenceHeight - 80f) + 2f * SavePicker.PanelOuterMargin;
 
                 _panelRect.sizeDelta = new Vector2(w, h);
                 _lastWidth = Mathf.RoundToInt(w);

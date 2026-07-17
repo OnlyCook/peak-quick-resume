@@ -352,6 +352,16 @@ namespace PEAKQuickResume
         internal const float FooterHeight = 34f;
         internal const float PanelWidth = 900f;
 
+        // Native widescreen support (same technique as the compass mod's PreviewMenu):
+        // the canvas is scaled so it always measures exactly this many units tall
+        // regardless of the monitor's actual resolution or aspect ratio (see the
+        // CanvasScaler setup in EnsureUi/EnsureLoadingUi, matchWidthOrHeight = 1f).
+        // Only the AVAILABLE WIDTH changes with aspect - wider (21:9, 32:9) monitors
+        // just get more of it, narrower ones less - so panel height math against a
+        // raw Screen.height never applies here, only width needs the live aspect ratio
+        internal const float ReferenceHeight = 1080f;
+        internal static float CanvasWidthUnits => (float)Screen.width / Screen.height * ReferenceHeight;
+
         // Palette pulled from the game's own UI (boarding pass / map rotation panels):
         // a vivid blue panel with a heavy near-black outline, rather than a dark navy
         // debug-overlay look. internal: HelpScreen (the F1 screen) reuses this exact
@@ -452,6 +462,23 @@ namespace PEAKQuickResume
         // Deliberately minimal: a dim background + one line of TMP text, no procedural
         // sprite baking at all, so this is essentially free to build/show on the very
         // frame the key is pressed (unlike EnsureUi/RebuildUi, the actual expensive part)
+        // Native widescreen support: pins the canvas to a constant 1080 reference-pixel
+        // height (see ReferenceHeight/CanvasWidthUnits) instead of the default width/
+        // height blend. At the blend's default (0.5), extra width on a 21:9/32:9
+        // monitor drags the canvas's effective VERTICAL reference-pixel count down
+        // with it, shrinking the canvas below this panel's own height and letting
+        // rows - including the selected (yellow) one - render partly or fully off
+        // screen with no way to scroll into view. Matching height alone means only
+        // the available WIDTH changes with aspect, and it only ever gains on
+        // anything 16:9 or wider, never loses
+        internal static void ApplyWidescreenScaler(Canvas canvas)
+        {
+            var scaler = canvas.gameObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, ReferenceHeight);
+            scaler.matchWidthOrHeight = 1f;
+        }
+
         private void EnsureLoadingUi()
         {
             if (_loadingRoot != null) return;
@@ -464,6 +491,7 @@ namespace PEAKQuickResume
                 var canvas = _loadingRoot.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 30000;
+                ApplyWidescreenScaler(canvas);
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_loadingRoot.transform, false);
@@ -496,6 +524,7 @@ namespace PEAKQuickResume
                 var canvas = _root.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 30000; // well above the game's own in-world/HUD canvases
+                ApplyWidescreenScaler(canvas);
 
                 var dimGo = new GameObject("Dim", typeof(RectTransform));
                 dimGo.transform.SetParent(_root.transform, false);
@@ -633,10 +662,15 @@ namespace PEAKQuickResume
             try
             {
                 int visibleRows = Mathf.Min(_entries.Count, MaxVisibleRows);
-                float w = Mathf.Min(PanelWidth, Screen.width - 80f) + 2f * PanelOuterMargin;
+                // Width against the SCALED canvas's own width (which grows with aspect
+                // ratio, see CanvasWidthUnits), not raw Screen.width - the canvas no
+                // longer measures 1:1 with physical screen pixels once the widescreen
+                // scaler is applied. Height stays against the constant ReferenceHeight
+                // for the same reason (the canvas is always exactly that tall)
+                float w = Mathf.Min(PanelWidth, CanvasWidthUnits - 80f) + 2f * PanelOuterMargin;
                 float chrome = PanelPadding * 2f + TitleHeight + FooterHeight + WarnHeight
                     + 2f * ScrollHintHeight + 4f * ScrollHintGap;
-                float h = Mathf.Min(chrome + visibleRows * RowHeight, Screen.height - 80f) + 2f * PanelOuterMargin;
+                float h = Mathf.Min(chrome + visibleRows * RowHeight, ReferenceHeight - 80f) + 2f * PanelOuterMargin;
 
                 _panelRect.sizeDelta = new Vector2(w, h);
                 _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(w), Mathf.RoundToInt(h), _jagFrame);
