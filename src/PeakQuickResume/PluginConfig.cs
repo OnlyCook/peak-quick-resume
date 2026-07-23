@@ -12,6 +12,7 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<KeyCode> StarKey;
         public readonly ConfigEntry<bool> AllowMidGame;
         public readonly ConfigEntry<float> PanelOpacity;
+        public readonly ConfigEntry<bool> MinimalPickerUi;
 
         // Miscellaneous QoL: pause menu buttons (mechanics 3 & 4). Each independently
         // hides its button from the pause menu entirely when disabled
@@ -152,6 +153,10 @@ namespace PEAKQuickResume
                     "Opacity of the F7 save picker's main background panel (0 = fully see-through, 1 = fully "
                     + "opaque). Lower this if you want to be able to see what's behind the menu while it's open.",
                     new AcceptableValueRange<float>(0f, 1f)));
+
+            MinimalPickerUi = cfg.Bind("General", "minimal-picker-ui", false,
+                "If enabled, the F7 save picker and F4 help screen use a plain, minimal panel: no procedural "
+                + "background grain texture, no hand-torn jagged edges, and no edge animation. Disabled by default.");
 
             ShowRestartButton = cfg.Bind("Pause-Menu", "show-restart-button", true,
                 "Show the \"Restart\" button in the pause menu while mid-run (host only). Instantly returns "

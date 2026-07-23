@@ -153,15 +153,21 @@ namespace PEAKQuickResume
                 _dimImage.color = new Color(SavePicker.DimColor.r, SavePicker.DimColor.g, SavePicker.DimColor.b, SavePicker.DimColor.a * t);
             }
 
+            // Skipped entirely in minimal mode (see PluginConfig.MinimalPickerUi): the
+            // flat sprite baked for that mode is identical every frame, nothing to animate
+            if (MinimalUi) return;
+
             _jagFrameTimer += Time.unscaledDeltaTime;
             if (_jagFrameTimer >= SavePicker.JagFrameInterval)
             {
                 _jagFrameTimer -= SavePicker.JagFrameInterval;
                 _jagFrame = (_jagFrame + 1) % SavePicker.JagFrameCount;
                 if (_panelFillImage != null)
-                    _panelFillImage.sprite = SavePicker.PanelSprite(_lastWidth, _lastHeight, _jagFrame);
+                    _panelFillImage.sprite = SavePicker.PanelSprite(_lastWidth, _lastHeight, _jagFrame, false);
             }
         }
+
+        private bool MinimalUi => _cfg != null && _cfg.MinimalPickerUi.Value;
 
         private void EnsureLoadingUi()
         {
@@ -388,19 +394,26 @@ namespace PEAKQuickResume
                     + FooterGap + SavePicker.FooterHeight;
                 float h = Mathf.Min(chrome + bodyHeight, SavePicker.ReferenceHeight - 80f) + 2f * SavePicker.PanelOuterMargin;
 
+                bool minimalUi = MinimalUi;
                 _panelRect.sizeDelta = new Vector2(w, h);
                 _lastWidth = Mathf.RoundToInt(w);
                 _lastHeight = Mathf.RoundToInt(h);
-                _panelFillImage.sprite = SavePicker.PanelSprite(_lastWidth, _lastHeight, _jagFrame);
+                _panelFillImage.sprite = SavePicker.PanelSprite(_lastWidth, _lastHeight, _jagFrame, minimalUi);
 
                 // Same PluginConfig.PanelOpacity the F7 picker's own panel respects, read
                 // fresh every rebuild so a change while the screen happens to be open
                 // takes effect immediately. The grain overlay is faded the same amount
                 // (it's baked fully opaque, see SavePicker.PanelGrainTexture) or it would
-                // keep hiding whatever the fill's own transparency reveals
+                // keep hiding whatever the fill's own transparency reveals. In minimal
+                // mode (see PluginConfig.MinimalPickerUi) the grain overlay is hidden
+                // entirely, leaving a plain flat-colored panel, same as the F7 picker
                 float panelOpacity = _cfg != null ? Mathf.Clamp01(_cfg.PanelOpacity.Value) : 1f;
                 _panelFillImage.color = new Color(1f, 1f, 1f, panelOpacity);
-                if (_grainImage != null) _grainImage.color = new Color(1f, 1f, 1f, panelOpacity);
+                if (_grainImage != null)
+                {
+                    _grainImage.gameObject.SetActive(!minimalUi);
+                    _grainImage.color = new Color(1f, 1f, 1f, panelOpacity);
+                }
 
                 var titleRect = (RectTransform)_titleText.transform;
                 titleRect.offsetMin = new Vector2(SavePicker.PanelPaddingHorizontal, titleRect.offsetMin.y);

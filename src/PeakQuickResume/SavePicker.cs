@@ -227,25 +227,31 @@ namespace PEAKQuickResume
             // interval. Every frame is already a real, complete Sprite generated once
             // and cached (see PanelSprite/RowCapSelSprite), so ticking this is just
             // swapping which already-built texture two Images point at, not any kind
-            // of per-frame regeneration
-            _jagFrameTimer += Time.unscaledDeltaTime;
-            if (_jagFrameTimer >= JagFrameInterval)
+            // of per-frame regeneration. Skipped entirely in minimal mode (see
+            // PluginConfig.MinimalPickerUi): the flat sprites baked for that mode are
+            // identical every frame, so there is nothing to animate
+            if (!MinimalUi)
             {
-                _jagFrameTimer -= JagFrameInterval;
-                _jagFrame = (_jagFrame + 1) % JagFrameCount;
-                ApplyJagFrame();
+                _jagFrameTimer += Time.unscaledDeltaTime;
+                if (_jagFrameTimer >= JagFrameInterval)
+                {
+                    _jagFrameTimer -= JagFrameInterval;
+                    _jagFrame = (_jagFrame + 1) % JagFrameCount;
+                    ApplyJagFrame();
+                }
             }
         }
+
+        private bool MinimalUi => _cfg != null && _cfg.MinimalPickerUi.Value;
 
         private void ApplyJagFrame()
         {
             if (_panelFillImage != null && _panelRect != null)
             {
                 var size = _panelRect.sizeDelta;
-                _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(size.x), Mathf.RoundToInt(size.y), _jagFrame);
+                _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(size.x), Mathf.RoundToInt(size.y), _jagFrame, MinimalUi);
             }
-            if (_selOverlayImage != null)
-                _selOverlayImage.sprite = RowCapSelSprite(_jagFrame);
+            ApplySelOverlaySprite(MinimalUi);
         }
 
         private void Move(int delta)
@@ -790,8 +796,9 @@ namespace PEAKQuickResume
                     + 2f * ScrollHintHeight + 4f * ScrollHintGap;
                 float h = Mathf.Min(chrome + visibleRows * RowHeight, ReferenceHeight - 80f) + 2f * PanelOuterMargin;
 
+                bool minimalUi = MinimalUi;
                 _panelRect.sizeDelta = new Vector2(w, h);
-                _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(w), Mathf.RoundToInt(h), _jagFrame);
+                _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(w), Mathf.RoundToInt(h), _jagFrame, minimalUi);
 
                 // Panel opacity is user-configurable (see PluginConfig.PanelOpacity) so
                 // players can see through the menu's background if they want to. Read
@@ -799,10 +806,16 @@ namespace PEAKQuickResume
                 // Manager while the picker happens to be open takes effect immediately.
                 // The grain overlay is faded the same amount as the fill/border it sits
                 // on top of (it's baked fully opaque, see PanelGrainTexture, so without
-                // this it would keep hiding whatever the fill's own transparency reveals)
+                // this it would keep hiding whatever the fill's own transparency reveals).
+                // In minimal mode (see PluginConfig.MinimalPickerUi) the grain overlay is
+                // hidden entirely, leaving a plain flat-colored panel
                 float panelOpacity = _cfg != null ? Mathf.Clamp01(_cfg.PanelOpacity.Value) : 1f;
                 _panelFillImage.color = new Color(1f, 1f, 1f, panelOpacity);
-                if (_grainImage != null) _grainImage.color = new Color(1f, 1f, 1f, panelOpacity);
+                if (_grainImage != null)
+                {
+                    _grainImage.gameObject.SetActive(!minimalUi);
+                    _grainImage.color = new Color(1f, 1f, 1f, panelOpacity);
+                }
 
                 // Widened by RowSelOverflow on each side vs. PanelPadding: this is the
                 // clipping bound for the row list, and the selected row's bar is
@@ -919,6 +932,10 @@ namespace PEAKQuickResume
                 }
 
                 _selOverlay.SetActive(selectionVisible);
+                // Refreshed every rebuild (not just on the animation tick) so toggling
+                // minimal-ui via Configuration Manager while the picker is open takes
+                // effect immediately, same as panelOpacity above
+                ApplySelOverlaySprite(minimalUi);
 
                 RefreshFooter();
                 RefreshWarn();
@@ -1334,6 +1351,11 @@ namespace PEAKQuickResume
         // trivial memory for the lifetime of the process
         private static readonly Dictionary<(int width, int height), Sprite[]> _panelSpriteCache = new();
 
+        // Flat/minimal variant (see PluginConfig.MinimalPickerUi): edgeJag = 0, so
+        // every "frame" would bake identical anyway - a single cached sprite per size,
+        // no per-frame array needed
+        private static readonly Dictionary<(int width, int height), Sprite> _panelSpriteFlatCache = new();
+
         // Baking at the panel's EXACT current width/height (not a fixed guess) rather
         // matters here: with Type.Simple the WHOLE texture stretches as one piece, and
         // the panel's height varies a lot (from ~2 rows to MaxVisibleRows, or whatever
@@ -1342,8 +1364,20 @@ namespace PEAKQuickResume
         // into visibly flattened ellipses ("corners got skinnier"). Re-baking on demand
         // (cheap to skip via the cache above whenever this exact size was already seen)
         // keeps the corner radius and the jag scale correct at whatever size is needed
-        internal static Sprite PanelSprite(int width, int height, int frame)
+        internal static Sprite PanelSprite(int width, int height, int frame, bool minimal)
         {
+            if (minimal)
+            {
+                var flatKey = (width, height);
+                if (!_panelSpriteFlatCache.TryGetValue(flatKey, out Sprite flat))
+                {
+                    flat = MakeFullPanelSprite(width, height, PanelCornerRadius, PanelBorderThickness,
+                        PanelFillColor, PanelBorderColor, 0f, EdgeJagFrequency, 0f);
+                    _panelSpriteFlatCache[flatKey] = flat;
+                }
+                return flat;
+            }
+
             var key = (width, height);
             if (!_panelSpriteCache.TryGetValue(key, out Sprite[] frames))
             {
@@ -1488,6 +1522,28 @@ namespace PEAKQuickResume
                     23.7f + seedOffset, 58.4f + seedOffset, RowSelBarColor);
             }
             return _rowCapSelSpriteFrames[frame];
+        }
+
+        // Flat/minimal variant (see PluginConfig.MinimalPickerUi): rather than baking a
+        // whole separate grain-free/jag-free texture, this just reuses the same plain
+        // clean-cornered, no-jag cap sprite the zebra-striped rows already use
+        // (RowCapSprite), 9-sliced and tinted with the selection's own color - the exact
+        // same "flat" treatment already applied to every other row
+        private void ApplySelOverlaySprite(bool minimal)
+        {
+            if (_selOverlayImage == null) return;
+            if (minimal)
+            {
+                _selOverlayImage.sprite = RowCapSprite();
+                _selOverlayImage.type = Image.Type.Sliced;
+                _selOverlayImage.color = RowSelBarColor;
+            }
+            else
+            {
+                _selOverlayImage.sprite = RowCapSelSprite(_jagFrame);
+                _selOverlayImage.type = Image.Type.Simple;
+                _selOverlayImage.color = Color.white;
+            }
         }
 
         // Bakes the WHOLE width x height shape directly (no 9-slice border metadata,
@@ -1762,9 +1818,7 @@ namespace PEAKQuickResume
             // Baking the grain directly into the sprite's own texture needs no
             // clipping at all, so there's no Mask left to misbehave
             _selOverlayImage = _selOverlay.AddComponent<Image>();
-            _selOverlayImage.sprite = RowCapSelSprite(_jagFrame);
-            _selOverlayImage.type = Image.Type.Simple;
-            _selOverlayImage.color = Color.white; // fill/grain shade is baked into the texture itself
+            ApplySelOverlaySprite(MinimalUi);
 
             _selOverlay.SetActive(false);
         }
