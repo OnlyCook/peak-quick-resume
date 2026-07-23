@@ -480,17 +480,35 @@ namespace PEAKQuickResume
         public static string DifficultyLabel(SaveTarget t)
         {
             string official = TryGetOfficialAscentTitle(t);
-            if (!string.IsNullOrEmpty(official)) return official;
+            if (!string.IsNullOrEmpty(official))
+                return t.IsCustom ? TruncateCustomLabel(official) : official;
 
             // Fallback if the game's own AscentData couldn't be reached (e.g. a future
             // update changes its shape); our own translations, better than nothing
-            if (t.IsCustom) return SavePickerLocalization.Get(PickerText.CustomRun);
+            if (t.IsCustom) return TruncateCustomLabel(SavePickerLocalization.Get(PickerText.CustomRun));
             switch (t.Ascent)
             {
                 case -1: return SavePickerLocalization.Get(PickerText.Tenderfoot);
                 case 0: return "PEAK";
                 default: return string.Format(SavePickerLocalization.Get(PickerText.AscentFormat), t.Ascent);
             }
+        }
+
+        // The "Custom" run's OWN (official or our fallback) label is by far the longest
+        // difficulty string in a couple of languages - Ukrainian "КОРИСТУВАЦЬКИЙ ЗАБІГ"
+        // and Polish "SPERSONALIZOWANE PODEJŚCIE" both run well past every other
+        // difficulty label (PEAK/Tenderfoot/Ascent N are short everywhere). Since the
+        // difficulty column's reserved width is the max across EVERY archived save, one
+        // long custom-run label blows up the row layout for every OTHER row too, not
+        // just its own. Custom runs are rare, so trading a clipped/ellipsized label on
+        // them (only them, only when actually this long) for a sane column width
+        // everywhere else is the right trade
+        private const int MaxCustomLabelLength = 12;
+
+        private static string TruncateCustomLabel(string label)
+        {
+            if (string.IsNullOrEmpty(label) || label.Length <= MaxCustomLabelLength) return label;
+            return label.Substring(0, MaxCustomLabelLength).TrimEnd() + "…";
         }
 
         // Reuses the game's OWN localized difficulty names instead of re-translating them
@@ -508,6 +526,62 @@ namespace PEAKQuickResume
                 int index = t.IsCustom ? 0 : t.Ascent + 2;
                 if (index < 0 || index >= data.ascents.Count) return null;
                 return data.ascents[index].localizedTitle;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Human, localized label for a save's deepest-reached campfire/segment
+        /// (see <see cref="ArchivedSave.CampfireName"/> - NOT BiomesSummary, which is the
+        /// level's whole fixed biome roster baked in at edit time, not player progress,
+        /// see the comment on CampfireLocKeys below). Falls back to the raw stored name
+        /// (English, as OwnSaveCapture/the checkpoint mod wrote it) if the game's own
+        /// localization table can't be reached, better than nothing</summary>
+        public static string CampfireLabel(string internalName)
+        {
+            string official = TryGetOfficialCampfireTitle(internalName);
+            return !string.IsNullOrEmpty(official) ? official : internalName;
+        }
+
+        // Same reasoning as TryGetOfficialAscentTitle: the raw name saved to disk is an
+        // internal English dev enum name, not what players ever see on screen. The game
+        // shows these via the "big label" on climb progress (MountainProgressHandler.
+        // progressPoints), which are plain LocalizedText.GetText(key) lookups, so we can
+        // hit that same table directly by key without needing the scene-attached
+        // MountainProgressHandler singleton itself.
+        //
+        // CampfireName is `MapHandler.GetCurrentSegment().ToString()` (Segment: Beach,
+        // Tropics, Alpine, Caldera, TheKiln, Peak), NOT a Biome.BiomeType name - except
+        // for two special cases (OwnSaveCapture/the checkpoint mod both override it to
+        // the BiomeType name "Roots"/"Mesa" for the Tropics/Alpine cave variants), so
+        // this table needs to cover both enums' literal names, keyed by whichever one
+        // CampfireName actually ends up holding. "Volcano" is also mapped here (even
+        // though it's not a Segment name and isn't written by the current
+        // OwnSaveCapture/checkpoint-mod code above) since some older/other save sources
+        // do store the plain Biome.BiomeType name "Volcano" as campfireName - same
+        // target as TheKiln, since a saved checkpoint is always the DEEPEST point
+        // reached, and "The Kiln" is that biome's upper/later progress label
+        private static readonly Dictionary<string, string> CampfireLocKeys =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Beach", "SHORE" },
+            { "Tropics", "TROPICS" },
+            { "Roots", "ROOTS" }, // Tropics cave variant (override case)
+            { "Alpine", "ALPINE" },
+            { "Mesa", "MESA" }, // Alpine cave variant (override case)
+            { "Caldera", "CALDERA" },
+            { "TheKiln", "THE KILN" },
+            { "Volcano", "THE KILN" }, // alias, see comment above
+            { "Peak", "PEAK" },
+        };
+
+        private static string TryGetOfficialCampfireTitle(string internalName)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(internalName)) return null;
+                if (!CampfireLocKeys.TryGetValue(internalName, out string key)) return null;
+                string text = LocalizedText.GetText(key, printDebug: false);
+                return string.IsNullOrEmpty(text) ? null : text;
             }
             catch { return null; }
         }

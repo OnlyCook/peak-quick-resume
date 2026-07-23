@@ -28,8 +28,8 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 
 ## What will be saved/restored?
 
-- **Everything within 30m** of the campfire when saving will be saved, and restored upon loading the save (excluding most deployables that won't be of help anyways). This includes: all players and their inventories as well as all their status effects, everything on trees/bushes or the ground, the state/items of luggage and the Ancient Statue, the in-game time and day, and the playtime.
-- The **whole island/map** with all its biomes and levels/seeds will be saved exactly as is. Which means you are even able to replay islands more than a week after they've already been rotated (although you must have a save of them).
+- **Everything within 30m** of the campfire when saving will be saved, and restored upon loading the save (excluding most deployables that won't be of help anyways). This includes: all players and their inventories as well as all their status effects, everything on trees/bushes or the ground, the state/items of luggage and the Ancient Statue, the in-game time and day, and the playtime.
+- The **whole island/map** with all its biomes and levels/seeds will be saved exactly as is. Which means you are even able to replay islands more than a week after they've already been rotated (although you must have a save of them).
 - **Achievement progress** is saved and restored when you load a checkpoint. This only applies per-player to **whoever has PEAK Quick Resume installed themselves**. A co-op player without it keeps the old behavior for their own achievements, which may falsely unlock some Steam achievements, but also not restore the progress/state of other achievements.
 
 ## Notes
@@ -54,7 +54,7 @@ If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/Mod
 
 - **resume-key**: the key to open the picker / load the highlighted save (default **F7**). Rebindable directly in ModConfig's menu.
 - **resume-key-also-confirms-load**: if disabled, pressing the resume key while the picker is open does nothing, only Enter confirms a load (useful if you keep accidentally reloading while trying to close the picker).
-- **help-key**: the key to open the help menu (default **F2**).
+- **help-key**: the key to open the help menu (default **F4**).
 - **allow-mid-game**: allow resuming while still alive (default on).
 - **panel-opacity**: how see-through the picker's background panel is (0 = fully see-through; 1 = fully opaque, default).
 - **Pause-Menu**: disable/re-enable any of the 3 added QoL pause menu buttons, and optionally enable `move-rebind-controls-to-settings` to move the 'Rebind Controls' button away from the pause menu.

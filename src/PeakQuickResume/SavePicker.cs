@@ -55,6 +55,7 @@ namespace PEAKQuickResume
         private float _nextRepeatTime;
         private const float RepeatInitialDelay = 0.35f;
         private const float RepeatInterval = 0.08f;
+        private const int JumpStep = 5;
 
         public bool IsOpen { get; private set; }
 
@@ -191,13 +192,16 @@ namespace PEAKQuickResume
             }
 
             // Navigation (the resume key + Enter confirm live in Plugin). Holding an
-            // arrow repeats it after an initial delay, like any normal menu list
-            if (Input.GetKeyDown(KeyCode.UpArrow)) { Move(-1); _nextRepeatTime = Time.unscaledTime + RepeatInitialDelay; }
-            else if (Input.GetKeyDown(KeyCode.DownArrow)) { Move(1); _nextRepeatTime = Time.unscaledTime + RepeatInitialDelay; }
+            // arrow repeats it after an initial delay, like any normal menu list. Holding
+            // Shift jumps by JumpStep entries instead of 1, both on the initial press and
+            // on every repeat while held
+            int step = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? JumpStep : 1;
+            if (Input.GetKeyDown(KeyCode.UpArrow)) { Move(-step); _nextRepeatTime = Time.unscaledTime + RepeatInitialDelay; }
+            else if (Input.GetKeyDown(KeyCode.DownArrow)) { Move(step); _nextRepeatTime = Time.unscaledTime + RepeatInitialDelay; }
             else if (Input.GetKey(KeyCode.UpArrow) && Time.unscaledTime >= _nextRepeatTime)
-            { Move(-1); _nextRepeatTime = Time.unscaledTime + RepeatInterval; }
+            { Move(-step); _nextRepeatTime = Time.unscaledTime + RepeatInterval; }
             else if (Input.GetKey(KeyCode.DownArrow) && Time.unscaledTime >= _nextRepeatTime)
-            { Move(1); _nextRepeatTime = Time.unscaledTime + RepeatInterval; }
+            { Move(step); _nextRepeatTime = Time.unscaledTime + RepeatInterval; }
             else if (Input.GetKeyDown(KeyCode.Escape))
             {
                 Close();
@@ -330,6 +334,14 @@ namespace PEAKQuickResume
             if (seconds <= 0f) return "";
             var t = TimeSpan.FromSeconds(seconds);
             string played = SavePickerLocalization.Get(PickerText.Played);
+            // Past 10h, drop the minutes: this is the last column, so its own width
+            // factors into the row-overflow budget same as everything else, and an
+            // unbounded "{hours}h {minutes}m" would grow without limit on a long-lived
+            // save (unlike the difficulty column, there's no truncating an hour count).
+            // Hours-only past this point is a one-character-wider-per-decade growth
+            // instead, which the packed-column fallback (see ComputeColumnLayout) can
+            // always absorb
+            if (t.TotalHours >= 10) return $"{(int)t.TotalHours}h {played}";
             return t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m {played}" : $"{t.Minutes}m {played}";
         }
 
@@ -351,6 +363,24 @@ namespace PEAKQuickResume
         private const float WarnHeight = 24f;
         internal const float FooterHeight = 34f;
         internal const float PanelWidth = 900f;
+
+        // Row "column" layout: fields (difficulty / biome / date / playtime) are lined
+        // up at fixed x-positions computed from the widest value each field takes across
+        // every archived save, not just the visible page, so the alignment doesn't jitter
+        // while scrolling. RowTextInset matches the 10f margin the row text used to have
+        // on each side; RowColumnGap is the horizontal gap between adjacent columns. If
+        // the 4-column layout doesn't fit the available row width (long biome/campfire
+        // names, verbose languages, ...) the two middle fields (biome, date) collapse
+        // into a single packed field instead of being clipped - see ComputeColumnLayout
+        private const float RowTextInset = 10f;
+        private const float RowColumnGap = 24f;
+        private const string RowPackedMidSeparator = "   ";
+        // Reserved on the right of every row (starred or not) so the last column never
+        // sits where the star icon would be - keeps the right edge consistent instead of
+        // the text shifting over only when a row happens to be starred. RowStarIconSize
+        // is declared further down (with the star icon itself); const-to-const forward
+        // references are resolved at compile time so the declaration order doesn't matter
+        private const float RowStarReserve = RowStarIconSize + 10f;
 
         // Native widescreen support (same technique as the compass mod's PreviewMenu):
         // the canvas is scaled so it always measures exactly this many units tall
@@ -439,7 +469,14 @@ namespace PEAKQuickResume
         private TextMeshProUGUI _scrollDownHint;
         private readonly List<FooterEntry> _footerEntries = new List<FooterEntry>();
         private readonly List<Image> _rowHighlightPool = new List<Image>();
-        private readonly List<TextMeshProUGUI> _rowTextPool = new List<TextMeshProUGUI>();
+        // Row text is split into per-field "columns" (difficulty / biome / date /
+        // playtime) so they stack into readable, anchored positions instead of one
+        // free-flowing string. See ComputeColumnLayout/RebuildUi for how the actual
+        // x-positions are derived (and degrade to a packed fallback when they don't fit)
+        private readonly List<TextMeshProUGUI> _rowDiffPool = new List<TextMeshProUGUI>();
+        private readonly List<TextMeshProUGUI> _rowMidPool = new List<TextMeshProUGUI>();
+        private readonly List<TextMeshProUGUI> _rowDatePool = new List<TextMeshProUGUI>();
+        private readonly List<TextMeshProUGUI> _rowPlayPool = new List<TextMeshProUGUI>();
         private readonly List<Image> _rowStarPool = new List<Image>();
         // The selected row's gold/jagged/grained look is drawn by ONE dedicated overlay
         // (behind the row list, repositioned to whichever row is currently selected),
@@ -655,6 +692,86 @@ namespace PEAKQuickResume
             }
         }
 
+        // One archived save's row text, split into the 4 fields that get lined up as
+        // "columns" (difficulty / last biome reached / date / playtime, the last
+        // including the co-op player list when applicable)
+        private readonly struct RowFields
+        {
+            public readonly string Difficulty;
+            public readonly string Biome;
+            public readonly string Date;
+            public readonly string Playtime;
+
+            public RowFields(string difficulty, string biome, string date, string playtime)
+            {
+                Difficulty = difficulty;
+                Biome = biome;
+                Date = date;
+                Playtime = playtime;
+            }
+        }
+
+        private RowFields GetRowFields(ArchivedSave e)
+        {
+            // CampfireName (despite its name) is the deepest campfire/segment actually
+            // reached, not BiomesSummary - see the comment on SaveArchive.CampfireLabel
+            string biome = string.IsNullOrEmpty(e.CampfireName) ? "—" : SaveArchive.CampfireLabel(e.CampfireName);
+            string date = string.IsNullOrEmpty(e.SaveDate) ? e.SortTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : e.SaveDate;
+            string playtime = FormatPlaytime(e.Playtime);
+            // Co-op: show everyone who played this run, tacked onto the last column
+            // (rather than as its own column) since it's optional/co-op-only
+            if (!_offline && !string.IsNullOrEmpty(e.Players))
+                playtime += $"  ({e.Players})";
+            return new RowFields(e.DifficultyLabel, biome, date, playtime);
+        }
+
+        private readonly struct ColumnLayout
+        {
+            public readonly bool UseColumns;
+            public readonly float MidStartX;
+            public readonly float DateStartX;
+
+            public ColumnLayout(bool useColumns, float midStartX, float dateStartX)
+            {
+                UseColumns = useColumns;
+                MidStartX = midStartX;
+                DateStartX = dateStartX;
+            }
+        }
+
+        // Decides where the difficulty/biome/date columns start, and whether biome+date
+        // fit as two independently-aligned columns at all. Widths are measured across
+        // EVERY archived save (not just the visible page) so column positions stay put
+        // while scrolling. If the full 4-column layout would overflow the row (long
+        // biome/campfire names, a verbose language, ...) biome and date collapse into a
+        // single packed field instead of being clipped - the playtime column stays
+        // right-aligned either way, and the difficulty column never moves, so this is
+        // always enough slack to make everything fit (see the constants' comment)
+        private ColumnLayout ComputeColumnLayout(float availableWidth)
+        {
+            var measure = _rowDiffPool.Count > 0 ? _rowDiffPool[0] : null;
+            if (measure == null || _entries.Count == 0)
+                return new ColumnLayout(true, RowTextInset, RowTextInset);
+
+            float maxDiff = 0f, maxBiome = 0f, maxDate = 0f, maxPlay = 0f;
+            foreach (var e in _entries)
+            {
+                RowFields f = GetRowFields(e);
+                maxDiff = Mathf.Max(maxDiff, measure.GetPreferredValues(f.Difficulty).x);
+                maxBiome = Mathf.Max(maxBiome, measure.GetPreferredValues(f.Biome).x);
+                maxDate = Mathf.Max(maxDate, measure.GetPreferredValues(f.Date).x);
+                maxPlay = Mathf.Max(maxPlay, measure.GetPreferredValues(f.Playtime).x);
+            }
+
+            float midStartX = RowTextInset + maxDiff + RowColumnGap;
+            float dateStartX = midStartX + maxBiome + RowColumnGap;
+            float columnsTotal = dateStartX + maxDate + RowColumnGap + maxPlay;
+            if (columnsTotal <= availableWidth)
+                return new ColumnLayout(true, midStartX, dateStartX);
+
+            return new ColumnLayout(false, midStartX, midStartX);
+        }
+
         // Rebuilds everything that can change while open: panel size, row content/
         // selection, footer/warning text. Only called on Open/Move/Delete, never per-frame
         private void RebuildUi()
@@ -719,7 +836,10 @@ namespace PEAKQuickResume
 
                 bool selectionVisible = false;
 
-                for (int i = 0; i < _rowTextPool.Count; i++)
+                float availableTextWidth = w - 2f * PanelPaddingHorizontal - 2f * RowTextInset - RowStarReserve;
+                var layout = ComputeColumnLayout(availableTextWidth);
+
+                for (int i = 0; i < _rowDiffPool.Count; i++)
                 {
                     int entryIndex = _scrollOffset + i;
                     bool visible = entryIndex < _entries.Count;
@@ -730,17 +850,44 @@ namespace PEAKQuickResume
 
                     var e = _entries[entryIndex];
                     bool sel = entryIndex == _selected;
-                    string campfire = string.IsNullOrEmpty(e.CampfireName) ? "—" : e.CampfireName;
-                    string date = string.IsNullOrEmpty(e.SaveDate) ? e.SortTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : e.SaveDate;
-                    string line = $"{e.DifficultyLabel}   {campfire}   {date}   {FormatPlaytime(e.Playtime)}";
-                    // Co-op: show everyone who played this run
-                    if (!_offline && !string.IsNullOrEmpty(e.Players))
-                        line += $"   ({e.Players})";
+                    RowFields f = GetRowFields(e);
 
-                    _rowTextPool[i].text = line;
-                    // Text stays on the pooled row (drawn on top of _selOverlay when
-                    // selected, see BuildSelectionOverlay), only the background moved
-                    _rowTextPool[i].color = sel ? RowSelTextColor : RowColor;
+                    var diffText = _rowDiffPool[i];
+                    var midText = _rowMidPool[i];
+                    var dateText = _rowDatePool[i];
+                    var playText = _rowPlayPool[i];
+
+                    diffText.text = f.Difficulty;
+                    var diffRect = (RectTransform)diffText.transform;
+                    diffRect.offsetMin = new Vector2(RowTextInset, diffRect.offsetMin.y);
+
+                    if (layout.UseColumns)
+                    {
+                        midText.text = f.Biome;
+                        var midRect = (RectTransform)midText.transform;
+                        midRect.offsetMin = new Vector2(layout.MidStartX, midRect.offsetMin.y);
+
+                        dateText.gameObject.SetActive(true);
+                        dateText.text = f.Date;
+                        var dateRect = (RectTransform)dateText.transform;
+                        dateRect.offsetMin = new Vector2(layout.DateStartX, dateRect.offsetMin.y);
+                    }
+                    else
+                    {
+                        midText.text = f.Biome + RowPackedMidSeparator + f.Date;
+                        var midRect = (RectTransform)midText.transform;
+                        midRect.offsetMin = new Vector2(layout.MidStartX, midRect.offsetMin.y);
+
+                        dateText.gameObject.SetActive(false);
+                    }
+
+                    playText.text = f.Playtime;
+
+                    Color rowColor = sel ? RowSelTextColor : RowColor;
+                    diffText.color = rowColor;
+                    midText.color = rowColor;
+                    dateText.color = rowColor;
+                    playText.color = rowColor;
 
                     star.gameObject.SetActive(e.Starred);
 
@@ -1624,9 +1771,9 @@ namespace PEAKQuickResume
 
         private void EnsureRowPool(int count)
         {
-            while (_rowTextPool.Count < count)
+            while (_rowDiffPool.Count < count)
             {
-                int i = _rowTextPool.Count;
+                int i = _rowDiffPool.Count;
                 var rowGo = new GameObject("Row" + i, typeof(RectTransform));
                 rowGo.transform.SetParent(_rowsContainer, false);
                 var rowRect = (RectTransform)rowGo.transform;
@@ -1641,12 +1788,27 @@ namespace PEAKQuickResume
                 var hl = rowGo.AddComponent<Image>();
                 hl.color = Color.clear;
 
-                var text = MakeText(rowGo.transform, "Text", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineLeft);
-                var textRect = (RectTransform)text.transform;
-                textRect.anchorMin = Vector2.zero;
-                textRect.anchorMax = Vector2.one;
-                textRect.offsetMin = new Vector2(10f, 0f);
-                textRect.offsetMax = new Vector2(-10f, 0f);
+                // 4 "columns" (difficulty / biome / date / playtime), each its own TMP
+                // field so they can be independently x-positioned. All stretch full
+                // height and to the row's right inset; only offsetMin.x (the left start)
+                // differs, and is set per-rebuild by RebuildUi/ComputeColumnLayout.
+                // There's no per-field Mask, so a generous rect never clips anything -
+                // only the shared rowsContainer's RectMask2D can ever clip text
+                var diff = MakeText(rowGo.transform, "ColDiff", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineLeft);
+                StretchColumn(diff, RowTextInset);
+
+                var mid = MakeText(rowGo.transform, "ColMid", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineLeft);
+                StretchColumn(mid, RowTextInset);
+
+                var date = MakeText(rowGo.transform, "ColDate", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineLeft);
+                StretchColumn(date, RowTextInset);
+
+                // Last column: right-aligned, but inset further than the others by
+                // RowStarReserve so it never sits where the star icon goes - reserved on
+                // EVERY row (not just starred ones) so the right edge stays consistent
+                // instead of text shifting over only when a row happens to be starred
+                var play = MakeText(rowGo.transform, "ColPlay", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineRight);
+                StretchColumn(play, RowTextInset, RowTextInset + RowStarReserve);
 
                 var starGo = new GameObject("Star", typeof(RectTransform));
                 starGo.transform.SetParent(rowGo.transform, false);
@@ -1661,9 +1823,21 @@ namespace PEAKQuickResume
                 starGo.SetActive(false);
 
                 _rowHighlightPool.Add(hl);
-                _rowTextPool.Add(text);
+                _rowDiffPool.Add(diff);
+                _rowMidPool.Add(mid);
+                _rowDatePool.Add(date);
+                _rowPlayPool.Add(play);
                 _rowStarPool.Add(starImage);
             }
+        }
+
+        private static void StretchColumn(TextMeshProUGUI text, float leftInset, float rightInset = RowTextInset)
+        {
+            var rect = (RectTransform)text.transform;
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = new Vector2(leftInset, 0f);
+            rect.offsetMax = new Vector2(-rightInset, 0f);
         }
 
         private TextMeshProUGUI MakeText(Transform parent, string name, int fontSize, FontStyles style,

@@ -132,7 +132,7 @@ namespace PEAKQuickResume
 
             // Same plain-KeyCode reasoning as resume-key above (ModConfig only renders a
             // rebind widget for KeyCode, not KeyboardShortcut)
-            HelpKey = cfg.Bind("General", "help-key", KeyCode.F2,
+            HelpKey = cfg.Bind("General", "help-key", KeyCode.F4,
                 "Opens the help screen (Quick Resume controls).");
 
             // Default of B (not the more obvious S): while the F7 picker is open, key
