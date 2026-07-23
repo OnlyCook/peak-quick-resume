@@ -1,10 +1,11 @@
 ## 2.0.2
 
-- Added native compatability with the [TerrainRandomiser](https://thunderstore.io/c/peak/p/Snosz/TerrainRandomiser/) mod: if you're starting a game through the Boarding Pass, no conflict will exist between the mods and TR will do its thing. If you're loading a save game through the save picker, TR is temporarily ignored to load the correct saved run. **NOTE:** any biomes created by TR are entirely temporary and cannot be restored though.
-- Added native compatability with the [MorePeak](https://thunderstore.io/c/peak/p/smckeen/MorePeak/) mod: loading a save through the save picker will now always load the saved run instead of sometimes an incorrect one.
-- Added a new **minimal-picker-ui** setting to show the save picker (and help screen) in a UI without any effects or animations. This makes the picker open much faster.
 - The save picker entries' content was reworked to show them ordered (and aligned) in a column-style to make it more organized and easier to spot the right save. Also summarized players for co-op saves to only show the count instead of all player names.
+- Added a new **minimal-picker-ui** setting to show the save picker (and help screen) in a UI without any effects or animations. This makes the picker open much faster.
+- Added native compatability with the [TerrainRandomiser](https://thunderstore.io/c/peak/p/Snosz/TerrainRandomiser/) mod: if you're starting a game through the Boarding Pass, no conflict will exist between the mods, TR will do its thing as intended. If you're loading a save game through the save picker, TR is temporarily ignored to load the correct saved run. **NOTE:** any biomes created by TR are entirely temporary and cannot be restored.
+- Added native compatability with the [MorePeak](https://thunderstore.io/c/peak/p/smckeen/MorePeak/) mod: loading a save through the save picker will now always load the saved run instead of sometimes an incorrect one.
 - Now able to traverse 5 save entries at a time by holding `Shift` when pressing `↑/↓` in the save picker.
+- Now biome names are also localized in the save picker.
 - Fixed stale saved-level override leaking into normal Boarding Pass starts.
 - Fixed loading-save overlay not kept up until all co-op clients actually finish connecting.
 - Changed the help screen default key to be `F4` (although still changeable through the config; changed to not compete with PEAK Unlimited).
