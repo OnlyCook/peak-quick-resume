@@ -599,9 +599,9 @@ namespace PEAKQuickResume
                 entry.Playtime = m.timePlayed;
                 if (m.biome_names != null && m.biome_names.Count > 0)
                     entry.BiomesSummary = m.biome_names[m.biome_names.Count - 1]; // deepest biome reached
-                // playerNames is alphabetical (not host-first), so show the whole party.
+                // Space is tight in the save picker, so show a player count instead of names.
                 if (m.playerNames != null && m.playerNames.Count > 0)
-                    entry.Players = string.Join(", ", m.playerNames);
+                    entry.Players = $"{m.playerNames.Count}P";
             }
             catch (Exception e)
             {
