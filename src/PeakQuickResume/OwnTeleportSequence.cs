@@ -45,6 +45,18 @@ namespace PEAKQuickResume
         private OwnWakeUpEffect _wakeUpEffect;
         private OwnLoadingScreen _loadingScreen;
 
+        // Coop client-warp settle tracking (see TeleportClientsToHost's class remarks and
+        // the wait block near the end of RunSequence): TeleportClientsToHost used to be
+        // fired fully fire-and-forget, so the host's own "LOADING SAVE..." overlay could
+        // fade out and vanish while clients were still being warped/confirmed in the
+        // background - if a client then never arrived, the failure was only ever logged,
+        // with nothing shown on screen (session-reported: overlay disappearing mid-connect
+        // looked broken). _clientWarpSettled/_clientWarpAllArrived let RunSequence hold the
+        // overlay up until that background work has actually finished (or given up), and
+        // decide afterward whether to surface an error - see their use below
+        private bool _clientWarpSettled = true;
+        private bool _clientWarpAllArrived = true;
+
         public void Init(ManualLogSource log, PluginConfig cfg, OwnLoadEntryPoints entryPoints,
             OwnWakeUpEffect wakeUpEffect = null, OwnLoadingScreen loadingScreen = null)
         {
@@ -102,6 +114,11 @@ namespace PEAKQuickResume
 
         private IEnumerator RunSequence(OwnSaveData data, SaveTarget target, bool offline)
         {
+            // Reset per-run (this MonoBehaviour is reused across every Begin() call) -
+            // see the fields' own remarks
+            _clientWarpSettled = true;
+            _clientWarpAllArrived = true;
+
             Segment finalSegment = data.segment;
             Vector3 savedPos = new Vector3(data.posX, data.posY, data.posZ);
             float waitTime = Mathf.Max(0f, _cfg.OwnJumpLogicWaitTime.Value);
@@ -397,8 +414,18 @@ namespace PEAKQuickResume
             if (wakeUpEnabled)
             {
                 const float maxWaitForRestore = 10f;
+                // TeleportClientsToHost bounds itself (30s hard timeout, on top of its own
+                // resend budget), so this just has to comfortably outlast that - see
+                // _clientWarpSettled's remarks. Session-reported bug this fixes: the overlay
+                // used to fade out (and the sequence would finish) the instant
+                // inventoryRestoreDone flipped, even while clients were STILL being warped/
+                // confirmed in the background - so "waiting for clients to connect" visibly
+                // hid our own "LOADING SAVE..." screen well before that background work was
+                // actually done
+                const float maxWaitForClientWarp = 32f;
                 float elapsed = 0f;
-                while (!inventoryRestoreDone && elapsed < maxWaitForRestore)
+                while ((!inventoryRestoreDone && elapsed < maxWaitForRestore)
+                    || (!_clientWarpSettled && elapsed < maxWaitForClientWarp))
                 {
                     // Re-stamps data.lastPassedOut every frame (see OwnWakeUpEffect's class
                     // remarks): without this, the vanilla "not really hurt" auto-revive failsafe
@@ -446,6 +473,14 @@ namespace PEAKQuickResume
                 yield return _loadingScreen.FadeOut(_cfg.OwnLoadingScreenFadeTime.Value);
             if (wakeUpEnabled && _wakeUpEffect != null)
                 yield return _wakeUpEffect.Wake(_cfg.OwnWakeUpStandTime.Value);
+
+            // Only surfaced AFTER the overlay above is confirmed fully gone (FadeOut has
+            // already finished by this point) - deliberately not shown any earlier, so there's
+            // no chance of it appearing while "LOADING SAVE..." is still up or mid-fade (see
+            // _clientWarpAllArrived's remarks)
+            if (wakeUpEnabled && !_clientWarpAllArrived)
+                _entryPoints.Network?.MessageOverlay?.Show(MessagesLocalization.Get(MsgKey.PlayersTimedOut),
+                    new Color(1f, 0.5f, 0.5f, 1f), 4f);
 
             _entryPoints.MarkLoadedThisRound();
         }
@@ -535,11 +570,33 @@ namespace PEAKQuickResume
                 {
                     _log?.LogInfo($"OwnTeleportSequence: warped {Character.localCharacter.player.name} after {tried} attempts.");
                     yield return new WaitForSeconds(0.5f);
-                    if (!PhotonNetwork.OfflineMode) StartCoroutine(TeleportClientsToHost(warpPos));
+                    if (!PhotonNetwork.OfflineMode)
+                    {
+                        _clientWarpSettled = false;
+                        StartCoroutine(RunClientWarpAndSignal(warpPos));
+                    }
                     break;
                 }
 
                 for (int i = 0; i < framesToWait; i++) yield return null;
+            }
+        }
+
+        /// <summary>
+        /// Thin wrapper so RunSequence can hold the "LOADING SAVE..." overlay up until
+        /// <see cref="TeleportClientsToHost"/> has actually finished (settled either way -
+        /// see the wait block near the end of RunSequence), instead of that coroutine
+        /// running fully fire-and-forget the way its only call site above used to start it
+        /// </summary>
+        private IEnumerator RunClientWarpAndSignal(Vector3 hostPos)
+        {
+            try
+            {
+                yield return StartCoroutine(TeleportClientsToHost(hostPos));
+            }
+            finally
+            {
+                _clientWarpSettled = true;
             }
         }
 
@@ -591,6 +648,7 @@ namespace PEAKQuickResume
                 float startTime = Time.time;
                 float lastSend = Time.time;
                 int tried = 0;
+                bool arrived = false;
 
                 while (Time.time - startTime < 30f)
                 {
@@ -609,6 +667,7 @@ namespace PEAKQuickResume
                     if (Mathf.Abs(ch.Head.x - hostPos.x) < 6f && Mathf.Abs(ch.Head.z - hostPos.z) < 6f)
                     {
                         _log?.LogInfo($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} after {tried} attempts.");
+                        arrived = true;
                         break;
                     }
 
@@ -643,6 +702,17 @@ namespace PEAKQuickResume
                     }
 
                     for (int j = 0; j < framesToWait; j++) yield return null;
+                }
+
+                // Covers BOTH give-up paths: the explicit maxResends bail-out above (already
+                // logged there) and this loop's own 30s hard timeout expiring with the client
+                // never confirmed arrived (previously silent - see _clientWarpAllArrived's remarks)
+                if (!arrived)
+                {
+                    _clientWarpAllArrived = false;
+                    if (Time.time - startTime >= 30f)
+                        _log?.LogWarning($"OwnTeleportSequence.TeleportClientsToHost: gave up waiting for {ch.player.name} "
+                            + $"near {hostPos} after a 30s timeout.");
                 }
             }
         }

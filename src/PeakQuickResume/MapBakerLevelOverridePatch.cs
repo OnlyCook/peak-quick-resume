@@ -48,6 +48,10 @@ namespace PEAKQuickResume
             if (string.IsNullOrEmpty(selected) || selected == "null") return true;
 
             __result = selected;
+            // One-shot: consumed exactly once per resume we ourselves triggered. Without
+            // this, the override stays armed forever and silently hijacks the NEXT plain
+            // Boarding Pass start too (see SelectedLevel's remarks)
+            OwnLoadEntryPoints.ClearSelectedLevel();
             return false;
         }
     }

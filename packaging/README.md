@@ -6,7 +6,7 @@ Press **F7** anywhere and a **save picker** opens listing all your checkpoints f
 
 The newest save is preselected, so **pressing F7 twice will load your latest checkpoint**.
 
-<img width="1920" height="1080" alt="new-pause-menu-btns" src="https://raw.githubusercontent.com/OnlyCook/peak-quick-resume/refs/heads/main/packaging/in-game-menu-screenshot.png" />
+<img width="1569" height="588" alt="new-pause-menu-btns" src="https://raw.githubusercontent.com/OnlyCook/peak-quick-resume/refs/heads/main/packaging/in-game-menu-screenshot.png" />
 
 Works **after you die**, **from the Airport**, or **mid-run** (so no need to die first). Full **co-op** support: the host presses F7 and everyone is brought along and restored.
 

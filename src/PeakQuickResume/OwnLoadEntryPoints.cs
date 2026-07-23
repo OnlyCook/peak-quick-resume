@@ -37,8 +37,25 @@ namespace PEAKQuickResume
         /// last resolved, consumed by <see cref="MapBakerLevelOverridePatch"/> exactly
         /// like the checkpoint mod's own <c>selectedLevel</c> field. "null" (the string,
         /// not a null reference) mirrors the original's own sentinel for "nothing selected"
+        ///
+        /// Unlike the original (which keeps this live by re-resolving it on every
+        /// <c>BoardingPass.OnOpen</c>/<c>UpdateAscent</c> - a patch we deliberately don't
+        /// port, see <see cref="Plugin"/>'s class remarks), we only ever set this right
+        /// before OUR OWN <c>RunLauncher.StartRun</c> call in <see cref="ResumeOrchestrator"/>.
+        /// <see cref="MapBakerLevelOverridePatch"/> therefore clears it back to "null"
+        /// the instant it consumes a real value (one-shot), so a plain, manual Boarding
+        /// Pass start the player does themselves afterward is never silently redirected
+        /// onto a stale saved island with none of our restore/wake-up logic behind it
+        /// (session-reported: without this, a later normal start looked "broken" - forced
+        /// onto the old saved scene but spawned instantly standing at its default spawn,
+        /// with no position/inventory restore and no wake-up beat, since nothing but
+        /// <see cref="TryLoadPlayer"/> triggers those and that's never called for a
+        /// normal start)
         /// </summary>
         public static string SelectedLevel { get; private set; } = "null";
+
+        /// <summary>One-shot consume: called by <see cref="MapBakerLevelOverridePatch"/> right after reading a real (non-"null") value, see <see cref="SelectedLevel"/>'s remarks</summary>
+        internal static void ClearSelectedLevel() => SelectedLevel = "null";
 
         public bool CurrentlyLoading { get; private set; }
 
