@@ -1,3 +1,12 @@
+## 2.0.3
+
+> All your saves created in *v1.64.a* (or older) will (probably) load incorrect islands because the game's map pool was rotated.
+
+- Compatibility update with version **1.65.a** (23.07.2026): the mod was analyzed and tested, nothing seems to be broken as the game update didn't change anything for us.
+- Made it that you get a notification if you start the game while having a save of an outdated version which mentions the game updated and the map pool rotated.
+- Save files now store the game version (on save) and outdated save entries show their old version in the save picker to indicate that they will likely load a wrong island.
+- TEMPORARY: If you used this mod and have saved a run, you will see the version update notification when loading into the airport initially. All saves without a saved version will fallback to *v1.64.a* for now. These two will be cut in the next mod update and only exist for compatiblity reasons.
+
 ## 2.0.2
 
 - The save picker entries' content was reworked to show them ordered (and aligned) in a column-style to make it more organized and easier to spot the right save. Also summarized players for co-op saves to only show the count instead of all player names.

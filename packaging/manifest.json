@@ -1,6 +1,6 @@
 {
     "name": "PEAK_Quick_Resume",
-    "version_number": "2.0.2",
+    "version_number": "2.0.3",
     "website_url": "https://github.com/OnlyCook/peak-quick-resume",
     "description": "Autosaves on lighting a campfire. Press F7 to browse and load any saved campfire from anywhere",
     "dependencies": [
