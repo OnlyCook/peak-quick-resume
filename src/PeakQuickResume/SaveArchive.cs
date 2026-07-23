@@ -33,7 +33,25 @@ namespace PEAKQuickResume
         // alphabetically, NOT host-first, so we show the whole list.
         public string Players = "";
 
+        // Game version this save was written under (e.g. "1.65.a"), or "" if it
+        // predates that field entirely (see GameVersionCompat.FallbackVersion).
+        public string GameVersion = "";
+
         public string DifficultyLabel => SaveArchive.DifficultyLabel(Target);
+
+        // GameVersion as stored, or the flat fallback for saves that predate that
+        // field entirely (see GameVersionCompat.FallbackVersion for why a flat
+        // fallback instead of a timestamp-derived guess).
+        public string EffectiveGameVersion =>
+            string.IsNullOrEmpty(GameVersion) ? GameVersionCompat.FallbackVersion : GameVersion;
+
+        /// <summary>
+        /// True if this save was written under an older game version than the one
+        /// currently running - the map pool was very likely rotated since, so it may
+        /// load the wrong island (see GameVersionCompat, SavePicker's use of this for
+        /// the "vX.Y.z instead of playtime" row indicator, and Plugin's launch notice)
+        /// </summary>
+        public bool IsStaleVersion => GameVersionCompat.IsOlderThan(EffectiveGameVersion, GameVersionCompat.Current);
     }
 
     /// <summary>
@@ -602,6 +620,7 @@ namespace PEAKQuickResume
                 // Space is tight in the save picker, so show a player count instead of names.
                 if (m.playerNames != null && m.playerNames.Count > 0)
                     entry.Players = $"{m.playerNames.Count}P";
+                entry.GameVersion = m.gameVersion ?? "";
             }
             catch (Exception e)
             {
@@ -637,6 +656,7 @@ namespace PEAKQuickResume
             public float timePlayed;
             public List<string> biome_names;
             public List<string> playerNames;
+            public string gameVersion;
         }
     }
 }

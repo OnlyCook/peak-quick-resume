@@ -106,6 +106,12 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> EnableDebugLogging;
         public readonly ConfigEntry<bool> DebugDisableLoadingScreen;
 
+        // Internal bookkeeping, not meant to be hand-edited: the game version this mod
+        // last saw at launch (see Plugin's game-update notice / GameVersionCompat).
+        // Compared against Application.version on every launch to detect an update;
+        // rewritten every launch once evaluated, regardless of outcome
+        public readonly ConfigEntry<string> LastCheckedGameVersion;
+
         public PluginConfig(ConfigFile cfg)
         {
             // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig (the in-game mod
@@ -400,6 +406,10 @@ namespace PEAKQuickResume
                 + "sequence - the wake-up animation itself, and every other Wake-Up setting above, "
                 + "still apply exactly as configured. Useful for debugging without the screen "
                 + "hiding what's happening underneath.");
+
+            LastCheckedGameVersion = cfg.Bind("Internal", "last-checked-game-version", "",
+                "Internal bookkeeping - do not edit by hand. The game version this mod last saw at "
+                + "launch, used to show a one-time notice after a game update rotates the map pool.");
         }
     }
 }

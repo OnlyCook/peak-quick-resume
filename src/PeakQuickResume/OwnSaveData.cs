@@ -120,6 +120,12 @@ namespace PEAKQuickResume
         // props with no per-player binding), so they're kept
         public List<OwnSavedDeployableState> portableStoves;
         public List<OwnSavedDeployableState> scoutCannons;
+
+        // Own addition, no decompile counterpart: UnityEngine.Application.version at
+        // the moment this file was written (e.g. "1.65.a"). Lets SaveArchive/SavePicker
+        // flag a save as possibly stale after a game update rotates the map pool (see
+        // GameVersionCompat). Null/missing on any save predating this feature.
+        public string gameVersion;
     }
 
     /// <summary>Decompile: PEAK_Checkpoint_Save.Plugin.SavedItemState (line 434)</summary>

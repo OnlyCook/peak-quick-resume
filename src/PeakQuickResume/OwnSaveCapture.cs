@@ -188,6 +188,7 @@ namespace PEAKQuickResume
                         portableStoves = portableStoves,
                         scoutCannons = scoutCannons,
                         extModsPeakapaloozaPEAKTOBEACH = false,
+                        gameVersion = GameVersionCompat.Current,
                     };
 
                     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -319,6 +320,7 @@ namespace PEAKQuickResume
                     portableStoves = portableStoves,
                     scoutCannons = scoutCannons,
                     extModsPeakapaloozaPEAKTOBEACH = false,
+                    gameVersion = GameVersionCompat.Current,
                 };
 
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);

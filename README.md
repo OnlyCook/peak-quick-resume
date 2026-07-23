@@ -39,6 +39,7 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 ## Notes
 
 - **Host-only** in co-op. It works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons (see *achievement restoring* above).
+- If the game updates (version *number* increases), the map pool is (probably) also rotated which will make **all your save files load incorrect islands**. This happens once every ~6 weeks.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
 - Translations were done by AI, so if something is off in your language you are free to contact me (see below).
 

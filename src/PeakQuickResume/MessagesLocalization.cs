@@ -32,6 +32,7 @@ namespace PEAKQuickResume
         LoadingSaveScreen, // ALL CAPS, base text for OwnLoadingScreen's cycling "LOADING SAVE..." caption
         CheckpointModStillInstalled,       // full text, shown on the (persistent) help screen
         CheckpointModStillInstalledShort,  // {0} = help key; the brief one-time popup, points at the help screen
+        GameUpdatedSavesMayBeWrong,        // {0} = new game version; one-time notice, log line AND on-screen popup use the exact same text
     }
 
     internal static class MessagesLocalization
@@ -402,6 +403,13 @@ namespace PEAKQuickResume
                 "PEAK Checkpoint Save가 아직 설치되어 있지만 더 이상 필요하지 않습니다. 무해하지만 저장과 로그가 중복됩니다. 자세한 내용은 {0}을(를) 누르세요.",
                 "PEAK Checkpoint Save jest nadal zainstalowany i już niepotrzebny. Spodziewaj się nieszkodliwych zduplikowanych zapisów i logów. Naciśnij {0}, aby zobaczyć szczegóły.",
                 "PEAK Checkpoint Save hâlâ yüklü ve artık gerekli değil. Zararsız, yinelenen kayıtlar ve loglar görebilirsiniz. Ayrıntılar için {0} tuşuna basın.",
+            },
+            // English only for now (see the conversation this was decided in) - same
+            // exact text used for both the log line and the on-screen popup, deliberately
+            // kept short. {0} = the new game version (e.g. "1.65.a")
+            [MsgKey.GameUpdatedSavesMayBeWrong] = new[]
+            {
+                "Game updated to {0}: your existing save(s) may now LOAD THE WRONG ISLAND as the map pool was likely rotated by the update.",
             },
         };
 

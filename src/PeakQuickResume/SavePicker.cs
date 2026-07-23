@@ -723,7 +723,13 @@ namespace PEAKQuickResume
             // reached, not BiomesSummary - see the comment on SaveArchive.CampfireLabel
             string biome = string.IsNullOrEmpty(e.CampfireName) ? "—" : SaveArchive.CampfireLabel(e.CampfireName);
             string date = string.IsNullOrEmpty(e.SaveDate) ? e.SortTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : e.SaveDate;
-            string playtime = FormatPlaytime(e.Playtime);
+            // A stale save (written under an older game version - map pool very likely
+            // rotated since) swaps the usual "Xh Ym played" text for the version it was
+            // actually written under instead, formatted the same "vX.Y.z" way as the
+            // game's own top-left corner version label. No new UI element, no extra
+            // column width to budget for any language - deliberately reuses this slot
+            // instead of adding an icon precisely so it can't overflow the row layout
+            string playtime = e.IsStaleVersion ? GameVersionCompat.Display(e.EffectiveGameVersion) : FormatPlaytime(e.Playtime);
             // Co-op: show everyone who played this run, tacked onto the last column
             // (rather than as its own column) since it's optional/co-op-only
             if (!_offline && !string.IsNullOrEmpty(e.Players))

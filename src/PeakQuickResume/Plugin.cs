@@ -46,6 +46,11 @@ namespace PEAKQuickResume
         private const string CheckpointSaveGuid = "PEAK_Checkpoint_Save";
         private bool _dupWarningShown;
 
+        // One-time (per session) game-update notice - see Update() and GameVersionCompat.
+        // Independent of _dupWarningShown above: unrelated condition, own popup, must not
+        // be skipped just because that one already fired this session (or vice versa)
+        private bool _versionCheckDone;
+
         /// <summary>
         /// Whether PEAK Checkpoint Save is loaded alongside us. Queried lazily (NOT cached at
         /// Awake): with the soft dependency gone there's no load-order guarantee, and
@@ -197,6 +202,40 @@ namespace PEAKQuickResume
                     _messageOverlay.Show(
                         MessagesLocalization.Get(MsgKey.CheckpointModStillInstalledShort, _cfg.HelpKey.Value.ToString()),
                         new Color(1f, 0.8f, 0.4f, 1f), 7f);
+                }
+            }
+
+            // One-time (per version bump) game-update notice: only actually shown if at
+            // least one of our own archived saves predates the currently running game
+            // version (see ArchivedSave.IsStaleVersion / GameVersionCompat) - a save made
+            // right after this exact launch isn't affected, so there's nothing to warn
+            // about for a player who never saved on an older version. Deferred to
+            // Airport/Level for the same reasons as the check above (overlay on-screen,
+            // not over the title)
+            if (!_versionCheckDone && _messageOverlay != null
+                && (RunLauncher.InAirport || RunLauncher.InLevel))
+            {
+                _versionCheckDone = true;
+                string current = GameVersionCompat.Current;
+                if (_cfg.LastCheckedGameVersion.Value != current)
+                {
+                    bool anyStale = false;
+                    foreach (ArchivedSave save in SaveArchive.List(offline: true, Logger)) anyStale |= save.IsStaleVersion;
+                    foreach (ArchivedSave save in SaveArchive.List(offline: false, Logger)) anyStale |= save.IsStaleVersion;
+
+                    if (anyStale)
+                    {
+                        string msg = MessagesLocalization.Get(MsgKey.GameUpdatedSavesMayBeWrong, current);
+                        Logger.LogWarning(msg);
+                        // Longer than the "still installed" popup above (7s) - more
+                        // important (loading the wrong island is an actual gameplay
+                        // problem, not just a cosmetic duplicate-log heads-up)
+                        _messageOverlay.Show(msg, new Color(1f, 0.8f, 0.4f, 1f), 12f);
+                    }
+
+                    // Rewritten regardless of anyStale, so a bump that affects nobody's
+                    // saves still updates the baseline and isn't re-evaluated forever
+                    _cfg.LastCheckedGameVersion.Value = current;
                 }
             }
 
