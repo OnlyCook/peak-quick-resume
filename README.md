@@ -61,6 +61,7 @@ If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/Mod
 - **help-key**: the key to open the help menu (default **F4**).
 - **allow-mid-game**: allow resuming while still alive (default on).
 - **panel-opacity**: how see-through the picker's background panel is (0 = fully see-through; 1 = fully opaque, default).
+- **minimal-picker-ui**: show save picker (and help screen) in a UI without effects or animations, opens faster.
 - **Pause-Menu**: disable/re-enable any of the 3 added QoL pause menu buttons, and optionally enable `move-rebind-controls-to-settings` to move the 'Rebind Controls' button away from the pause menu.
 - **Timing**: advanced settle/timeout values; raise `coop-airport-settle` if a client occasionally gets left behind on a slow connection.
 - **Teleport**: advanced settings for the restore itself (inventory/afflictions/campfire/... reset/time of day toggles, retry timing). Rarely needs touching.
