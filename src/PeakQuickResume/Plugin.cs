@@ -135,6 +135,10 @@ namespace PEAKQuickResume
             // Our own MapBaker.GetLevel prefix (forces the saved island - see MapBakerLevelOverridePatch.cs)
             MapBakerLevelOverridePatch.Apply(harmony, Logger);
 
+            // Third-party mod compat, no-op if not installed (see TerrainRandomiserCompat.cs):
+            // stops Snosz's TerrainRandomiser from re-randomizing the terrain on an F7 load
+            TerrainRandomiserCompat.Apply(harmony, Logger);
+
             // Our own save-capture port, the canonical save writer (see OwnSaveCapture.cs)
             CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, _ownNetwork, Logger);
 

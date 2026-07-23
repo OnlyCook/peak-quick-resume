@@ -25,6 +25,17 @@ namespace PEAKQuickResume
     /// only ever force to `true` anyway would be dead weight. Revisit only if this ever
     /// needs to be independently toggleable (e.g. when M8 repoints the boarding-pass
     /// island-toggle button onto our own config instead of the checkpoint mod's)
+    ///
+    /// Runs at <c>Priority.Last</c> deliberately (compat, no decompile counterpart):
+    /// Harmony runs every prefix registered on a method regardless of another prefix's
+    /// return value, and whichever one runs LAST wins any ref/out parameter it writes
+    /// (here, <c>__result</c>). smckeen's MorePeak also patches <c>MapBaker.GetLevel</c>
+    /// with a Prefix (default Priority.Normal) that - unless its "SelectedLevel" config
+    /// is explicitly set to "Daily" - unconditionally overwrites <c>__result</c> with a
+    /// random level choice, with no awareness of an in-progress resume. Running last
+    /// guarantees OUR forced saved-scene write is the one that actually sticks
+    /// regardless of whether MorePeak (or any other mod prefixing this same method) is
+    /// installed
     /// </summary>
     public static class MapBakerLevelOverridePatch
     {
@@ -33,7 +44,8 @@ namespace PEAKQuickResume
             try
             {
                 var target = AccessTools.Method(typeof(MapBaker), "GetLevel");
-                harmony.Patch(target, prefix: new HarmonyMethod(typeof(MapBakerLevelOverridePatch), nameof(Prefix)));
+                var prefix = new HarmonyMethod(typeof(MapBakerLevelOverridePatch), nameof(Prefix)) { priority = Priority.Last };
+                harmony.Patch(target, prefix: prefix);
                 log.LogInfo("MapBakerLevelOverridePatch: patched MapBaker.GetLevel.");
             }
             catch (Exception e)

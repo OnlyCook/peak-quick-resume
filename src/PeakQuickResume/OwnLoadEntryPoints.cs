@@ -57,6 +57,31 @@ namespace PEAKQuickResume
         /// <summary>One-shot consume: called by <see cref="MapBakerLevelOverridePatch"/> right after reading a real (non-"null") value, see <see cref="SelectedLevel"/>'s remarks</summary>
         internal static void ClearSelectedLevel() => SelectedLevel = "null";
 
+        /// <summary>
+        /// Armed on every peer (via <c>OwnNetwork.ArmTerrainRandomizerSuppressionAll</c>,
+        /// RpcTarget.All so the host arms itself too, same reasoning as
+        /// <c>RequestFalldamageProtectionAll</c>) right before <c>RunLauncher.StartRun</c>
+        /// for an F7/quick-resume load. Consumed one-shot by
+        /// <see cref="TerrainRandomiserCompat"/>'s <c>MapHandler.InitializeMap</c> prefix,
+        /// which fires on every peer as the level scene loads - this is what tells it
+        /// "this load is OUR resume, not a fresh Boarding Pass start", so it knows to
+        /// suppress that mod's terrain regeneration for this one load only.
+        ///
+        /// Survives longer than <see cref="SelectedLevel"/> deliberately: that one gets
+        /// consumed by <c>MapBaker.GetLevel</c>, which runs well BEFORE the scene (and
+        /// thus <c>MapHandler.InitializeMap</c>) actually loads
+        /// </summary>
+        private static bool _suppressExternalTerrainRandomizer;
+
+        internal static void ArmSuppressExternalTerrainRandomizerOnce() => _suppressExternalTerrainRandomizer = true;
+
+        internal static bool ConsumeSuppressExternalTerrainRandomizerOnce()
+        {
+            bool value = _suppressExternalTerrainRandomizer;
+            _suppressExternalTerrainRandomizer = false;
+            return value;
+        }
+
         public bool CurrentlyLoading { get; private set; }
 
         /// <summary>

@@ -201,6 +201,12 @@ namespace PEAKQuickResume
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "loading to finish before StartRun");
             if (!_lastWaitOk) { Fail("Timed out waiting for loading to clear before StartRun"); yield break; }
 
+            // Arm terrain-randomizer suppression on every peer (host included) BEFORE the
+            // level actually loads - MapHandler.InitializeMap (what TerrainRandomiserCompat
+            // patches) runs the instant the scene loads, on each peer's own machine, so this
+            // has to land before StartRun's networked scene load, not after it
+            _ownLoadEntryPoints.Network?.ArmTerrainRandomizerSuppressionAll();
+
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
             _log.LogInfo("[stage] StartRun invoked; waiting for the level to load.");
 

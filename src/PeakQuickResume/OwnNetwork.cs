@@ -376,6 +376,22 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Own addition, no decompile counterpart (no third-party terrain randomizer
+        /// existed when the checkpoint mod was written): arms
+        /// <see cref="OwnLoadEntryPoints.ArmSuppressExternalTerrainRandomizerOnce"/> on
+        /// EVERY peer right before an F7/quick-resume <c>RunLauncher.StartRun</c> call.
+        /// RpcTarget.All (not Others) so the host arms itself too, same reasoning as
+        /// <see cref="RequestFalldamageProtectionAll"/>: <c>MapHandler.InitializeMap</c>
+        /// (what <see cref="TerrainRandomiserCompat"/> patches) runs locally on every
+        /// peer's own machine as the level scene loads there, not just the host's
+        /// </summary>
+        public void ArmTerrainRandomizerSuppressionAll()
+        {
+            try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_ArmTerrainRandomizerSuppression), RpcTarget.All); }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.ArmTerrainRandomizerSuppressionAll failed: {e.Message}"); }
+        }
+
+        /// <summary>
         /// Own addition (no decompile counterpart - see OwnSaveData.dayCount remarks):
         /// unlike timeOfDay, DayNightManager.dayCount has no vanilla RPC keeping it in
         /// sync across clients, so restoring it needs an explicit broadcast of our own.
@@ -565,6 +581,13 @@ namespace PEAKQuickResume
         public void RPC_RequestFalldamageProtection(int seconds)
         {
             OwnFallDamageProtection.Activate(seconds);
+        }
+
+        /// <summary>Own addition - see <see cref="OwnNetwork.ArmTerrainRandomizerSuppressionAll"/></summary>
+        [PunRPC]
+        public void RPC_ArmTerrainRandomizerSuppression()
+        {
+            OwnLoadEntryPoints.ArmSuppressExternalTerrainRandomizerOnce();
         }
 
         /// <summary>
