@@ -1,5 +1,10 @@
 ## 2.1.0
 
+- **Saves are now stored in one place only.** Previously a save was written into the old `Checkpoint_Save` folder and then copied into this mod's own archive, and loading a checkpoint copied it back again. That copying is now gone and everything is happening directly inside the `QuickResume/Archive` folder.
+- **Changed co-op save structure**: saves are now split by who owns what. The host's save file holds everything about the world (the island and its biomes, items on the ground, etc.), while each client's save file only holds that client's own stuff (inventory, status effects, etc.). Although there is still full backward compatibility with *settingsVersion 6*, so all your old saves will still work as if nothing changed.
+- Fixed the same checkpoint showing up as several separate entries in the save picker (happened in co-op whenever the picker couldn't work out which of the save files was the host's).
+- Fixed a co-op client occasionally being restored from a near-miss save file belonging to a different checkpoint than the one actually being loaded.
+- Deleting a save in the picker now deletes that whole checkpoint, meaning the host's file and every client's file from the same save, instead of leaving the clients' ones behind.
 - Fixed restarting (as the host) while a resume was still in progress sending the host onto the daily island instead of the loaded save.
 - Fixed co-op clients occasionally getting stuck on an infinite loading screen. This happened especially for clients on slower machines.
 - Fixed cases where if only the host had this mod installed it would fail to resume entirely.
