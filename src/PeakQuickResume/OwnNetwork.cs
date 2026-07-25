@@ -257,6 +257,19 @@ namespace PEAKQuickResume
             }
         }
 
+        /// <summary>
+        /// True once this userId has reported running Quick Resume at all (any version -
+        /// see OwnInventoryRestore's held-item restore for the one place this actually
+        /// gates something, not just a diagnostic). Master-client side only; always false
+        /// offline (nothing to report). No grace window here unlike
+        /// CheckReadyStatusForPlayers/AllClientsPresentationDone: this is only ever
+        /// consulted from OwnInventoryRestore.RestoreAll, which runs well after the coop
+        /// ready-status wait already succeeded - by then a real Quick Resume client's
+        /// version report (sent with no delay, unlike the 5s-delayed ready-status RPC) has
+        /// had ample time to arrive already
+        /// </summary>
+        public bool PlayerReportedMod(string userId) => _playerModVersions.ContainsKey(userId);
+
         // Called on the RECEIVING client's machine by OwnNetworkRpc.RPC_ClientPresentation
         // (sent by the host, see ClientPresentationOthers) - mirrors the host's own local
         // presentation using this machine's own WakeUpEffect/LoadingScreen instances

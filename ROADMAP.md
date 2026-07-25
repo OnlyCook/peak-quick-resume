@@ -2207,6 +2207,19 @@ Design confirmed from decompile: networked scene loads propagate to clients via
     itself is easy to soft-lock this way independent of any mod (e.g. starting a run while
     a joining friend is still mid-load can soft-lock that friend on a plain "LOADING..."
     screen), which fits this being an upstream fragility rather than a bug unique to our
+    orchestration
+  - **CONFIRMED upstream/vanilla, not us** (follow-up session, host-only install: this mod
+    on the host, a COMPLETELY VANILLA client, no mods at all): reproduced the EXACT same
+    "left the expedition" / "just left" / "No reconnect record found" pattern, immediately
+    preceded by the exact same `SyncInventoryRPC`/`OnPickupAccepted`/`ReceivePluginsFromHostRPC`
+    "PhotonView does not exist ... View was/is ours" burst, on a client running zero mods.
+    Since a stock vanilla client can't be affected by anything in OUR code, this proves the
+    false "host disconnected" detection is a vanilla PEAK/Photon bug that our Restart flow
+    can still land on by chance (by creating the same "burst of vanilla inventory RPCs
+    immediately followed by a scene teardown" shape), not something introduced by this mod
+    and not something fixable at this mod's level. `Timing.post-orchestration-cooldown`
+    remains the only available lever (more real margin for that RPC backlog to drain) - not
+    raised past the default yet since there's no reliable repro to verify a change against
     own orchestration.
   - **If it recurs:** get the client's own Unity `Player.log` (not just BepInEx's
     `LogOutput.log`), `grep -n "left the expedition\|just left\|No reconnect\|PhotonView
