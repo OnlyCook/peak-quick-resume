@@ -67,9 +67,8 @@ namespace PEAKQuickResume
         // Restorations decided the instant a watched campfire lights, but not yet
         // written to disk: our own autosave only runs AFTER Interact_CastFinished (and
         // the Light_Rpc call it makes) fully returns, so there's no save file to patch
-        // yet at the point we make this decision. SaveArchive.PatchCanonicalFileForUser
-        // (called from OwnSaveCapture right after the file actually exists) is what
-        // applies these
+        // yet at the point we make this decision. ApplyPendingRestores (called from
+        // OwnSaveCapture right after the files actually exist) is what applies these
         private class PendingRestore
         {
             public string UserId;
@@ -162,10 +161,9 @@ namespace PEAKQuickResume
 
                     // Lighting a campfire only ever happens mid-run, so the currently
                     // active run (whatever RunLauncher/Ascents report right now) IS the
-                    // one the checkpoint mod's own autosave is about to write to - this
-                    // has to match at the exact moment of the save, see
-                    // SaveArchive.PatchCanonicalFileForUser for why guessing wrong here
-                    // silently patches an unrelated save file instead
+                    // one our own autosave is about to write to - this has to match at the
+                    // exact moment of the save, see SaveArchive.PatchSaveFile for why
+                    // guessing wrong here silently patches an unrelated save file instead
                     SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
 
                     _pending.Add(new PendingRestore
@@ -190,17 +188,22 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Applies any pending backpack restorations queued by OnLightRpc to the
-        /// canonical save file(s) our own save just wrote for this category, BEFORE
-        /// SaveArchive.Sync copies them into the archive. Called from OwnSaveCapture right
-        /// after the save is written; a no-op when nothing is pending
+        /// Applies any pending backpack restorations queued by OnLightRpc to the save
+        /// file(s) <see cref="OwnSaveCapture"/> just wrote for save event
+        /// <paramref name="stamp"/>. Called from OwnSaveCapture right after the save is
+        /// written; a no-op when nothing is pending
+        ///
+        /// The file is addressed by its exact path (run target + owning userId + this
+        /// event's stamp), never searched for - a backpack restore landing in the wrong
+        /// save file would silently hand someone another run's items
         /// </summary>
-        public static void ApplyPendingRestores(bool offline, ManualLogSource log)
+        public static void ApplyPendingRestores(bool offline, string stamp, ManualLogSource log)
         {
             if (_pending.Count == 0) return;
             foreach (var restore in _pending)
             {
-                bool applied = SaveArchive.PatchCanonicalFileForUser(offline, restore.Target, restore.UserId, json =>
+                string path = OwnSavePaths.For(restore.Target, offline, restore.UserId, stamp);
+                bool applied = SaveArchive.PatchSaveFile(path, json =>
                 {
                     json["hasBackpack"] = true;
                     json["backpackItemStates"] = restore.BackpackItemStates;

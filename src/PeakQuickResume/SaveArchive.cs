@@ -3,25 +3,28 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using BepInEx;
 using BepInEx.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Photon.Pun;
 using Zorro.Core;
 
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// One archived checkpoint save the player can pick from the F7 menu
-    /// Backed by a copy of a checkpoint-mod save file living in our own folder
+    /// One archived checkpoint save the player can pick from the F7 menu. In co-op this
+    /// is always the HOST's file for a save event - the one carrying the level/world
+    /// state (see <see cref="SaveArchive.List"/>); the connected clients' own files from
+    /// that same event are its siblings, resolved into a <see cref="SaveSelection"/> at
+    /// load time
     /// </summary>
     public class ArchivedSave
     {
-        public string FilePath; // full path to the archived .json in our folder
+        public string FilePath; // full path to the .json in our store
         public bool Offline; // category: offline vs coop
         public SaveTarget Target; // difficulty / custom-run this save belongs to
-        public DateTime SortTime; // parsed from the archive filename (source mtime)
+        public string Stamp; // the save event's identity, from the filename (see OwnSavePaths)
+        public string OwnerUserId = ""; // whose file this is (co-op only; "" offline)
+        public DateTime SortTime; // parsed from Stamp
         public bool Starred; // pinned to the top of the F7 picker; can't be deleted while true
 
         // Display metadata (read from the save's JSON; best-effort)
@@ -29,9 +32,22 @@ namespace PEAKQuickResume
         public string CampfireName = "";
         public float Playtime;
         public string BiomesSummary = "";
-        // Everyone who played this run (co-op). The checkpoint mod stores playerNames
-        // alphabetically, NOT host-first, so we show the whole list.
+        // Everyone who played this run (co-op). Player names are stored alphabetically,
+        // NOT host-first, so we show the whole list.
         public string Players = "";
+
+        // The scene this save's level state belongs to. Only ever written into the file
+        // that carries world state (the host's, or the single offline file) - a co-op
+        // CLIENT's file has none, which is what lets List() tell the two apart even when
+        // the local Photon userId isn't resolvable
+        public string SceneName = "";
+
+        // Save-format version. >= SaveArchive.ArchiveNativeSettingsVersion means this
+        // event was written straight into the archive with a shared per-event stamp, so
+        // its siblings can be matched exactly; below that it's a legacy save copied in
+        // from the old canonical-file layout, whose siblings need the fuzzy timestamp
+        // match instead (see SaveSelection.Build)
+        public int SettingsVersion;
 
         // Game version this save was written under (e.g. "1.65.a"), or "" if it
         // predates that field entirely (see GameVersionCompat.FallbackVersion).
@@ -55,99 +71,244 @@ namespace PEAKQuickResume
     }
 
     /// <summary>
-    /// Keeps a growing archive of every checkpoint save, so the player can browse and
-    /// load ANY past checkpoint (not just the single latest one the checkpoint mod
-    /// keeps). We never modify the checkpoint mod or its files: on each save we copy
-    /// its file into <c>BepInEx/plugins/QuickResume/Archive</c>; to load an older one
-    /// we copy it back over the mod's canonical file and then run the normal resume
+    /// Everything one load needs to know about which files to read, resolved ONCE up
+    /// front by <see cref="SaveArchive.BuildSelection"/> and threaded through the whole
+    /// load path (see <see cref="OwnLoadEntryPoints.TryLoadPlayer"/>)
     ///
-    /// This deliberately sidesteps the checkpoint mod's own cleanup, it deletes files
-    /// matching <c>peak_save_{ascent}_*</c> in its folders on save/load, by keeping our
-    /// copies in a separate directory it never touches
+    /// The split this type encodes is the whole point of it, and is deliberately
+    /// enforced by having exactly one path for each half:
+    ///  - <see cref="HostFilePath"/> is the ONLY file the level/world restore ever
+    ///    reads: which island and segment to load, where to teleport to, time of day,
+    ///    day counter, ground items, luggage, the ancient statue, deployables
+    ///  - <see cref="TryGetPlayerFile"/> gives each connected player THEIR OWN file, the
+    ///    only place per-player state is ever read from: inventory, backpack, held item,
+    ///    afflictions, extra stamina, skeleton flag, thorns, ticks, achievement progress
     ///
-    /// Archived saves are split by category into <c>Archive/Offline</c> and
-    /// <c>Archive/Coop</c>. Filename: <c>{canonicalStem}__{yyyyMMdd_HHmmss_fff}.json</c>,
-    /// e.g. <c>peak_save_2_offline__20260702_140311_204.json</c>. The stem carries the
-    /// difficulty/custom + category; the timestamp is the source file's write time and
-    /// drives both sort order and idempotent de-duplication
+    /// A player with no file in this save event simply isn't in the map, and every
+    /// per-player restore step skips them - their current in-game state is left exactly
+    /// as it is rather than being overwritten from some other run's file
+    /// </summary>
+    public class SaveSelection
+    {
+        public bool Offline;
+        public SaveTarget Target;
+        public string Stamp = "";
+        public string HostFilePath = "";
+
+        // userId -> that player's own file within this save event. Empty offline (the
+        // single file is both host and player file, see TryGetPlayerFile)
+        public readonly Dictionary<string, string> PlayerFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The file to read <paramref name="userId"/>'s own per-player state from.
+        /// Offline always resolves to the single save file; co-op resolves only to a
+        /// file from THIS save event, never a near-miss from another one
+        /// </summary>
+        public bool TryGetPlayerFile(string userId, out string path)
+        {
+            if (Offline)
+            {
+                path = HostFilePath;
+                return !string.IsNullOrEmpty(path);
+            }
+            return PlayerFiles.TryGetValue(userId ?? "", out path);
+        }
+    }
+
+    /// <summary>
+    /// The mod's save store: every checkpoint ever written, browsable from the F7 menu,
+    /// living in <c>BepInEx/plugins/QuickResume/Archive</c> split by category into
+    /// <c>Offline</c> and <c>Coop</c>
+    ///
+    /// This is the ONE store - there is no separate "canonical" current
+    /// save file, and dominik0207's "PEAK Checkpoint Save" folder is never read, written
+    /// or migrated from (see <see cref="OwnSavePaths"/> for the full reasoning).
+    /// <see cref="OwnSaveCapture"/> writes save events directly in here, and loading a
+    /// checkpoint just reads the files back - nothing is ever copied over anything else,
+    /// which is what makes a hand-edited save safe: its contents are read as-is, and its
+    /// identity comes from its filename, not its modification time
+    ///
+    /// Filename: <c>{stem}__{stamp}.json</c>, e.g.
+    /// <c>peak_save_2_offline__20260702_140311_204.json</c>. The stem carries the
+    /// difficulty/custom + category (+ the owning userId in co-op); the stamp identifies
+    /// the save EVENT and is shared by every player's file from that same autosave
     /// </summary>
     public static class SaveArchive
     {
-        private const string TsFormat = "yyyyMMdd_HHmmss_fff";
-        private const string Sep = "__";
+        /// <summary>
+        /// <c>settingsVersion</c> written by the archive-native save path. Saves at or
+        /// above this were written with a shared per-event stamp, so their co-op siblings
+        /// match exactly; anything below is a legacy save copied in from the old
+        /// canonical-file layout, where each player's file got its own write-time stamp a
+        /// few milliseconds apart and siblings can only be matched fuzzily
+        /// </summary>
+        public const int ArchiveNativeSettingsVersion = 7;
 
         private static bool _migrated;
 
-        private static string CanonicalBase => Path.Combine(Paths.PluginPath, "Checkpoint_Save");
-        private static string CanonicalCoop => Path.Combine(CanonicalBase, "Coop");
-        private static string ArchiveRoot => Path.Combine(Paths.PluginPath, "QuickResume", "Archive");
-        private static string ArchiveDir(bool offline) => Path.Combine(ArchiveRoot, offline ? "Offline" : "Coop");
-
         // Starred saves, persisted as a flat JSON array of archive filenames (unique
         // across both categories: offline stems always end "_offline", coop stems
-        // never do, see List() below). One shared file rather than one per category,
-        // there's no per-category state here worth splitting. Loaded lazily, cached in
-        // memory for the rest of the session, written back to disk on every change
-        private static string StarredFile => Path.Combine(ArchiveRoot, "starred.json");
+        // never do). One shared file rather than one per category, there's no
+        // per-category state here worth splitting. Loaded lazily, cached in memory for
+        // the rest of the session, written back to disk on every change
+        private static string StarredFile => Path.Combine(OwnSavePaths.ArchiveRoot, "starred.json");
         private static HashSet<string> _starredCache;
 
-        private static string CanonicalDir(bool offline) => offline ? CanonicalBase : CanonicalCoop;
+        /// <summary>
+        /// How far apart two LEGACY files may be and still count as the same save event.
+        /// Only ever consulted for saves below <see cref="ArchiveNativeSettingsVersion"/>
+        /// (see <see cref="BuildSelection"/>): those were written one-file-at-a-time into
+        /// the old canonical layout and copied in here with each file's own write time,
+        /// so a co-op event's files land a few milliseconds - not zero - apart. The window
+        /// is wide enough to absorb that jitter and far too narrow to ever span two
+        /// different runs. Archive-native saves need none of this: every file in an event
+        /// carries the same stamp by construction
+        /// </summary>
+        private static readonly TimeSpan MaxLegacySiblingDelta = TimeSpan.FromMinutes(2);
 
         /// <summary>
-        /// Copy any checkpoint-mod save file for the given category that isn't archived
-        /// yet into our archive. Idempotent: a file whose write-time already has a
-        /// matching archive entry is skipped. Call this after every save (and lazily
-        /// before showing the picker, to also pick up saves made before this mod)
+        /// All archived saves for the given category (offline vs coop), newest first -
+        /// exactly ONE row per save event
+        ///
+        /// In co-op an event has one file per player, but only the host's carries the
+        /// level/world state a load actually resumes from, so that's the one shown (and
+        /// the one <see cref="BuildSelection"/> resolves siblings around). Earlier
+        /// versions matched the host's file against the live Photon userId and fell back
+        /// to listing EVERY player's file when that wasn't resolvable (browsing outside a
+        /// room), which showed the same checkpoint several times over and let a client's
+        /// file be loaded as if it were the host's. Grouping by event stamp instead makes
+        /// one row per event structural rather than something we have to get right
         /// </summary>
-        public static void Sync(bool offline, ManualLogSource log)
+        public static List<ArchivedSave> List(bool offline, ManualLogSource log)
         {
+            var result = new List<ArchivedSave>();
             try
             {
                 MigrateLegacyFlatArchive(log);
 
-                string src = CanonicalDir(offline);
-                if (!Directory.Exists(src)) return;
-                string archiveDir = ArchiveDir(offline);
-                Directory.CreateDirectory(archiveDir);
+                string archiveDir = OwnSavePaths.ArchiveDir(offline);
+                if (!Directory.Exists(archiveDir)) return result;
 
-                foreach (string file in Directory.GetFiles(src, "peak_save_*.json"))
+                string localUserId = offline ? "" : OwnSavePaths.LocalUserId();
+
+                // Keep only host files, then collapse by event so one event can never
+                // contribute two rows even if the filter above lets a pair through (a
+                // legacy event browsed outside a room, say)
+                //
+                // Keyed by run target AND stamp, not the stamp alone: two LEGACY files are
+                // only siblings if they belong to the same run, and their stamps are
+                // independent file write times rather than a shared event id. Two
+                // different ascents saved in the same millisecond is unlikely but not
+                // impossible, and keying on the stamp alone would silently hide one of
+                // them. Archive-native events share both fields, so this splits nothing
+                var byEvent = new Dictionary<(bool custom, int ascent, string stamp), ArchivedSave>();
+                foreach (ArchivedSave entry in ReadAll(archiveDir, offline, log))
                 {
-                    string stem = Path.GetFileNameWithoutExtension(file);
-                    if (!SaveDiscovery.TryParseStem(stem, offline, out _))
-                        continue; // legacy / unrecognized name, leave it alone
+                    if (!IsHostFile(entry, offline, localUserId)) continue;
 
-                    DateTime mt = File.GetLastWriteTimeUtc(file);
-                    string dest = Path.Combine(archiveDir,
-                        stem + Sep + mt.ToString(TsFormat, CultureInfo.InvariantCulture) + ".json");
-
-                    if (File.Exists(dest)) continue; // already archived this exact save
-                    File.Copy(file, dest, overwrite: false);
-                    log?.LogInfo($"[archive] Archived '{Path.GetFileName(file)}' -> '{Path.GetFileName(dest)}'.");
+                    var key = (entry.Target.IsCustom, entry.Target.IsCustom ? 0 : entry.Target.Ascent, entry.Stamp);
+                    if (byEvent.TryGetValue(key, out ArchivedSave existing)
+                        && string.CompareOrdinal(existing.OwnerUserId, entry.OwnerUserId) <= 0)
+                        continue; // keep the stable (lowest owner id) choice
+                    byEvent[key] = entry;
                 }
+
+                foreach (ArchivedSave host in byEvent.Values)
+                {
+                    host.Starred = LoadStarred(log).Contains(Path.GetFileName(host.FilePath));
+                    result.Add(host);
+                }
+
+                result.Sort(CompareForDisplay);
             }
             catch (Exception e)
             {
-                log?.LogError($"[archive] Sync failed: {e}");
+                log?.LogError($"[archive] List failed: {e}");
+            }
+            return result;
+        }
+
+        // Does this file carry the level/world half of its save event - i.e. is it the
+        // one a load actually resumes from, and therefore the one the picker should show?
+        //
+        //  - Offline: there's only ever one file per event, and it's both halves at once
+        //  - Archive-native co-op: a client's file has no world state in it AT ALL (see
+        //    OwnSaveCapture's field split), so the presence of a scene name answers this
+        //    structurally, with no guessing and no dependence on live Photon state. This
+        //    is what makes browsing correct even outside a room, where earlier versions
+        //    gave up and listed every player's file as a separate row for the same
+        //    checkpoint
+        //  - Legacy co-op: every player's file has a full copy of the world state, so the
+        //    only available signal is whether it's ours (we only ever write saves as the
+        //    host, so our own file IS the host's). With no local userId to compare
+        //    against, fall back to accepting them all, exactly as earlier versions did -
+        //    there is genuinely nothing in those files to tell them apart
+        private static bool IsHostFile(ArchivedSave entry, bool offline, string localUserId)
+        {
+            if (offline) return true;
+            if (entry.SettingsVersion >= ArchiveNativeSettingsVersion) return !string.IsNullOrEmpty(entry.SceneName);
+            return string.IsNullOrEmpty(localUserId) || entry.OwnerUserId == localUserId;
+        }
+
+        private static IEnumerable<ArchivedSave> ReadAll(string archiveDir, bool offline, ManualLogSource log)
+        {
+            foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
+            {
+                if (!OwnSavePaths.TrySplit(file, out string stem, out string stamp)) continue;
+
+                // Category split: offline stems end "_offline"; everything else is coop
+                bool isOffline = stem.EndsWith("_offline", StringComparison.Ordinal);
+                if (isOffline != offline) continue;
+
+                if (!SaveDiscovery.TryParseStem(stem, offline, out SaveTarget target)) continue;
+
+                string ownerUserId = "";
+                if (!offline) OwnSavePaths.TryGetCoopUserId(stem, out ownerUserId);
+
+                // A stamp we can't parse as a timestamp is still a perfectly good event
+                // IDENTITY (sibling matching only ever compares stamps for equality) - it
+                // just can't order the list on its own, so fall back to the file's own
+                // write time for that, exactly as earlier versions did. This is what keeps
+                // a hand-renamed file (a "__before-edit" backup, say) visible and loadable
+                // instead of silently vanishing from the picker
+                if (!DateTime.TryParseExact(stamp, OwnSavePaths.StampFormat, CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out DateTime sortTime))
+                {
+                    try { sortTime = File.GetLastWriteTimeUtc(file); }
+                    catch { continue; }
+                }
+
+                var entry = new ArchivedSave
+                {
+                    FilePath = file,
+                    Offline = offline,
+                    Target = target,
+                    Stamp = stamp,
+                    OwnerUserId = ownerUserId,
+                    SortTime = sortTime,
+                };
+                ReadMetadata(entry, log);
+                yield return entry;
             }
         }
 
         // One-time move of archives made by earlier versions (flat Archive/ folder) into
-        // the new Archive/Offline and Archive/Coop subfolders. Idempotent; runs once
+        // the Archive/Offline and Archive/Coop subfolders. Idempotent; runs once
         private static void MigrateLegacyFlatArchive(ManualLogSource log)
         {
             if (_migrated) return;
             _migrated = true;
             try
             {
-                if (!Directory.Exists(ArchiveRoot)) return;
-                foreach (string file in Directory.GetFiles(ArchiveRoot, "peak_save_*.json"))
+                string root = OwnSavePaths.ArchiveRoot;
+                if (!Directory.Exists(root)) return;
+                foreach (string file in Directory.GetFiles(root, "peak_save_*.json"))
                 {
-                    string name = Path.GetFileNameWithoutExtension(file);
-                    int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
-                    string stem = si > 0 ? name.Substring(0, si) : name;
+                    if (!OwnSavePaths.TrySplit(file, out string stem, out _))
+                        stem = Path.GetFileNameWithoutExtension(file);
                     bool offline = stem.EndsWith("_offline", StringComparison.Ordinal);
 
-                    string destDir = ArchiveDir(offline);
+                    string destDir = OwnSavePaths.ArchiveDir(offline);
                     Directory.CreateDirectory(destDir);
                     string dest = Path.Combine(destDir, Path.GetFileName(file));
                     if (File.Exists(dest)) continue; // already there, leave the stray copy
@@ -162,262 +323,141 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// All archived saves for the given category (offline vs coop), newest first
-        /// Runs a <see cref="Sync"/> first so freshly-made and pre-existing saves show up
+        /// Resolve one archived save into the full set of files a load should read: the
+        /// host's file for level/world state, plus each connected player's own file for
+        /// their own state. See <see cref="SaveSelection"/> for why that split matters
+        ///
+        /// Nothing is copied, moved, or rewritten here - a selection is just a set of
+        /// paths. Loading an older checkpoint therefore leaves every file in the store
+        /// byte-identical, which is what stops a load from re-stamping files and
+        /// duplicating rows in the picker
         /// </summary>
-        public static List<ArchivedSave> List(bool offline, ManualLogSource log)
+        public static SaveSelection BuildSelection(ArchivedSave save, ManualLogSource log)
         {
-            var result = new List<ArchivedSave>();
+            if (save == null || string.IsNullOrEmpty(save.FilePath) || !File.Exists(save.FilePath))
+            {
+                log?.LogError("[archive] BuildSelection: the chosen save no longer exists on disk.");
+                return null;
+            }
+
+            var selection = new SaveSelection
+            {
+                Offline = save.Offline,
+                Target = save.Target,
+                Stamp = save.Stamp,
+                HostFilePath = save.FilePath,
+            };
+
+            if (save.Offline) return selection;
+
             try
             {
-                Sync(offline, log);
-                string archiveDir = ArchiveDir(offline);
-                if (!Directory.Exists(archiveDir)) return result;
+                string archiveDir = OwnSavePaths.ArchiveDir(offline: false);
+                var siblings = Directory.Exists(archiveDir)
+                    ? ReadAll(archiveDir, offline: false, log).Where(e => e.Target.SameRunAs(save.Target)).ToList()
+                    : new List<ArchivedSave>();
 
-                // In co-op the checkpoint mod writes one save PER player (userId in the
-                // filename), but only the host's own save is what a resume uses — so show
-                // only the host's. If we can't determine our userId, fall back to showing
-                // all (better than an empty list).
-                string hostUserId = offline ? null : LocalUserId();
-
-                foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
+                foreach (ArchivedSave e in siblings)
                 {
-                    string name = Path.GetFileNameWithoutExtension(file);
-                    int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
-                    if (si <= 0) continue;
-                    string stem = name.Substring(0, si);
-                    string tsStr = name.Substring(si + Sep.Length);
-
-                    // Category split: offline stems end "_offline"; everything else is coop
-                    bool isOffline = stem.EndsWith("_offline", StringComparison.Ordinal);
-                    if (isOffline != offline) continue;
-
-                    // Co-op: keep only the host's own saves (matched by userId in the stem).
-                    if (!offline && !string.IsNullOrEmpty(hostUserId)
-                        && (!TryGetCoopUserId(stem, out string uid) || uid != hostUserId))
-                        continue;
-
-                    if (!SaveDiscovery.TryParseStem(stem, offline, out SaveTarget target)) continue;
-                    if (!DateTime.TryParseExact(tsStr, TsFormat, CultureInfo.InvariantCulture,
-                            DateTimeStyles.None, out DateTime sortTime))
-                        sortTime = File.GetLastWriteTimeUtc(file);
-
-                    var entry = new ArchivedSave
-                    {
-                        FilePath = file,
-                        Offline = offline,
-                        Target = target,
-                        SortTime = sortTime,
-                        Starred = LoadStarred(log).Contains(Path.GetFileName(file)),
-                    };
-                    ReadMetadata(entry, log);
-                    result.Add(entry);
+                    if (e.Stamp != save.Stamp || e.OwnerUserId.Length == 0) continue;
+                    selection.PlayerFiles[e.OwnerUserId] = e.FilePath;
                 }
 
-                result.Sort(CompareForDisplay);
+                // Legacy events only (see MaxLegacySiblingDelta): those were copied in from
+                // the old canonical layout with per-file write times, so an event's files
+                // don't share a stamp and the exact match above finds only the host's own.
+                // Fall back to the nearest file per userId within a tight window, exactly
+                // like earlier versions did. Never applied to archive-native saves: there,
+                // "no file with this stamp" genuinely means that player wasn't part of the
+                // event, and pulling in their nearest OTHER save is the precise mistake
+                // this rewrite exists to remove
+                if (save.SettingsVersion < ArchiveNativeSettingsVersion)
+                {
+                    var bestByUser = new Dictionary<string, (string file, TimeSpan delta)>(StringComparer.Ordinal);
+                    foreach (ArchivedSave e in siblings)
+                    {
+                        if (e.OwnerUserId.Length == 0 || selection.PlayerFiles.ContainsKey(e.OwnerUserId)) continue;
+                        TimeSpan delta = (e.SortTime - save.SortTime).Duration();
+                        if (delta > MaxLegacySiblingDelta) continue;
+                        if (!bestByUser.TryGetValue(e.OwnerUserId, out var current) || delta < current.delta)
+                            bestByUser[e.OwnerUserId] = (e.FilePath, delta);
+                    }
+                    foreach (var kv in bestByUser)
+                    {
+                        selection.PlayerFiles[kv.Key] = kv.Value.file;
+                        log?.LogInfo($"[archive] Legacy save: matched userId '{kv.Key}' to a sibling "
+                            + $"{kv.Value.delta.TotalSeconds:F1}s away from the chosen checkpoint.");
+                    }
+                }
+
+                log?.LogInfo($"[archive] Selection for event '{save.Stamp}' ({save.Target}): "
+                    + $"host='{Path.GetFileName(save.FilePath)}', {selection.PlayerFiles.Count} player file(s).");
             }
             catch (Exception e)
             {
-                log?.LogError($"[archive] List failed: {e}");
+                log?.LogError($"[archive] BuildSelection failed to resolve siblings: {e}");
             }
-            return result;
+
+            return selection;
         }
 
         /// <summary>
-        /// Userids of connected coop players that <see cref="RestoreCoopSiblings"/>
-        /// could NOT find a close-enough sibling archive for during the most recent
-        /// <see cref="Restore"/> call. <see cref="OwnInventoryRestore.RestoreAll"/>
-        /// checks this and skips force-applying that player's (possibly wildly stale)
-        /// canonical file, leaving their current in-game inventory untouched instead.
-        ///
-        /// Cleared at the top of every <see cref="Restore"/> call so it never leaks
-        /// into an unrelated resume (e.g. a plain "continue" that never goes through
-        /// this class at all, or a later archive restore that doesn't skip anyone)
+        /// The newest save event for <paramref name="target"/>, as a ready-to-load
+        /// selection. This is what a plain "continue" resume uses - with no canonical
+        /// current-save file anymore, "the current save" simply IS the most recent event
+        /// in the store for that run
         /// </summary>
-        public static readonly HashSet<string> LastSkippedCoopUserIds = new HashSet<string>(StringComparer.Ordinal);
-
-        /// <summary>
-        /// Copy an archived save back over the checkpoint mod's canonical file for its
-        /// difficulty/category, so the mod's own load path reads the chosen checkpoint.
-        /// Coop: also rolls back every OTHER connected player's own canonical file to
-        /// the matching moment, see <see cref="RestoreCoopSiblings"/> for why that's
-        /// required, not optional
-        /// </summary>
-        public static bool Restore(ArchivedSave save, ManualLogSource log)
+        public static SaveSelection TryGetLatestSelection(bool offline, SaveTarget target, ManualLogSource log)
         {
-            LastSkippedCoopUserIds.Clear();
-            if (!RestoreOne(save.FilePath, save.Offline, log)) return false;
-            if (!save.Offline) RestoreCoopSiblings(save, log);
-            return true;
+            List<ArchivedSave> all = List(offline, log);
+            // Ordered by resolved time, not by raw stamp string: a stamp that isn't a
+            // parseable timestamp falls back to the file's write time (see ReadAll), and
+            // ordinal-comparing those two kinds of stamp against each other would let a
+            // hand-renamed file sort itself to the top and be picked as "latest"
+            ArchivedSave newest = all
+                .Where(e => e.Target.SameRunAs(target))
+                .OrderByDescending(e => e.SortTime)
+                .FirstOrDefault();
+
+            if (newest == null)
+            {
+                log?.LogWarning($"[archive] No save found for {target} ({(offline ? "offline" : "coop")}).");
+                return null;
+            }
+            return BuildSelection(newest, log);
         }
 
-        private static bool RestoreOne(string archivedFilePath, bool offline, ManualLogSource log)
+        /// <summary>
+        /// Applies a JSON field patch to one already-written save file, used by
+        /// <see cref="BackpackSaveMitigation"/> right after <see cref="OwnSaveCapture"/>
+        /// writes it - see that class for why the patch has to land at this exact point.
+        /// The exact file is addressed by path (run target + owning userId + save event),
+        /// never searched for: an earlier version scanned a folder and patched whichever
+        /// file came back first, which could silently write the restore into a stale,
+        /// unrelated save
+        /// </summary>
+        public static bool PatchSaveFile(string path, Action<JObject> patch, ManualLogSource log)
         {
             try
             {
-                string name = Path.GetFileNameWithoutExtension(archivedFilePath);
-                int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
-                string stem = si > 0 ? name.Substring(0, si) : name;
-
-                string dir = CanonicalDir(offline);
-                Directory.CreateDirectory(dir);
-                string dest = Path.Combine(dir, stem + ".json");
-
-                File.Copy(archivedFilePath, dest, overwrite: true);
-                log?.LogInfo($"[archive] Restored '{Path.GetFileName(archivedFilePath)}' -> canonical '{stem}.json'.");
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return false;
+                var json = JObject.Parse(File.ReadAllText(path));
+                patch(json);
+                File.WriteAllText(path, json.ToString(Formatting.Indented));
                 return true;
             }
             catch (Exception e)
             {
-                log?.LogError($"[archive] RestoreOne failed: {e}");
+                log?.LogError($"[archive] PatchSaveFile failed for '{path}': {e}");
                 return false;
             }
         }
 
         /// <summary>
-        /// The checkpoint mod's own <c>LoadPlayerCoop</c> (<c>LoadInventoryDelayed</c>)
-        /// restores EVERY connected player from their OWN per-user canonical file, not
-        /// just the host's - <see cref="List"/> only shows the host's own save per
-        /// timestamp (one row per real save event, from the host's perspective), so
-        /// picking an older checkpoint and only restoring the host's file left every
-        /// other player's canonical file untouched, silently keeping whatever their
-        /// MOST RECENT actual save left it at regardless of which older moment the host
-        /// picked. Confirmed against real session logs: same host save restored the
-        /// host's own first-campfire items correctly, but the client kept its
-        /// second-campfire items every time, matching this exactly
-        ///
-        /// Coop per-player autosaves all fire within the same save event, but a few
-        /// milliseconds apart (sequential file writes), not at an identical instant, so
-        /// siblings are matched by NEAREST archived write-time to the chosen host save
-        /// (restricted to the same ascent/custom-run target), not an exact match
-        ///
-        /// That "nearest" match has no ceiling on how far away it can be: if a client is
-        /// missing an archive from the same save event entirely (never wrote one, wrote
-        /// one for a different target, cleared their archive, etc.), the nearest file for
-        /// their userId could be from a completely different run - hours or days old -
-        /// and would get silently restored as-is, overwriting that client's current
-        /// progress with items/state from a run they weren't even part of. <see
-        /// cref="MaxSiblingDelta"/> bounds the match to a window wide enough to absorb
-        /// real save-event jitter but far too narrow to ever span two different runs; a
-        /// candidate outside it is treated as no match, and that client's canonical file
-        /// is left untouched here (same as if this whole feature didn't run for them)
-        /// rather than restoring the too-far candidate
-        ///
-        /// Untouched is NOT the same as safe, though: <see
-        /// cref="OwnInventoryRestore.RestoreAll"/> unconditionally re-reads and
-        /// force-applies every connected player's own canonical file on every resume,
-        /// regardless of what (if anything) happened here - so a client whose canonical
-        /// file is itself stale (last written in some earlier session, never touched
-        /// this one) would still get that stale state force-applied even though we
-        /// declined to overwrite it with an equally-stale archive. Any currently
-        /// connected coop player who doesn't end up with a verified-close match below -
-        /// whether because the nearest candidate was outside <see
-        /// cref="MaxSiblingDelta"/> or because no candidate for their userId/target
-        /// existed at all - is recorded in <see cref="LastSkippedCoopUserIds"/> so that
-        /// unconditional re-apply can be suppressed for them instead
-        /// </summary>
-        private static readonly TimeSpan MaxSiblingDelta = TimeSpan.FromMinutes(2);
-
-        private static void RestoreCoopSiblings(ArchivedSave hostSave, ManualLogSource log)
-        {
-            try
-            {
-                string archiveDir = ArchiveDir(offline: false);
-                string hostUserId = LocalUserId();
-                var bestByUser = new Dictionary<string, (string file, TimeSpan delta)>();
-
-                if (Directory.Exists(archiveDir))
-                {
-                    foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
-                    {
-                        string name = Path.GetFileNameWithoutExtension(file);
-                        int si = name.LastIndexOf(Sep, StringComparison.Ordinal);
-                        if (si <= 0) continue;
-                        string stem = name.Substring(0, si);
-                        string tsStr = name.Substring(si + Sep.Length);
-
-                        if (!TryGetCoopUserId(stem, out string uid) || uid == hostUserId) continue;
-                        if (!SaveDiscovery.TryParseStem(stem, offlineMode: false, out SaveTarget target)) continue;
-                        if (target.IsCustom != hostSave.Target.IsCustom || target.Ascent != hostSave.Target.Ascent) continue;
-                        if (!DateTime.TryParseExact(tsStr, TsFormat, CultureInfo.InvariantCulture,
-                                DateTimeStyles.None, out DateTime sortTime))
-                            continue;
-
-                        TimeSpan delta = (sortTime - hostSave.SortTime).Duration();
-                        if (delta > MaxSiblingDelta) continue;
-                        if (!bestByUser.TryGetValue(uid, out var current) || delta < current.delta)
-                            bestByUser[uid] = (file, delta);
-                    }
-                }
-
-                foreach (var kv in bestByUser)
-                    RestoreOne(kv.Value.file, offline: false, log);
-
-                foreach (Photon.Realtime.Player p in PhotonNetwork.PlayerList)
-                {
-                    string uid = p?.UserId ?? "";
-                    if (uid.Length == 0 || uid == hostUserId || bestByUser.ContainsKey(uid)) continue;
-                    LastSkippedCoopUserIds.Add(uid);
-                    log?.LogInfo($"[archive] No archived save within {MaxSiblingDelta.TotalMinutes:F0}m of the "
-                        + $"chosen checkpoint for userId '{uid}'; leaving their inventory untouched on restore.");
-                }
-            }
-            catch (Exception e)
-            {
-                log?.LogError($"[archive] RestoreCoopSiblings failed: {e}");
-            }
-        }
-
-        /// <summary>
-        /// Applies a JSON field patch to the canonical (not-yet-archived) save file for
-        /// the given userId AND run target (ascent / custom run) in the current
-        /// category, called by BackpackSaveMitigation right after the checkpoint mod
-        /// writes it and before Sync copies it into the archive - see that class for why
-        /// the patch has to land at this exact point.
-        ///
-        /// <paramref name="target"/> is required even offline: multiple canonical files
-        /// (one per ascent, plus a separate custom-run one) can and do coexist
-        /// side-by-side in the same folder once more than one difficulty/custom run has
-        /// ever been played, so "the one canonical file" for a category is NOT a safe
-        /// assumption - an earlier version of this method patched whichever file
-        /// <c>Directory.GetFiles</c> happened to list first (filesystem-order, not
-        /// recency), which could silently write the restore into a stale, unrelated
-        /// save instead of the one actually being written by the save that triggered it
-        /// </summary>
-        public static bool PatchCanonicalFileForUser(bool offline, SaveTarget target, string userId, Action<JObject> patch, ManualLogSource log)
-        {
-            try
-            {
-                string dir = CanonicalDir(offline);
-                if (!Directory.Exists(dir)) return false;
-
-                foreach (string file in Directory.GetFiles(dir, "peak_save_*.json"))
-                {
-                    string stem = Path.GetFileNameWithoutExtension(file);
-                    if (!SaveDiscovery.TryParseStem(stem, offline, out SaveTarget fileTarget)) continue;
-                    if (fileTarget.IsCustom != target.IsCustom || fileTarget.Ascent != target.Ascent) continue;
-
-                    if (!offline)
-                    {
-                        if (!TryGetCoopUserId(stem, out string uid) || uid != userId) continue;
-                    }
-
-                    var json = JObject.Parse(File.ReadAllText(file));
-                    patch(json);
-                    File.WriteAllText(file, json.ToString(Formatting.Indented));
-                    return true;
-                }
-                return false;
-            }
-            catch (Exception e)
-            {
-                log?.LogError($"[archive] PatchCanonicalFileForUser failed: {e}");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Permanently delete one archived save (does not touch the mod's files).
+        /// Permanently delete one archived save. In co-op that means the WHOLE save
+        /// event - the host's file and every client file sharing its stamp - since a row
+        /// in the picker represents the event, not one file, and leaving the clients'
+        /// files behind would strand them with no host file to ever be loaded alongside.
         /// Refuses starred saves outright (the F7 picker's own two-step confirm should
         /// never even reach here for one, see SavePicker.OnDeletePressed, this is just
         /// the defensive backstop)
@@ -431,8 +471,30 @@ namespace PEAKQuickResume
             }
             try
             {
-                if (File.Exists(save.FilePath)) File.Delete(save.FilePath);
-                log?.LogInfo($"[archive] Deleted '{Path.GetFileName(save.FilePath)}'.");
+                var paths = new HashSet<string>(StringComparer.Ordinal) { save.FilePath };
+
+                // EXACT stamp matches only - deliberately not BuildSelection, whose legacy
+                // fallback also accepts files merely CLOSE in time. That's a reasonable
+                // guess when deciding what to read; it is not one to make when deleting,
+                // where a wrong match destroys a neighbouring run's save outright
+                if (!save.Offline)
+                {
+                    string archiveDir = OwnSavePaths.ArchiveDir(offline: false);
+                    if (Directory.Exists(archiveDir))
+                    {
+                        foreach (string file in Directory.GetFiles(archiveDir, "peak_save_*.json"))
+                        {
+                            if (OwnSavePaths.TrySplit(file, out _, out string stamp) && stamp == save.Stamp)
+                                paths.Add(file);
+                        }
+                    }
+                }
+
+                foreach (string path in paths)
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                log?.LogInfo($"[archive] Deleted save event '{save.Stamp}' ({paths.Count} file(s)).");
                 return true;
             }
             catch (Exception e)
@@ -485,7 +547,7 @@ namespace PEAKQuickResume
         {
             try
             {
-                Directory.CreateDirectory(ArchiveRoot);
+                Directory.CreateDirectory(OwnSavePaths.ArchiveRoot);
                 File.WriteAllText(StarredFile, JsonConvert.SerializeObject(new List<string>(_starredCache)));
             }
             catch (Exception e)
@@ -552,8 +614,8 @@ namespace PEAKQuickResume
         /// (see <see cref="ArchivedSave.CampfireName"/> - NOT BiomesSummary, which is the
         /// level's whole fixed biome roster baked in at edit time, not player progress,
         /// see the comment on CampfireLocKeys below). Falls back to the raw stored name
-        /// (English, as OwnSaveCapture/the checkpoint mod wrote it) if the game's own
-        /// localization table can't be reached, better than nothing</summary>
+        /// (English, as OwnSaveCapture wrote it) if the game's own localization table
+        /// can't be reached, better than nothing</summary>
         public static string CampfireLabel(string internalName)
         {
             string official = TryGetOfficialCampfireTitle(internalName);
@@ -569,15 +631,14 @@ namespace PEAKQuickResume
         //
         // CampfireName is `MapHandler.GetCurrentSegment().ToString()` (Segment: Beach,
         // Tropics, Alpine, Caldera, TheKiln, Peak), NOT a Biome.BiomeType name - except
-        // for two special cases (OwnSaveCapture/the checkpoint mod both override it to
-        // the BiomeType name "Roots"/"Mesa" for the Tropics/Alpine cave variants), so
-        // this table needs to cover both enums' literal names, keyed by whichever one
-        // CampfireName actually ends up holding. "Volcano" is also mapped here (even
-        // though it's not a Segment name and isn't written by the current
-        // OwnSaveCapture/checkpoint-mod code above) since some older/other save sources
-        // do store the plain Biome.BiomeType name "Volcano" as campfireName - same
-        // target as TheKiln, since a saved checkpoint is always the DEEPEST point
-        // reached, and "The Kiln" is that biome's upper/later progress label
+        // for two special cases (OwnSaveCapture overrides it to the BiomeType name
+        // "Roots"/"Mesa" for the Tropics/Alpine cave variants), so this table needs to
+        // cover both enums' literal names, keyed by whichever one CampfireName actually
+        // ends up holding. "Volcano" is also mapped here (even though it's not a Segment
+        // name and isn't written by the current OwnSaveCapture code above) since some
+        // older/other save sources do store the plain Biome.BiomeType name "Volcano" as
+        // campfireName - same target as TheKiln, since a saved checkpoint is always the
+        // DEEPEST point reached, and "The Kiln" is that biome's upper/later progress label
         private static readonly Dictionary<string, string> CampfireLocKeys =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -604,7 +665,7 @@ namespace PEAKQuickResume
             catch { return null; }
         }
 
-        // Best-effort read of the display fields from the checkpoint mod's JSON schema
+        // Best-effort read of the display fields from the save JSON
         private static void ReadMetadata(ArchivedSave entry, ManualLogSource log)
         {
             try
@@ -612,6 +673,8 @@ namespace PEAKQuickResume
                 string json = File.ReadAllText(entry.FilePath);
                 SaveMeta m = JsonConvert.DeserializeObject<SaveMeta>(json);
                 if (m == null) return;
+                entry.SettingsVersion = m.settingsVersion;
+                entry.SceneName = m.sceneName ?? "";
                 entry.SaveDate = m.saveDate ?? "";
                 entry.CampfireName = m.campfireName ?? "";
                 entry.Playtime = m.timePlayed;
@@ -628,29 +691,11 @@ namespace PEAKQuickResume
             }
         }
 
-        // Our Photon user id (== SteamID64 for this game) — the value the checkpoint mod
-        // embeds in each co-op save filename. Empty if we're not in a networked session.
-        private static string LocalUserId()
-        {
-            try { return PhotonNetwork.LocalPlayer?.UserId ?? ""; }
-            catch { return ""; }
-        }
-
-        // Pull the userId out of a co-op stem like "peak_save_-1_7656..." or
-        // "peak_save_CustomRun_7656..." — it is always the segment after the last '_'
-        // (ascent tokens and "CustomRun" contain no underscore).
-        private static bool TryGetCoopUserId(string stem, out string userId)
-        {
-            userId = "";
-            int u = stem.LastIndexOf('_');
-            if (u <= 0 || u >= stem.Length - 1) return false;
-            userId = stem.Substring(u + 1);
-            return userId.Length > 0;
-        }
-
-        // Subset of the checkpoint mod's SaveData we display. Newtonsoft ignores the rest
+        // Subset of OwnSaveData we display. Newtonsoft ignores the rest
         private class SaveMeta
         {
+            public int settingsVersion;
+            public string sceneName;
             public string saveDate;
             public string campfireName;
             public float timePlayed;

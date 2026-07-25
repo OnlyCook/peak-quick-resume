@@ -31,8 +31,8 @@ namespace PEAKQuickResume
         private bool _running;
         private bool _lastWaitOk;
 
-        // When set, resume this specific archived save (restore it over the canonical
-        // file before starting). Null = auto (current run / latest on disk)
+        // When set, resume this specific archived save. Null = auto (current run /
+        // latest on disk)
         private ArchivedSave _chosen;
 
         public bool IsRunning => _running;
@@ -52,8 +52,9 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Kick off the resume sequence. When <paramref name="chosen"/> is set, that
-        /// specific archived checkpoint is restored over the canonical save file before
-        /// the run starts, so an OLDER checkpoint can be loaded on demand
+        /// specific archived checkpoint is the one loaded, so an OLDER checkpoint can be
+        /// resumed on demand. Nothing on disk is modified to make that happen - the
+        /// chosen save's files are simply the ones read (see <see cref="SaveSelection"/>)
         /// </summary>
         public void RequestResume(ArchivedSave chosen)
         {
@@ -114,14 +115,6 @@ namespace PEAKQuickResume
         {
             _running = true;
 
-            // Clear any coop skip-list left over from a PRIOR archive-picker restore
-            // this session before deciding anything about THIS resume: SaveArchive.Restore
-            // (which populates it) only runs below when _chosen != null, so a plain
-            // "continue" resume right after an archive-picker one would otherwise still
-            // see stale entries and wrongly skip restoring an unrelated player's own,
-            // perfectly legitimate current save (see SaveArchive.LastSkippedCoopUserIds)
-            SaveArchive.LastSkippedCoopUserIds.Clear();
-
             // Lift any watch window still running from a prior load right away: the
             // Airport-return/fresh-run-start below is US legitimately moving the player,
             // not the checkpoint mod's own teleport, and would otherwise look like a bad
@@ -173,35 +166,50 @@ namespace PEAKQuickResume
             _log.LogInfo("[stage] Found check-in kiosk.");
 
             // --- 3. Point our own loader at the saved run & start it ---
-            // If a specific archived checkpoint was chosen, copy it over the canonical
-            // save file now (before we read it in PreStartSetSegment/load)
-            if (_chosen != null && !SaveArchive.Restore(_chosen, _log))
-            { Fail("Could not restore the chosen save over the checkpoint file"); yield break; }
+            // Resolve, once, exactly which files this load will read: the host's file for
+            // the level/world state and each connected player's own file for their own
+            // state. Nothing on disk is written or copied here - see SaveSelection
+            bool offline = PhotonNetwork.OfflineMode;
+            SaveSelection selection = _chosen != null
+                ? SaveArchive.BuildSelection(_chosen, _log)
+                : SaveArchive.TryGetLatestSelection(offline, target, _log);
 
-            // The save-file name is picked off RunSettings.IsCustomRun, so set that FIRST
-            // (both ways), otherwise a stale flag resumes the wrong save, or
-            // PreStartSetSegment looks in the wrong file
+            // The picker only ever lists the category matching the current network mode,
+            // so this should be unreachable - but the whole load path branches on
+            // solo-vs-coop (segment activation, warps, RPCs), and running the solo branch
+            // in a networked session would leave every client behind, so refuse outright
+            // rather than proceed on a mismatch
+            if (selection != null && selection.Offline != offline)
+            {
+                Fail($"The chosen save is a {(selection.Offline ? "solo" : "co-op")} save but we are "
+                    + $"{(offline ? "solo" : "in co-op")}");
+                yield break;
+            }
+
+            if (selection == null)
+            {
+                Fail($"No checkpoint save found for {target}");
+                Msg(target.IsCustom
+                    ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
+                    : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
+                yield break;
+            }
+
+            // The run the game starts is picked off RunSettings.IsCustomRun, so set that
+            // FIRST (both ways), otherwise a stale flag starts the wrong kind of run
             if (!RunLauncher.TrySetCustomRun(target.IsCustom, _log))
             { Fail("Could not set custom-run flag before starting"); yield break; }
 
-            bool offline = PhotonNetwork.OfflineMode;
-
+            // Resolves entirely through our own port (our own MapBakerLevelOverridePatch
+            // always forces the saved island, so there's no separate "use saved island"
+            // toggle to set here - see its own remarks)
+            if (!_ownLoadEntryPoints.TryPreStartSetSegment(selection))
             {
-                // Resolves entirely through our own port (our own MapBakerLevelOverridePatch
-                // always forces the saved island, so there's no separate "use saved island"
-                // toggle to set here - see its own remarks). Coop uses the LOCAL (host's own)
-                // userId, matching PreStartSetSegment's own behavior exactly (always the
-                // CALLER's own save file, host-only since only the host ever reaches this
-                // call at all - see RequestResume's IsHost guard)
-                string userId = offline ? "" : OwnSavePaths.LocalUserId();
-                if (!_ownLoadEntryPoints.TryPreStartSetSegment(target, offline, userId))
-                {
-                    Fail($"No checkpoint save found for {target} (TryPreStartSetSegment returned false)");
-                    Msg(target.IsCustom
-                        ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
-                        : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
-                    yield break;
-                }
+                Fail($"No usable checkpoint save for {target} (TryPreStartSetSegment returned false)");
+                Msg(target.IsCustom
+                    ? MessagesLocalization.Get(MsgKey.NoSaveCustom)
+                    : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
+                yield break;
             }
             _log.LogInfo("[stage] Save confirmed for this difficulty; starting fresh run.");
             Msg(MessagesLocalization.Get(MsgKey.StartingFreshRun), MsgInfo);
@@ -282,9 +290,7 @@ namespace PEAKQuickResume
 
             // Loads go through our own restore path
             _log.LogInfo("[stage] Triggering our own restore.");
-            string loadUserId = offline ? "" : OwnSavePaths.LocalUserId();
-            bool loadOk = _ownLoadEntryPoints.TryLoadPlayer(target, offline, loadUserId);
-            if (!loadOk) { Fail("Load call failed"); yield break; }
+            if (!_ownLoadEntryPoints.TryLoadPlayer(selection)) { Fail("Load call failed"); yield break; }
 
             // TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's coroutine and
             // returns immediately), so wait for the restore to actually finish before declaring

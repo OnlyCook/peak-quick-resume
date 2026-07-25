@@ -44,14 +44,21 @@ namespace PEAKQuickResume
         /// Mirrors the per-player loop in <c>LoadInventoryDelayed</c> (decompile
         /// 2789-2956) in full, plus its post-loop cleanup (decompile 2966-2969).
         /// Each player's own save file is re-read independently (matching the
-        /// original exactly - not reusing the segment-level <c>OwnSaveData</c>
-        /// passed into <see cref="OwnTeleportSequence"/>), since in coop each player
-        /// has their own file. Solo has exactly one player, so this reads the same
-        /// file back a second time - harmless, matches original
+        /// original exactly - not reusing the level-state <c>OwnSaveData</c> passed
+        /// into <see cref="OwnTeleportSequence"/>), since in coop each player has their
+        /// own file. Solo has exactly one player whose file is also the host file, so
+        /// this reads that same file back a second time - harmless, matches original
+        ///
+        /// This is the per-player HALF of a restore, and it never touches level/world
+        /// state: which file each player's state comes from is resolved by
+        /// <see cref="SaveSelection.TryGetPlayerFile"/>, and world state is restored
+        /// separately by <see cref="OwnTeleportSequence"/> from the host's file alone
         /// </summary>
-        public static IEnumerator RestoreAll(SaveTarget target, bool offline, PluginConfig cfg, OwnLoadEntryPoints entryPoints, ManualLogSource log)
+        public static IEnumerator RestoreAll(SaveSelection selection, PluginConfig cfg, OwnLoadEntryPoints entryPoints, ManualLogSource log)
         {
             for (int i = 0; i < 60; i++) yield return null;
+
+            bool offline = selection.Offline;
 
             foreach (Player player in UnityEngine.Object.FindObjectsByType<Player>(FindObjectsSortMode.None))
             {
@@ -61,24 +68,28 @@ namespace PEAKQuickResume
                 string userId = offline ? "" : NetworkingUtilities.GetUserId(ch.player);
                 PhotonView playerView = player.GetComponent<PhotonView>();
 
+                // Every field read below is per-player state, and it all comes from THIS
+                // player's own file within the chosen save event - never from the host's
+                // file, and never from a near-miss file belonging to some other event (see
+                // SaveSelection). A player with no file in this event isn't restored at
+                // all: data stays null, every data-gated step below is skipped, and their
+                // current, actually-correct inventory/afflictions/etc. are left alone
                 OwnSaveData data = null;
-                if (offline || !SaveArchive.LastSkippedCoopUserIds.Contains(userId))
+                if (selection.TryGetPlayerFile(userId, out string path))
                 {
                     try
                     {
-                        string path = OwnSavePaths.For(target, offline, userId);
                         data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
                     }
-                    catch { /* matches the original: null data below is handled per-field */ }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"OwnInventoryRestore: could not read the save for '{userId}': {e.Message}");
+                    }
                 }
                 else
                 {
-                    // SaveArchive couldn't verify this player's own canonical file is close
-                    // enough in time to the checkpoint the host just picked (see
-                    // SaveArchive.LastSkippedCoopUserIds remarks) - leave data null so every
-                    // data-gated restore step below is skipped and this player's current,
-                    // actually-correct inventory/afflictions/etc. are left alone
-                    log?.LogInfo($"OwnInventoryRestore: skipping restore for '{userId}' - no verified-close save for this checkpoint.");
+                    log?.LogInfo($"OwnInventoryRestore: skipping restore for '{userId}' - they have no save file "
+                        + "in this checkpoint's save event; leaving their current state untouched.");
                 }
 
                 ch.refs.afflictions.RemoveAllThorns();
@@ -290,18 +301,15 @@ namespace PEAKQuickResume
                     }
                 }
 
-                // M5: time-played sync (decompile 2947-2955)
-                if (ch.photonView != null && ch.photonView.Owner != null && ch.photonView.Owner.IsMasterClient && data != null && data.timePlayed > 0f)
-                {
-                    RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
-                    if (runManager != null)
-                    {
-                        runManager.timeSinceRunStarted = data.timePlayed;
-                        typeof(RunManager).GetMethod("SyncTimeMaster", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                            ?.Invoke(runManager, null);
-                    }
-                }
             }
+
+            // M5: time-played sync (decompile 2947-2955). Run-level state, so it's read
+            // from the HOST's file and applied once - not per player. The original had
+            // this inside the loop guarded on "is this the master's character", which
+            // amounted to the same single application; pulling it out makes it read the
+            // right file by construction rather than by relying on that guard now that a
+            // client's own file no longer carries run-level fields at all
+            RestoreTimePlayed(selection, log);
 
             // M5/M7: post-loop cleanup (decompile 2957-2969). The "Loading savegame..."/
             // "Save game loaded!" captions themselves stay skipped (cosmetic, see M3/M5),
@@ -320,6 +328,29 @@ namespace PEAKQuickResume
             watchdog?.ArmPendingWatch();
             entryPoints?.Network?.LoadingScreenOthers(false, watchdog?.KnownTarget);
             log?.LogInfo("OwnInventoryRestore: restore sequence complete.");
+        }
+
+        // Applies the saved run timer from the selection's host file, see the call site
+        private static void RestoreTimePlayed(SaveSelection selection, ManualLogSource log)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(selection.HostFilePath) || !File.Exists(selection.HostFilePath)) return;
+
+                var hostData = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(selection.HostFilePath));
+                if (hostData == null || hostData.timePlayed <= 0f) return;
+
+                RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
+                if (runManager == null) return;
+
+                runManager.timeSinceRunStarted = hostData.timePlayed;
+                typeof(RunManager).GetMethod("SyncTimeMaster", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    ?.Invoke(runManager, null);
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"OwnInventoryRestore: time-played sync failed (non-fatal): {e.Message}");
+            }
         }
 
         /// <summary>Mirrors LoadPlayerInventory exactly (decompile 3070-3138)</summary>

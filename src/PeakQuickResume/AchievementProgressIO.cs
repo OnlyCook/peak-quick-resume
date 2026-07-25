@@ -239,20 +239,23 @@ namespace PEAKQuickResume
         /// every other player's restore has to be handed to that player's own machine
         /// via a targeted RPC
         ///
-        /// Coop: mirrors OwnInventoryRestore.RestoreAll's use of
-        /// SaveArchive.LastSkippedCoopUserIds - a player whose own canonical file
-        /// SaveArchive couldn't verify as close to the chosen checkpoint gets `saved`
-        /// left null here too, rather than reading their (possibly unrelated-run) file.
-        /// This is unconditionally safe per ApplyLocal's own remarks: null just primes
-        /// the same fresh baseline a normal run start already would, and this class
-        /// never touches permanent Steam achievement unlocks either way (see class
-        /// remarks) - so skipping can only ever cost a bit of this-run progress
-        /// tracking, never revert or fabricate an actual unlock
+        /// Achievement progress is per-player state, so it is only ever read from a
+        /// player's OWN file within the chosen save event (see
+        /// <see cref="SaveSelection.TryGetPlayerFile"/>), never from the host's file and
+        /// never from a near-miss file belonging to a different event. A player with no
+        /// file in this event gets `saved` left null, which is unconditionally safe per
+        /// ApplyLocal's own remarks: null just primes the same fresh baseline a normal
+        /// run start already would, and this class never touches permanent Steam
+        /// achievement unlocks either way (see class remarks) - so skipping can only ever
+        /// cost a bit of this-run progress tracking, never revert or fabricate an actual
+        /// unlock
         /// </summary>
-        public static void RestoreAllPlayers(SaveTarget target, bool offline, OwnLoadEntryPoints entryPoints, ManualLogSource log)
+        public static void RestoreAllPlayers(SaveSelection selection, OwnLoadEntryPoints entryPoints, ManualLogSource log)
         {
             try
             {
+                bool offline = selection.Offline;
+
                 foreach (Player player in UnityEngine.Object.FindObjectsByType<Player>(UnityEngine.FindObjectsSortMode.None))
                 {
                     Character ch = player?.character;
@@ -262,16 +265,12 @@ namespace PEAKQuickResume
                     PhotonView playerView = player.GetComponent<PhotonView>();
 
                     OwnSavedAchievementProgress saved = null;
-                    if (offline || !SaveArchive.LastSkippedCoopUserIds.Contains(userId))
+                    if (selection.TryGetPlayerFile(userId, out string path) && File.Exists(path))
                     {
                         try
                         {
-                            string path = OwnSavePaths.For(target, offline, userId);
-                            if (File.Exists(path))
-                            {
-                                var data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
-                                saved = data?.achievementProgress;
-                            }
+                            var data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
+                            saved = data?.achievementProgress;
                         }
                         catch (Exception e)
                         {
@@ -280,7 +279,8 @@ namespace PEAKQuickResume
                     }
                     else
                     {
-                        log?.LogInfo($"AchievementProgressIO: skipping restore for '{userId}' - no verified-close save for this checkpoint; priming a fresh baseline instead.");
+                        log?.LogInfo($"AchievementProgressIO: skipping restore for '{userId}' - no save file in this "
+                            + "checkpoint's save event; priming a fresh baseline instead.");
                     }
 
                     if (offline || (playerView != null && playerView.IsMine))

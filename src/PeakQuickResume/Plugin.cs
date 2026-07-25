@@ -13,9 +13,10 @@ namespace PEAKQuickResume
     /// Fully self-contained: orchestrates the vanilla "start run" flow
     /// (<see cref="RunLauncher"/>) and drives its own independent save/load/teleport
     /// (<see cref="OwnLoadEntryPoints"/> / <see cref="OwnTeleportSequence"/> / etc.).
-    /// The save file format is still compatible with dominik0207's "PEAK Checkpoint
-    /// Save", which this mod was originally built around, but that mod is no longer
-    /// required, referenced, or integrated with in any way
+    /// The save file format descends from dominik0207's "PEAK Checkpoint Save", which
+    /// this mod was originally built around, but that mod is no longer required,
+    /// referenced, or integrated with in any way - we keep our own saves in our own
+    /// folder (see <see cref="OwnSavePaths"/>) and never read or write that mod's
     /// </summary>
     [BepInPlugin(PluginInfo.Guid, PluginInfo.Name, PluginInfo.Version)]
     public class Plugin : BaseUnityPlugin
@@ -42,8 +43,9 @@ namespace PEAKQuickResume
         // BepInEx GUID of the old PEAK Checkpoint Save mod. We no longer depend on,
         // reference, or integrate with it, but if it's STILL installed alongside us both
         // mods run their own campfire-autosave + logging independently, so the player sees
-        // duplicate save messages and log lines. Purely cosmetic (both write the same file,
-        // no logic conflict) - we just detect it to warn the player, see Update / HelpScreen
+        // duplicate save messages and log lines. Purely cosmetic - the two
+        // don't even share a save folder anymore (see OwnSavePaths), so there's no file or
+        // logic conflict left - we just detect it to warn the player, see Update / HelpScreen
         private const string CheckpointSaveGuid = "PEAK_Checkpoint_Save";
         private bool _dupWarningShown;
 
@@ -336,7 +338,7 @@ namespace PEAKQuickResume
         }
 
         // Load the picker's highlighted save: close the picker and hand the choice to the
-        // orchestrator (which restores it over the checkpoint mod's file, then resumes)
+        // orchestrator (which resolves which files that checkpoint reads, then resumes)
         private void ConfirmLoad()
         {
             var chosen = _picker.Selected;

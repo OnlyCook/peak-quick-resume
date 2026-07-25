@@ -85,9 +85,12 @@ namespace PEAKQuickResume
         // see WorldItemRestore's own remarks. Capped at 50 entries
         public List<OwnSavedPositionedItem> worldItemStates;
 
-        // Kept for round-trip compatibility with checkpoint-mod files during the
-        // transition window (see ROADMAP.md). We never support PEAKapalooza, so
-        // this is always written false; deliberately not acted on when reading
+        // Vestigial: only ever existed so a save could round-trip through the old
+        // checkpoint mod during the Phase 8 transition window. That window is closed and
+        // we no longer share a save folder with that mod at all (see OwnSavePaths), so
+        // this is no longer WRITTEN - the field stays only so saves that predate the cut
+        // still deserialize cleanly. Never acted on when reading either (we have never
+        // supported PEAKapalooza)
         public bool extModsPeakapaloozaPEAKTOBEACH;
 
         // This player's own in-progress achievement/Steam-stat tracking for the

@@ -170,25 +170,25 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Mirrors <c>PreStartSetSegment</c> (decompile 914-954): resolves the save file
-        /// for <paramref name="target"/>/<paramref name="offline"/>/<paramref name="userId"/>
-        /// and records its <c>sceneName</c> into <see cref="SelectedLevel"/>. Returns true
-        /// iff a save file exists and deserialized successfully
+        /// Mirrors <c>PreStartSetSegment</c> (decompile 914-954): records the chosen
+        /// save's <c>sceneName</c> into <see cref="SelectedLevel"/>. Returns true iff the
+        /// selection's HOST file exists, deserialized, and actually names a scene
+        ///
+        /// Deliberately reads <see cref="SaveSelection.HostFilePath"/> and nothing else:
+        /// which island to load is level state, so it comes from the one file that owns
+        /// the level half of the save (see <see cref="SaveSelection"/>). A co-op client's
+        /// file has no <c>sceneName</c> at all and could never answer this question
         /// </summary>
-        public bool TryPreStartSetSegment(SaveTarget target, bool offline, string userId)
+        public bool TryPreStartSetSegment(SaveSelection selection)
         {
             try
             {
-                string path = OwnSavePaths.For(target, offline, userId);
-                if (!File.Exists(path))
+                OwnSaveData data = ReadHostSave(selection);
+                if (data == null || string.IsNullOrEmpty(data.sceneName))
                 {
-                    SelectedLevel = "null";
-                    return false;
-                }
-
-                OwnSaveData data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
-                if (data == null)
-                {
+                    if (data != null)
+                        _log?.LogError("OwnLoadEntryPoints: the chosen save has no scene recorded "
+                            + "(is it a co-op client's file rather than the host's?).");
                     SelectedLevel = "null";
                     return false;
                 }
@@ -205,6 +205,31 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Reads the level/world half of a selection - the host's file. The ONLY place
+        /// this class ever reads world state from; per-player state is read per player,
+        /// from that player's own file, by <see cref="OwnInventoryRestore"/> and
+        /// <see cref="AchievementProgressIO"/>
+        /// </summary>
+        private OwnSaveData ReadHostSave(SaveSelection selection)
+        {
+            if (selection == null || string.IsNullOrEmpty(selection.HostFilePath))
+            {
+                _log?.LogWarning("OwnLoadEntryPoints: no save selection to load.");
+                return null;
+            }
+            if (!File.Exists(selection.HostFilePath))
+            {
+                _log?.LogWarning($"OwnLoadEntryPoints: save file no longer exists: {selection.HostFilePath}");
+                return null;
+            }
+
+            OwnSaveData data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(selection.HostFilePath));
+            if (data == null)
+                _log?.LogError($"OwnLoadEntryPoints: save file failed to deserialize: {selection.HostFilePath}");
+            return data;
+        }
+
+        /// <summary>
         /// Mirrors <c>LoadPlayerOffline</c>/<c>LoadPlayerCoop</c>'s shared guard chain
         /// (decompile 4605-4763) exactly: not at the Airport, host-only, the one-time-
         /// hardmode-load guard (see class remarks), the post-load cooldown, and (coop
@@ -212,10 +237,12 @@ namespace PEAKQuickResume
         /// <c>CustomJumpToSegment</c> coroutine, this hands off to the real
         /// <see cref="OwnTeleportSequence"/> port (Phase 8 M3)
         /// </summary>
-        public bool TryLoadPlayer(SaveTarget target, bool offline, string userId)
+        public bool TryLoadPlayer(SaveSelection selection)
         {
             try
             {
+                bool offline = selection?.Offline ?? true;
+
                 if (RunLauncher.InAirport)
                 {
                     _log?.LogError("OwnLoadEntryPoints: tried to load save at the Airport!");
@@ -242,23 +269,15 @@ namespace PEAKQuickResume
                     return false;
                 }
 
-                string path = OwnSavePaths.For(target, offline, userId);
-                if (!File.Exists(path))
-                {
-                    _log?.LogWarning("OwnLoadEntryPoints: no save file found.");
-                    return false;
-                }
-
                 CurrentlyLoading = true;
-                OwnSaveData data = JsonConvert.DeserializeObject<OwnSaveData>(File.ReadAllText(path));
+                OwnSaveData data = ReadHostSave(selection);
                 if (data == null)
                 {
                     CurrentlyLoading = false;
-                    _log?.LogError("OwnLoadEntryPoints: save file failed to deserialize.");
                     return false;
                 }
 
-                _teleportSequence.Begin(data, target, offline);
+                _teleportSequence.Begin(data, selection);
                 return true;
             }
             catch (Exception e)

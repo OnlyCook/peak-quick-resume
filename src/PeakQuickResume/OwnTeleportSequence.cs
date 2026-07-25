@@ -88,9 +88,17 @@ namespace PEAKQuickResume
         /// </summary>
         public bool RestoreComplete { get; private set; }
 
-        public void Begin(OwnSaveData data, SaveTarget target, bool offline) => StartCoroutine(RunSequenceWrapper(data, target, offline));
+        /// <summary>
+        /// Starts the sequence. <paramref name="data"/> is the level/world half, already
+        /// read from <paramref name="selection"/>'s HOST file - everything this method
+        /// reads out of it (segment, position, time of day, day count, ground items,
+        /// luggage, statue, deployables) is level state and comes from that one file. The
+        /// selection is carried alongside purely so the per-player restore steps at the
+        /// tail can look up each player's OWN file, see <see cref="SaveSelection"/>
+        /// </summary>
+        public void Begin(OwnSaveData data, SaveSelection selection) => StartCoroutine(RunSequenceWrapper(data, selection));
 
-        private IEnumerator RunSequenceWrapper(OwnSaveData data, SaveTarget target, bool offline)
+        private IEnumerator RunSequenceWrapper(OwnSaveData data, SaveSelection selection)
         {
             IsRunning = true;
             RestoreComplete = false;
@@ -103,7 +111,7 @@ namespace PEAKQuickResume
             // false, or ResumeOrchestrator's own wait on it would hang out its full timeout
             try
             {
-                yield return RunSequence(data, target, offline);
+                yield return RunSequence(data, selection);
             }
             finally
             {
@@ -112,8 +120,10 @@ namespace PEAKQuickResume
             }
         }
 
-        private IEnumerator RunSequence(OwnSaveData data, SaveTarget target, bool offline)
+        private IEnumerator RunSequence(OwnSaveData data, SaveSelection selection)
         {
+            bool offline = selection.Offline;
+
             // Reset per-run (this MonoBehaviour is reused across every Begin() call) -
             // see the fields' own remarks
             _clientWarpSettled = true;
@@ -129,7 +139,7 @@ namespace PEAKQuickResume
             // prior progress before the character's altitude jumps, or the teleport
             // itself gets miscounted as climbed height towards the High Altitude Badge)
             if (_cfg.RestoreAchievements.Value)
-                AchievementProgressIO.RestoreAllPlayers(target, offline, _entryPoints, _log);
+                AchievementProgressIO.RestoreAllPlayers(selection, _entryPoints, _log);
 
             // Inter-step wait between the map/campfire warp (JumpToSegment/SetSegmentOnSpawn,
             // below) and the final precise teleport. In solo there are no networked clients
@@ -390,7 +400,7 @@ namespace PEAKQuickResume
             {
                 try
                 {
-                    yield return StartCoroutine(OwnInventoryRestore.RestoreAll(target, offline, _cfg, _entryPoints, _log));
+                    yield return StartCoroutine(OwnInventoryRestore.RestoreAll(selection, _cfg, _entryPoints, _log));
                 }
                 finally
                 {

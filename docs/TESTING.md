@@ -35,19 +35,35 @@ Please send that snippet after each test.
 
 ## Where the save files are
 
-The checkpoint mod (PEAK Checkpoint Save) writes its saves here — handy for confirming a
-save exists / which difficulty (ascent) it is / deleting a save to test the no-save path:
+Quick Resume writes every save here — handy for confirming a save exists / which
+difficulty (ascent) it is / deleting a save to test the no-save path:
 
 ```
-~/.config/r2modmanPlus-local/PEAK/profiles/Default/BepInEx/plugins/Checkpoint_Save/
+~/.config/r2modmanPlus-local/PEAK/profiles/Default/BepInEx/plugins/QuickResume/Archive/
 ```
 
-- Offline (solo): `peak_save_{ascent}_offline.json` (e.g. Tenderfoot = `peak_save_-1_offline.json`)
-- Co-op: `Coop/peak_save_{ascent}_{steamUserId}.json`
-- Custom runs: `peak_save_CustomRun_offline.json` / `Coop/peak_save_CustomRun_{userId}.json`
+This is the one and only save store: saves are written straight into it and loaded
+straight back out of it, so there is no separate "current save" file anywhere. The old
+`plugins/Checkpoint_Save/` folder (PEAK Checkpoint Save's own) is never read or written —
+if that mod is still installed, its files sit there untouched and invisible to us.
 
-The checkpoint mod's own debug log (enable `enableLogging` in its config) lives in
-`Checkpoint_Save/Logs/Debug_latest.log`.
+- Offline (solo): `Offline/peak_save_{ascent}_offline__{stamp}.json`
+  (e.g. Tenderfoot = `Offline/peak_save_-1_offline__20260725_140311_204.json`)
+- Co-op: `Coop/peak_save_{ascent}_{steamUserId}__{stamp}.json`
+- Custom runs: same, with `CustomRun` in place of the ascent number
+
+`{stamp}` (`yyyyMMdd_HHmmss_fff`, UTC) identifies the **save event**, not the file: one
+autosave generates a single stamp and writes it into every participating player's
+filename. That's what makes a co-op event's files findable as one group, and it's why
+editing a save's contents is safe — a file's identity is in its name, never in its
+modification time.
+
+In co-op, only the **host's** file carries the level/world half of the save (which island
+and segment, the teleport position, time of day, day counter, ground items, luggage, the
+ancient statue, deployables). A client's file carries only that client's own state
+(inventory, backpack, held item, afflictions, extra stamina, skeleton flag, thorns, ticks,
+achievement progress). A client file therefore has no `sceneName` — that's the quickest
+way to tell the two apart by eye, and it's how the F7 picker identifies the host's file.
 
 ## Test checklist (mirrors ROADMAP)
 
