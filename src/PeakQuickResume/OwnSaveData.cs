@@ -124,6 +124,17 @@ namespace PEAKQuickResume
         public List<OwnSavedDeployableState> portableStoves;
         public List<OwnSavedDeployableState> scoutCannons;
 
+        // Whether this player was DEAD (Character.data.dead - a spectating ghost, not
+        // merely knocked out/passed out) at the moment this checkpoint was written. Own
+        // addition, no decompile counterpart: the checkpoint mod never recorded who was
+        // alive, and its ReviveDeadPlayers step simply revived everyone on every load.
+        // See DeathStateRestore for how this is put back (and for why a MISSING value is
+        // deliberately indistinguishable from "was alive"): false on any save predating
+        // this feature, and a player with no file in the loaded save event at all - a
+        // friend who joined after the checkpoint was written, most typically - is always
+        // restored alive, never dead
+        public bool isDead;
+
         // Own addition, no decompile counterpart: UnityEngine.Application.version at
         // the moment this file was written (e.g. "1.65.a"). Lets SaveArchive/SavePicker
         // flag a save as possibly stale after a game update rotates the map pool (see

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using BepInEx.Logging;
 using HarmonyLib;
 using Photon.Pun;
@@ -133,6 +134,21 @@ namespace PEAKQuickResume
             Vector3 savedPos = new Vector3(data.posX, data.posY, data.posZ);
             float waitTime = Mathf.Max(0f, _cfg.OwnJumpLogicWaitTime.Value);
 
+            // Recovery path for a checkpoint whose world state was anchored in the off-map
+            // death zone because the HOST was dead when it was written (see
+            // OwnSaveCapture.ResolveWorldAnchor, which stops new saves being written that way).
+            // Loading one as-is warped everyone to (0, 5000, -5000), 5km off the map with no
+            // terrain anywhere near - the reported "the map won't load in". Existing saves
+            // can't be un-written, so detect the marker position and retarget to the campfire
+            // this checkpoint actually belongs to, which is where it was taken. Resolved after
+            // the segment jump below (PreviousCampfire only means anything once the saved
+            // segment is active), so only the flag is worked out here
+            bool deathZoneSave = IsDeathZonePosition(savedPos);
+            if (deathZoneSave)
+                _log?.LogWarning($"OwnTeleportSequence: this checkpoint's saved position {savedPos} is the game's "
+                    + "off-map death zone - it was written while the host was dead by a build that still anchored "
+                    + "world state on them. Retargeting to the saved segment's own campfire after the jump.");
+
             // Must run BEFORE any segment/position warp below - see
             // AchievementProgressIO's class remarks for why the ordering matters
             // (RUNBASEDVALUETYPE.MaxHeightReached has to already reflect this run's real
@@ -234,6 +250,30 @@ namespace PEAKQuickResume
                 Campfire previousCampfire = MapHandler.PreviousCampfire;
                 if (previousCampfire != null && !previousCampfire.Lit)
                     previousCampfire.LightWithoutReveal();
+            }
+
+            // Death-zone recovery, resolved now that the saved segment is active: PreviousCampfire
+            // is the campfire you light to reach this segment, i.e. exactly the checkpoint this save
+            // was taken at. Everything downstream (the world-item/luggage/statue restore below, the
+            // teleport target, the watchdog's known target) reads savedPos/spawnPos, so correcting
+            // both here is enough. See the flag's own remarks at the top of this method
+            if (deathZoneSave)
+            {
+                Campfire checkpointCampfire = MapHandler.PreviousCampfire;
+                if (checkpointCampfire != null)
+                {
+                    savedPos = checkpointCampfire.transform.position;
+                    spawnPos = savedPos;
+                    spawnPos.y += 5f;
+                    _log?.LogWarning($"OwnTeleportSequence: death-zone checkpoint retargeted to the "
+                        + $"{finalSegment} campfire at {savedPos}.");
+                }
+                else
+                {
+                    _log?.LogError("OwnTeleportSequence: this checkpoint's position is the off-map death zone and no "
+                        + "campfire could be found for the saved segment - loading it anyway, but expect to land off "
+                        + "the map. Re-save from a fresh checkpoint to replace it.");
+                }
             }
 
             // Snap the saved time-of-day in RIGHT HERE, at the same moment the segment's own
@@ -392,6 +432,16 @@ namespace PEAKQuickResume
             // with the collapse below rather than blocking it outright - the hold just below
             // gates on inventoryRestoreDone directly, so the fade-out can never reveal the player
             // before their items have actually finished restoring
+
+            // Decided HERE, before the per-player restore starts, not at the end of the
+            // sequence: these players are being restored as a corpse, so there is nothing
+            // worth putting back onto them (RestoreAll skips them outright) and the death
+            // itself is applied further down, still behind the fully-opaque loading screen.
+            // Empty set whenever there's nothing to do - offline, or the setting is off
+            HashSet<string> restoringAsDead = _cfg.RestoreDeathState.Value
+                ? DeathStateRestore.ResolveSavedDeadUserIds(selection, _log)
+                : new HashSet<string>();
+
             bool inventoryRestoreDone = !RunLauncher.IsHost;
             if (RunLauncher.IsHost)
                 StartCoroutine(RunInventoryRestoreAndSignal());
@@ -400,7 +450,7 @@ namespace PEAKQuickResume
             {
                 try
                 {
-                    yield return StartCoroutine(OwnInventoryRestore.RestoreAll(selection, _cfg, _entryPoints, _log));
+                    yield return StartCoroutine(OwnInventoryRestore.RestoreAll(selection, _cfg, _entryPoints, _log, restoringAsDead));
                 }
                 finally
                 {
@@ -447,6 +497,20 @@ namespace PEAKQuickResume
                     elapsed += Time.unscaledDeltaTime;
                 }
             }
+
+            // Everyone was revived near the top of this sequence (see ReviveDeadPlayers) so the
+            // segment jump and the warps all ran on living characters. NOW - with the teleport
+            // and the per-player restore settled, but while the loading screen is still fully
+            // opaque on every machine (the fade-out below, and each client's own via
+            // ClientPresentationOthers(false) just after, are both still ahead of us) - put
+            // whoever the checkpoint recorded as dead back into that state. Session-reported:
+            // applying it at the very END of the sequence instead meant a restored-dead player
+            // watched themselves load in, stand up, and only then visibly drop dead. They are
+            // still warped to the campfire first, so their corpse/spectate position is right.
+            // A player with no file in this save event (a friend who joined after it was
+            // written) is never in this set - see DeathStateRestore
+            if (RunLauncher.IsHost)
+                DeathStateRestore.ApplySavedDeaths(restoringAsDead, _entryPoints, _log);
 
             // Items/backpacks/afflictions are now confirmed in place - ResumeOrchestrator polls
             // this to show "Save loaded. Welcome back!" right here: after the restore, but
@@ -495,14 +559,69 @@ namespace PEAKQuickResume
             _entryPoints.MarkLoadedThisRound();
         }
 
-        /// <summary>Mirrors ReviveDeadPlayers exactly (decompile 2760-2779)</summary>
-        private static void ReviveDeadPlayers(Vector3 pos)
+        /// <summary>
+        /// True for a position at (or right next to) <c>Character.DeathPos()</c> - the fixed
+        /// <c>(0, 5000, -5000)</c> spot vanilla drags every dead character's ragdoll to. No
+        /// real gameplay position is remotely near it (the tallest island tops out well under
+        /// 2000m and nothing legitimate sits 5km out on -Z), so this is an unambiguous marker
+        /// that a save's world state was anchored on a dead player - see the call site
+        /// </summary>
+        private static bool IsDeathZonePosition(Vector3 pos)
+        {
+            const float toleranceSq = 50f * 50f;
+            return (pos - new Vector3(0f, 5000f, -5000f)).sqrMagnitude < toleranceSq;
+        }
+
+        /// <summary>
+        /// Mirrors ReviveDeadPlayers (decompile 2760-2779), plus one deliberate co-op
+        /// DEVIATION (documented, not silent): the original - and our own port until now -
+        /// revives by writing <c>character.data.dead/passedOut/fullyPassedOut</c> directly.
+        /// That works for the machine that owns the character (i.e. solo, and the host's own
+        /// character in co-op) but is invisible to a CLIENT: those fields only ever travel
+        /// over the <c>RPCA_Die</c>/<c>RPCA_Revive</c>/<c>RPCA_SetDead</c> RPC family, never
+        /// through the continuous character-sync stream. So the host revived its own local
+        /// copy of a dead client and that client stayed a spectating ghost on their own
+        /// screen - the exact session-reported co-op bug where a friend who joined the run
+        /// after the host (and was therefore killed on arrival by the game's own
+        /// <c>DeathOnArrival</c>) was still dead and spectating after a checkpoint load
+        ///
+        /// In co-op we therefore broadcast the game's own <c>RPCA_Revive(false)</c> on that
+        /// character's view instead, which runs these exact same field writes (plus the
+        /// affliction/thorn clears below) on EVERY machine, including the owning client.
+        /// <c>false</c> = don't apply the post-revive Curse/Hunger status, matching what the
+        /// original's direct writes did (i.e. nothing). Solo keeps the literal direct-write
+        /// path untouched - there is no second machine to reach, and the local writes have
+        /// been proven there since M3. The direct writes also stay as the fallback if the
+        /// RPC itself throws
+        ///
+        /// Everyone flagged is revived here regardless of what the save says, so the segment
+        /// jump and the warps below all run on living characters; whoever the checkpoint
+        /// recorded as dead is put back that way later in the sequence, once the restore has
+        /// settled but while the loading screen is still opaque - see
+        /// <see cref="DeathStateRestore"/> and that call site's own remarks
+        /// </summary>
+        private void ReviveDeadPlayers(Vector3 pos)
         {
             foreach (Player player in UnityEngine.Object.FindObjectsByType<Player>(FindObjectsSortMode.None))
             {
                 Character character = player.character;
                 if (character == null) continue;
                 if (!character.data.dead && !character.data.passedOut && !character.data.fullyPassedOut) continue;
+
+                if (!PhotonNetwork.OfflineMode && character.photonView != null)
+                {
+                    try
+                    {
+                        character.photonView.RPC("RPCA_Revive", RpcTarget.All, false);
+                        _log?.LogInfo($"OwnTeleportSequence.ReviveDeadPlayers: revived {character.characterName} (networked).");
+                        continue;
+                    }
+                    catch (Exception e)
+                    {
+                        _log?.LogWarning($"OwnTeleportSequence.ReviveDeadPlayers: RPCA_Revive failed for "
+                            + $"{character.characterName} ({e.Message}); falling back to a local-only revive.");
+                    }
+                }
 
                 character.data.dead = false;
                 character.data.deathTimer = 0f;

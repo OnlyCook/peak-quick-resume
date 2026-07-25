@@ -93,6 +93,35 @@ namespace PEAKQuickResume
             _loadInProgress = true;
             _pendingTargetPos = null;
             _knownTarget = null;
+            // A fresh load watches normally again - see SuppressForRestoredDeath
+            _suppressedForRestoredDeath = false;
+        }
+
+        // Set when THIS machine's own character is deliberately being restored as dead by a
+        // checkpoint load (see DeathStateRestore) - see SuppressForRestoredDeath below
+        private bool _suppressedForRestoredDeath;
+
+        /// <summary>
+        /// Called on the machine whose own character a checkpoint load is deliberately
+        /// restoring as dead (host: directly; a client: via <c>RPC_SuppressWatchdogForRestoredDeath</c>).
+        /// Every symptom this class watches for is meaningless on a spectating ghost - the
+        /// corpse is dragged below the map by vanilla's own FixedUpdate, so it reads as a
+        /// fall-through, and the death itself reads as "knocked out / died shortly after
+        /// load" - so the whole watch is dropped for the rest of this load
+        ///
+        /// Deliberately STICKY (a flag, not just a <see cref="LiftWatch"/> call): the death
+        /// is applied by the host while the loading screen is still up, which can land
+        /// either side of this machine's own <see cref="ArmPendingWatch"/>. Arriving first,
+        /// a plain LiftWatch would clear <see cref="_pendingTargetPos"/> and the arming that
+        /// followed would then flag "never teleported" on a player who was warped perfectly
+        /// well. The flag is cleared by the next <see cref="BeginLoadWindow"/>, so it only
+        /// ever covers the load that set it
+        /// </summary>
+        public void SuppressForRestoredDeath()
+        {
+            _suppressedForRestoredDeath = true;
+            _log?.LogInfo("TeleportWatchdog: this load is restoring us as dead on purpose; standing down for it.");
+            LiftWatch();
         }
 
         /// <summary>
@@ -162,6 +191,16 @@ namespace PEAKQuickResume
         public void ArmPendingWatch(Vector3? knownTargetOverride = null)
         {
             _loadInProgress = false;
+
+            // This load is deliberately restoring us as dead - don't watch, and in
+            // particular don't read a cleared _pendingTargetPos as "never teleported"
+            // (see SuppressForRestoredDeath for why this can arrive either way round)
+            if (_suppressedForRestoredDeath)
+            {
+                _pendingTargetPos = null;
+                return;
+            }
+
             if (knownTargetOverride.HasValue) _knownTarget = knownTargetOverride;
 
             if (_pendingTargetPos == null)
@@ -207,6 +246,7 @@ namespace PEAKQuickResume
         public void BeginWatch(Vector3 targetPos)
         {
             if (_cfg == null || !_cfg.EnableTeleportWatchdog.Value) return;
+            if (_suppressedForRestoredDeath) return; // see SuppressForRestoredDeath
 
             if (_running != null) StopCoroutine(_running);
             _postLoadWarpTimes.Clear();

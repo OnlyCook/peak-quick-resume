@@ -83,19 +83,19 @@ namespace PEAKQuickResume
                     if (p != null) playerNames.Add(p.character.characterName);
                 }
 
-                // World state (not per-player) - captured once using the host's own
-                // position and written ONLY into the host's own file below, see the class
-                // remarks for the field split. One shared "claimed" set threads through
-                // all three captures so the same physical item never ends up saved twice
-                // under two different mechanics - see WorldItemRestore's class remarks
-                // for why that matters
-                Vector3 statueSearchPos = Character.localCharacter != null ? Character.localCharacter.Head : Vector3.zero;
+                // World state (not per-player) - captured once around the anchor resolved
+                // below and written ONLY into the host's own file, see the class remarks
+                // for the field split. One shared "claimed" set threads through all three
+                // captures so the same physical item never ends up saved twice under two
+                // different mechanics - see WorldItemRestore's class remarks for why that
+                // matters
+                Vector3 worldAnchor = ResolveWorldAnchor(allPlayers, log);
                 var claimedItems = new HashSet<Item>();
-                AncientStatueRestore.Capture(statueSearchPos, claimedItems, log, out OwnSavedStatueState statueState);
-                LuggageRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
-                WorldItemRestore.Capture(statueSearchPos, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
-                DeployableRestore.CaptureStoves(statueSearchPos, log, out List<OwnSavedDeployableState> portableStoves);
-                DeployableRestore.CaptureCannons(statueSearchPos, log, out List<OwnSavedDeployableState> scoutCannons);
+                AncientStatueRestore.Capture(worldAnchor, claimedItems, log, out OwnSavedStatueState statueState);
+                LuggageRestore.Capture(worldAnchor, claimedItems, log, out List<OwnSavedLuggageState> luggageStates);
+                WorldItemRestore.Capture(worldAnchor, claimedItems, log, out List<OwnSavedPositionedItem> worldItemStates);
+                DeployableRestore.CaptureStoves(worldAnchor, log, out List<OwnSavedDeployableState> portableStoves);
+                DeployableRestore.CaptureCannons(worldAnchor, log, out List<OwnSavedDeployableState> scoutCannons);
 
                 // The rest of the level/world half. Read once here rather than re-read
                 // identically on every iteration below - these describe the run and the
@@ -150,9 +150,8 @@ namespace PEAKQuickResume
                         : (hostUserId.Length == 0 || userId == hostUserId);
 
                     Character character = player.character;
-                    Vector3 pos = character != null ? character.Head : player.transform.position;
                     if (character == null)
-                        log?.LogWarning("OwnSaveCapture.SavePlayerCoop: Character is null - used player.transform as fallback.");
+                        log?.LogWarning("OwnSaveCapture.SavePlayerCoop: Character is null for this player.");
 
                     List<OwnSavedItemState> inventoryStates = CaptureInventory(player, cfg, log);
                     List<OwnSavedBackpackItemState> backpackStates = CaptureBackpack(player, cfg, log);
@@ -185,6 +184,12 @@ namespace PEAKQuickResume
                         saveDate = DateTime.Now.ToString("dd.MM.yyyy | HH:mm:ss"),
                         hasBackpack = player.backpackSlot != null && player.backpackSlot.hasBackpack,
                         isSkeleton = character.data.isSkeleton,
+                        // Own addition (see OwnSaveData.isDead / DeathStateRestore): who was
+                        // a spectating ghost at save time, so a load can put them back that
+                        // way instead of silently reviving everyone. Deliberately only
+                        // data.dead - a merely passed-out player is knocked out, not dead,
+                        // and the load's own revive step legitimately brings them back up
+                        isDead = character != null && character.data.dead,
                         inventoryItemStates = inventoryStates,
                         backpackItemStates = backpackStates,
                         heldItemState = heldItemState,
@@ -197,14 +202,15 @@ namespace PEAKQuickResume
                     };
 
                     // Level/world half - host's file only, see the class remarks. The
-                    // saved position is the host's own: it's the teleport target every
-                    // player is warped to on load, not a per-player spawn point, so a
-                    // client's own position is never captured and never restored
+                    // saved position is the world anchor resolved once above (normally
+                    // the host's own): it's the teleport target every player is warped to
+                    // on load, not a per-player spawn point, so a client's own position is
+                    // never captured and never restored
                     if (isHostFile)
                     {
-                        data.posX = pos.x;
-                        data.posY = pos.y;
-                        data.posZ = pos.z;
+                        data.posX = worldAnchor.x;
+                        data.posY = worldAnchor.y;
+                        data.posZ = worldAnchor.z;
                         data.playerNames = playerNames;
                         data.campfireName = campfireName;
                         data.timePlayed = timePlayed;
@@ -226,7 +232,7 @@ namespace PEAKQuickResume
 
                     log?.LogInfo($"OwnSaveCapture.SavePlayerCoop: saved {(isHostFile ? "host" : "client")} file for "
                         + $"{userId} (event {stamp}). Items: {inventoryStates.Count}"
-                        + (isHostFile ? $", Pos: {pos}, Scene: {sceneName}." : "."));
+                        + (isHostFile ? $", Pos: {worldAnchor}, Scene: {sceneName}." : "."));
                 }
 
                 // Mirrors decompile lines 4585-4586: local ShowMessage on the host, then
@@ -243,6 +249,71 @@ namespace PEAKQuickResume
             {
                 log?.LogError($"OwnSaveCapture.SavePlayerCoop failed: {e}");
             }
+        }
+
+        /// <summary>
+        /// Where the WORLD half of a co-op save is anchored: the position written into the
+        /// host's file (the teleport target every player is warped to on load) AND the search
+        /// centre for the ancient statue / luggage / ground item / deployable capture
+        ///
+        /// Normally simply the host's own head, exactly as before. The exception this method
+        /// exists for is a session-reported bug (2026-07-26): a dead character's ragdoll is
+        /// dragged every FixedUpdate towards <c>Character.DeathPos()</c>, a fixed spot at
+        /// <c>(0, 5000, -5000)</c> far outside the map, so a checkpoint written while the HOST
+        /// was dead (a client lighting the campfire is enough to trigger one - see
+        /// <c>RPC_RequestSave</c>) anchored the entire world half in that empty death zone.
+        /// The result was a save whose statue/luggage/ground-item capture found nothing at all
+        /// and whose teleport target was 5km off the map, so loading it warped everyone into
+        /// the void and no terrain ever loaded around them
+        ///
+        /// A dead host's own position is therefore never used: the anchor falls back to any
+        /// LIVING player (they're standing at the campfire that triggered the save - that's
+        /// what a checkpoint is), and only if there isn't one to the campfire this checkpoint
+        /// belongs to. The host-is-alive path is untouched, so nothing about a normal save changes
+        /// </summary>
+        private static Vector3 ResolveWorldAnchor(Player[] allPlayers, ManualLogSource log)
+        {
+            Character local = Character.localCharacter;
+            if (local != null && !local.data.dead) return local.Head;
+
+            log?.LogWarning("OwnSaveCapture: the host is dead (or has no character) at save time, so their own "
+                + "position is the off-map death zone - anchoring this save's world state on a living player instead.");
+
+            if (allPlayers != null)
+            {
+                foreach (Player p in allPlayers)
+                {
+                    Character ch = p != null ? p.character : null;
+                    if (ch == null || ch == local || ch.data.dead) continue;
+
+                    log?.LogInfo($"OwnSaveCapture: world state anchored on {ch.characterName} at {ch.Head}.");
+                    return ch.Head;
+                }
+            }
+
+            // Nobody alive at all. Not reachable in a normal run (vanilla ends the run the
+            // moment every player is dead), so this is purely belt-and-braces: the campfire
+            // this checkpoint belongs to is still a far better anchor than the death zone
+            try
+            {
+                Campfire campfire = MapHandler.PreviousCampfire;
+                if (campfire != null)
+                {
+                    Vector3 campfirePos = campfire.transform.position;
+                    log?.LogWarning($"OwnSaveCapture: no living player found either - anchoring on the checkpoint's "
+                        + $"own campfire at {campfirePos}.");
+                    return campfirePos;
+                }
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"OwnSaveCapture: could not read the current campfire as a fallback anchor: {e.Message}");
+            }
+
+            log?.LogError("OwnSaveCapture: could not resolve any sane world anchor for this save - falling back to the "
+                + "host's own position. If the host was dead, this checkpoint's world state and teleport target will "
+                + "be wrong (the load path detects and works around this, see OwnTeleportSequence).");
+            return local != null ? local.Head : Vector3.zero;
         }
 
         /// <summary>
@@ -339,6 +410,11 @@ namespace PEAKQuickResume
                     segment = currentSegment,
                     hasBackpack = localPlayer.backpackSlot != null && localPlayer.backpackSlot.hasBackpack,
                     isSkeleton = Character.localCharacter.data.isSkeleton,
+                    // Captured for save-shape consistency only - solo can never actually
+                    // reach a saved-while-dead state (the one player being dead IS the
+                    // whole team being dead, which ends the run), and the restore side
+                    // ignores this field entirely offline. See DeathStateRestore
+                    isDead = Character.localCharacter.data.dead,
                     inventoryItemStates = inventoryStates,
                     backpackItemStates = backpackStates,
                     heldItemState = heldItemState,
