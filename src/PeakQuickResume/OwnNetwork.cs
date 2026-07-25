@@ -61,6 +61,22 @@ namespace PEAKQuickResume
         private readonly Dictionary<string, string> _playerModVersions = new Dictionary<string, string>();
         private bool _clientSentVersionReport;
 
+        // Own addition: userIds that have confirmed their own local
+        // RunClientPresentationExit (wake-up/fade-out) has actually finished for the
+        // CURRENT presentation cycle. Master-client side only, mirrors
+        // _playerReceivedReadyStatus's own shape. Cleared every time a new cycle starts
+        // (ClientPresentationOthers(true)) so a stale confirmation from a PRIOR load can
+        // never satisfy the wait for a new one. Closes a real gap found via a session
+        // report (2026-07-25): RPC_ClientPresentation(false) was fire-and-forget with no
+        // acknowledgment at all, so the host had zero visibility into whether a client's
+        // own independently-timed wake-up animation had actually finished before a
+        // Restart's GameOverHandler.LoadAirport() tore the scene down underneath it -
+        // confirmed as the cause of a client-side infinite-loading-screen even though the
+        // HOST's own OwnTeleportSequence had already fully completed by then (the
+        // OrchestrationLock fix from the same session only closes the HOST-side half of
+        // this race, not the client's own local presentation timeline)
+        private readonly Dictionary<string, bool> _playerPresentationDone = new Dictionary<string, bool>();
+
         public void Init(ManualLogSource log, PluginConfig cfg)
         {
             _log = log;
@@ -103,6 +119,21 @@ namespace PEAKQuickResume
             }
         }
 
+        // Handle to the currently-running SendReadyStatusToMaster retry loop (see its
+        // own remarks) so it can be explicitly cancelled on a scene transition instead
+        // of being left to free-run: this component lives DontDestroyOnLoad, so a
+        // coroutine started for one resume attempt otherwise keeps retrying straight
+        // through subsequent Airport returns and fresh level loads, stacking a NEW
+        // retry loop on top of the still-alive old one every time. Confirmed in a real
+        // session log (2026-07-25): RPC_SendReadyStatusToMaster arriving in bursts of
+        // 2-3 at once instead of the coded 3s cadence, continuing well past a resume
+        // that had already completed - multiple overlapping loops on the same channel
+        private Coroutine _readyStatusCoroutine;
+
+        // Unscaled time the current Level scene was entered, or < 0 if not currently in
+        // one - see CheckReadyStatusForPlayers' own remarks (mod-detection grace window)
+        private float _levelEnteredAt = -1f;
+
         // Mirrors the checkpoint mod's own Update() scene-based state machine
         // (decompile 1345-1413) for JUST the ready-status bookkeeping - the rest of
         // that state machine (mod-version check, campfire cooldowns, etc.) is ported
@@ -113,17 +144,23 @@ namespace PEAKQuickResume
 
             if (RunLauncher.InAirport)
             {
+                StopReadyStatusRetry();
                 _clientSentReadyStatus = false;
                 _clientSentVersionReport = false;
                 _playerReceivedReadyStatus.Clear();
+                _playerModVersions.Clear();
+                _playerPresentationDone.Clear();
+                _levelEnteredAt = -1f;
                 return;
             }
 
             if (RunLauncher.InLevel)
             {
+                if (_levelEnteredAt < 0f) _levelEnteredAt = Time.unscaledTime;
+
                 if (!_clientSentReadyStatus && !RunLauncher.IsHost)
                 {
-                    StartCoroutine(SendReadyStatusToMaster());
+                    _readyStatusCoroutine = StartCoroutine(SendReadyStatusToMaster());
                     _clientSentReadyStatus = true;
                 }
                 if (!_clientSentVersionReport && !RunLauncher.IsHost)
@@ -136,27 +173,54 @@ namespace PEAKQuickResume
 
             if (RunLauncher.InTitle)
             {
+                StopReadyStatusRetry();
                 _clientSentReadyStatus = false;
                 _clientSentVersionReport = false;
                 _playerReceivedReadyStatus.Clear();
+                _playerModVersions.Clear();
+                _playerPresentationDone.Clear();
+                _levelEnteredAt = -1f;
             }
         }
 
+        private void StopReadyStatusRetry()
+        {
+            if (_readyStatusCoroutine == null) return;
+            StopCoroutine(_readyStatusCoroutine);
+            _readyStatusCoroutine = null;
+        }
+
         // Mirrors SendReadyStatusToMaster (decompile 1020-1032): waits for the local
-        // character to exist, then a flat 5s settle, then RPCs the master client
+        // character to exist, then a flat 5s settle, then RPCs the master client.
+        //
+        // Own addition: retries every few seconds instead of firing once. A single
+        // fire-and-forget RPC here raced the host's own hard-timeout WaitFor in real
+        // session logs (2026-07-25, coop across a slower client machine after 1.65.a's
+        // heavier level loads) - the host aborted the whole resume when the one RPC
+        // attempt simply hadn't landed yet. Retrying is safe: OnClientReportedReady is
+        // idempotent (only ever adds to the dict, never harmed by a duplicate), so
+        // resending costs nothing but bandwidth and closes the race
         private IEnumerator SendReadyStatusToMaster()
         {
             while (Character.localCharacter == null) yield return null;
             yield return new WaitForSeconds(5f);
 
-            try
+            const float retryInterval = 3f;
+            const float giveUpAfter = 60f;
+            float elapsed = 0f;
+            while (elapsed < giveUpAfter && RunLauncher.InLevel)
             {
-                _pv.RPC(nameof(OwnNetworkRpc.RPC_SendReadyStatusToMaster), RpcTarget.MasterClient,
-                    PhotonNetwork.LocalPlayer.UserId, PhotonNetwork.LocalPlayer.NickName);
-            }
-            catch (Exception e)
-            {
-                _log?.LogError($"OwnNetwork.SendReadyStatusToMaster RPC failed: {e}");
+                try
+                {
+                    _pv.RPC(nameof(OwnNetworkRpc.RPC_SendReadyStatusToMaster), RpcTarget.MasterClient,
+                        PhotonNetwork.LocalPlayer.UserId, PhotonNetwork.LocalPlayer.NickName);
+                }
+                catch (Exception e)
+                {
+                    _log?.LogError($"OwnNetwork.SendReadyStatusToMaster RPC failed: {e}");
+                }
+                yield return new WaitForSeconds(retryInterval);
+                elapsed += retryInterval;
             }
         }
 
@@ -192,6 +256,19 @@ namespace PEAKQuickResume
                 _log?.LogWarning($"OwnNetwork.OnClientReportedVersion failed: {e.Message}");
             }
         }
+
+        /// <summary>
+        /// True once this userId has reported running Quick Resume at all (any version -
+        /// see OwnInventoryRestore's held-item restore for the one place this actually
+        /// gates something, not just a diagnostic). Master-client side only; always false
+        /// offline (nothing to report). No grace window here unlike
+        /// CheckReadyStatusForPlayers/AllClientsPresentationDone: this is only ever
+        /// consulted from OwnInventoryRestore.RestoreAll, which runs well after the coop
+        /// ready-status wait already succeeded - by then a real Quick Resume client's
+        /// version report (sent with no delay, unlike the 5s-delayed ready-status RPC) has
+        /// had ample time to arrive already
+        /// </summary>
+        public bool PlayerReportedMod(string userId) => _playerModVersions.ContainsKey(userId);
 
         // Called on the RECEIVING client's machine by OwnNetworkRpc.RPC_ClientPresentation
         // (sent by the host, see ClientPresentationOthers) - mirrors the host's own local
@@ -257,6 +334,20 @@ namespace PEAKQuickResume
                 yield return LoadingScreen.FadeOut(_cfg.OwnLoadingScreenFadeTime.Value);
             if (WakeUpEffect != null && _cfg != null)
                 yield return WakeUpEffect.Wake(_cfg.OwnWakeUpStandTime.Value);
+
+            // Tell the host this client's own presentation cycle has genuinely finished -
+            // see _playerPresentationDone's remarks for why this matters. Best-effort: if
+            // it's lost, the host's own wait just falls back to its timeout, same as the
+            // ready-status RPC
+            try
+            {
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_ClientPresentationDone), RpcTarget.MasterClient,
+                    PhotonNetwork.LocalPlayer.UserId);
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnNetwork.RunClientPresentationExit: RPC_ClientPresentationDone failed: {e.Message}");
+            }
         }
 
         // Called (master-client side only) by OwnNetworkRpc.RPC_SendReadyStatusToMaster.
@@ -281,11 +372,34 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Grace window (seconds since the level was entered) given to a connected
+        /// player to report SOMETHING - either their mod version or their ready status -
+        /// before we give up waiting specifically on their ready-RPC and assume they're
+        /// not running Quick Resume at all. The version report has no settle delay (see
+        /// ReportVersionToMaster) so any player who DOES have the mod reports well within
+        /// this window; well short of CoopReadyTimeout's default 60s, so a genuinely slow
+        /// modded client still gets its full window via the ready-status retry loop -
+        /// this only shortcuts players who were never going to report in the first place
+        /// </summary>
+        private const float ModDetectionGraceSeconds = 10f;
+
+        /// <summary>
         /// True once every connected non-host player has reported ready (or the
         /// ready-check setting is disabled). Mirrors <c>CheckReadyStatusForPlayers</c>
         /// (decompile 1034-1054) field-for-field: every live <c>Player</c>'s owning
         /// actor must either be the master client itself, or already be present in
         /// the ready-status dictionary above
+        ///
+        /// Own addition: a player who has ALSO never reported a mod-version, past
+        /// <see cref="ModDetectionGraceSeconds"/> since the level loaded, is treated as
+        /// not running Quick Resume at all (only our own OwnNetwork ever sends either
+        /// RPC) and is exempted from this check entirely - otherwise host-only installs
+        /// (this mod on the host, vanilla or just the original checkpoint mod on
+        /// clients) would hang the full CoopReadyTimeout on every single coop resume,
+        /// not intermittently, since a client that can never send the RPC we're waiting
+        /// on will obviously never send it. Falls back to the existing settle-delay
+        /// timing (SettleAfterLevel/CoopAirportSettle) for that player instead, same as
+        /// if this whole feature didn't exist for them
         /// </summary>
         public bool CheckReadyStatusForPlayers()
         {
@@ -293,6 +407,9 @@ namespace PEAKQuickResume
 
             try
             {
+                bool graceElapsed = _levelEnteredAt >= 0f
+                    && (Time.unscaledTime - _levelEnteredAt) >= ModDetectionGraceSeconds;
+
                 foreach (var player in UnityEngine.Object.FindObjectsByType<Player>(FindObjectsSortMode.None))
                 {
                     if (player == null) continue;
@@ -301,8 +418,10 @@ namespace PEAKQuickResume
 
                     string userId = NetworkingUtilities.GetUserId(character.player);
                     bool ownerIsMaster = character.photonView.Owner.IsMasterClient;
-                    if (!_playerReceivedReadyStatus.ContainsKey(userId) && !ownerIsMaster)
-                        return false;
+                    if (ownerIsMaster) continue;
+                    if (_playerReceivedReadyStatus.ContainsKey(userId)) continue;
+                    if (graceElapsed && !_playerModVersions.ContainsKey(userId)) continue; // no mod, never will report
+                    return false;
                 }
                 return true;
             }
@@ -506,8 +625,64 @@ namespace PEAKQuickResume
         /// </summary>
         public void ClientPresentationOthers(bool show)
         {
+            // A `show` call always starts a brand-new cycle - clear out any stale
+            // confirmation left over from the PREVIOUS cycle so AllClientsPresentationDone
+            // can't be satisfied by an old ack that has nothing to do with this one
+            if (show) _playerPresentationDone.Clear();
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_ClientPresentation), RpcTarget.Others, show); }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.ClientPresentationOthers failed: {e.Message}"); }
+        }
+
+        // Called (master-client side only) by OwnNetworkRpc.RPC_ClientPresentationDone
+        internal void OnClientPresentationDone(string userId)
+        {
+            try
+            {
+                if (!_playerPresentationDone.ContainsKey(userId))
+                    _playerPresentationDone[userId] = true;
+                _log?.LogInfo($"OwnNetwork: RPC_ClientPresentationDone userId={userId}.");
+            }
+            catch (Exception e)
+            {
+                _log?.LogError($"OwnNetwork.OnClientPresentationDone failed: {e}");
+            }
+        }
+
+        /// <summary>
+        /// True once every connected non-host player has confirmed their own local
+        /// presentation cycle (wake-up/fade-out) has actually finished - same shape and
+        /// same mod-detection-grace exemption as <see cref="CheckReadyStatusForPlayers"/>
+        /// (a player who never reports a mod version, past the grace window, is assumed
+        /// to not be running Quick Resume at all - including an older build that predates
+        /// this RPC entirely - and is exempted rather than blocking forever)
+        /// </summary>
+        public bool AllClientsPresentationDone()
+        {
+            try
+            {
+                bool graceElapsed = _levelEnteredAt >= 0f
+                    && (Time.unscaledTime - _levelEnteredAt) >= ModDetectionGraceSeconds;
+
+                foreach (var player in UnityEngine.Object.FindObjectsByType<Player>(FindObjectsSortMode.None))
+                {
+                    if (player == null) continue;
+                    Character character = player.character;
+                    if (character == null) continue;
+
+                    string userId = NetworkingUtilities.GetUserId(character.player);
+                    bool ownerIsMaster = character.photonView.Owner.IsMasterClient;
+                    if (ownerIsMaster) continue;
+                    if (_playerPresentationDone.ContainsKey(userId)) continue;
+                    if (graceElapsed && !_playerModVersions.ContainsKey(userId)) continue; // no mod, never will report
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnNetwork.AllClientsPresentationDone failed (assuming done): {e.Message}");
+                return true;
+            }
         }
 
         /// <summary>Mirrors decompile line 167: RpcTarget.MasterClient (2), client -> host</summary>
@@ -553,6 +728,13 @@ namespace PEAKQuickResume
         public void RPC_ClientPresentation(bool show)
         {
             Owner?.HandleClientPresentation(show);
+        }
+
+        /// <summary>Own addition: client -> host, see OwnNetwork.RunClientPresentationExit</summary>
+        [PunRPC]
+        public void RPC_ClientPresentationDone(string userId)
+        {
+            Owner?.OnClientPresentationDone(userId);
         }
 
         /// <summary>Mirrors RPC_RequestSave exactly (decompile 507-516): master-only</summary>

@@ -117,10 +117,35 @@ namespace PEAKQuickResume
                     try { ch.player.tempFullSlot?.EmptyOut(); }
                     catch { /* matches the original's own swallow */ }
 
-                    if (data.heldItemState != null)
+                    // Equipping the restored item into slot 250 (below, after the
+                    // SyncInventoryRPC wait) requires EquipSlot to run ON THE OWNING
+                    // CLIENT's own machine - for a remote (non-host) player that's only
+                    // reachable via OUR OWN RPC_EquipHeldItem (see the equip step's own
+                    // remarks), which a player NOT running Quick Resume has no receiver
+                    // for at all. Populating tempFullSlot via the vanilla SyncInventoryRPC
+                    // alone (still perfectly happy to sync to ANY client, modded or not)
+                    // without ever being able to equip it left a real vanilla client with
+                    // the item showing in the UI, nothing in hand, and the slot
+                    // permanently "reserved" - blocking any further pickup into it for the
+                    // rest of the run. Confirmed via a real session report (host-only
+                    // install, vanilla client, 2026-07-25). Skip restoring the held item
+                    // at all for a player we can't confirm will ever equip it - leaving
+                    // their tempFullSlot empty (already done above) is a real loss (that
+                    // one item), but strictly better than the broken reserved-but-empty
+                    // state
+                    bool canEquipRemotely = offline
+                        || (playerView != null && playerView.IsMine)
+                        || (entryPoints?.Network?.PlayerReportedMod(userId) ?? false);
+
+                    if (data.heldItemState != null && canEquipRemotely)
                     {
                         try { LoadHeldItem(data.heldItemState, ch.player, cfg, log); }
                         catch (Exception e) { log?.LogWarning($"OwnInventoryRestore: held-item restore failed: {e.Message}"); }
+                    }
+                    else if (data.heldItemState != null)
+                    {
+                        log?.LogInfo($"OwnInventoryRestore: skipping held-item restore for '{userId}' "
+                            + "- not confirmed to be running Quick Resume, would leave the slot reserved but empty.");
                     }
                 }
 

@@ -45,6 +45,14 @@ namespace PEAKQuickResume
         /// </summary>
         public void RequestRestart()
         {
+            // Route through the shared cooldown/queue first - see OrchestrationLock's
+            // remarks. The whole guard chain below is re-evaluated fresh whenever this
+            // actually runs (now, or after the queued wait), not stale-checked up front
+            OrchestrationLock.RunOrQueue("restart", RequestRestartNow, _log);
+        }
+
+        private void RequestRestartNow()
+        {
             if (_running)
             {
                 _log.LogInfo("Restart already in progress; ignoring request.");
@@ -64,16 +72,35 @@ namespace PEAKQuickResume
                 return;
             }
 
+            // Acquire the shared lock right before actually starting - see
+            // OrchestrationLock's remarks (this is the exact bug it fixes: a Restart
+            // firing while a Resume is still mid-flight raced GameOverHandler.LoadAirport()
+            // underneath the Resume and won with a fresh, unrelated run)
+            if (!OrchestrationLock.TryAcquire(LockOwner))
+            {
+                _log.LogInfo("Cannot restart: a resume is already in progress; ignoring request.");
+                return;
+            }
+
             int ascent;
             bool custom;
             try { ascent = Ascents.currentAscent; }
             catch (Exception e) { _log.LogError($"Could not read Ascents.currentAscent: {e}"); ascent = 0; }
             custom = RunLauncher.IsCustomRun;
 
-            StartCoroutine(RestartRoutine(ascent, custom));
+            // Capture the CURRENT island's scene name while we're still standing in it
+            // (RunLauncher.InLevel was just confirmed above) - see
+            // OwnLoadEntryPoints.ForceSelectedLevel's remarks for why this is needed at
+            // all: without it, the fresh run below re-rolls onto today's daily-rotation
+            // scene instead of a fresh run of the island the player was actually just on
+            string currentScene = RunLauncher.ActiveSceneName;
+
+            StartCoroutine(RestartRoutine(ascent, custom, currentScene));
         }
 
-        private IEnumerator RestartRoutine(int ascent, bool custom)
+        private const string LockOwner = "restart";
+
+        private IEnumerator RestartRoutine(int ascent, bool custom, string currentScene)
         {
             _running = true;
 
@@ -120,11 +147,24 @@ namespace PEAKQuickResume
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "loading to finish before StartRun");
             if (!_lastWaitOk) { Fail("Timed out waiting for loading to clear before StartRun"); yield break; }
 
+            // Force the fresh run onto the SAME island we just left, not whatever
+            // vanilla/today's daily rotation would otherwise pick - see
+            // OwnLoadEntryPoints.ForceSelectedLevel's remarks
+            OwnLoadEntryPoints.ForceSelectedLevel(currentScene);
+
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
 
             _log.LogInfo("=== Restart: sequence COMPLETE (fresh run started) ===");
             Msg(MessagesLocalization.Get(MsgKey.RunRestarted), MsgSuccess);
+
+            // Arm the post-orchestration cooldown (coop only) - see
+            // PostOrchestrationCooldown's remarks. A genuinely FAILED restart (Fail()
+            // above) does NOT arm this - nothing actually changed
+            if (!PhotonNetwork.OfflineMode)
+                OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
+
             _running = false;
+            OrchestrationLock.Release(LockOwner);
         }
 
         private static readonly Color MsgInfo = new Color(0.6f, 0.8f, 1f, 1f);
@@ -154,6 +194,7 @@ namespace PEAKQuickResume
             _log.LogError($"Restart aborted: {reason}.");
             Msg(MessagesLocalization.Get(MsgKey.RestartFailed), MsgError);
             _running = false;
+            OrchestrationLock.Release(LockOwner);
         }
     }
 }

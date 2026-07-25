@@ -58,6 +58,22 @@ namespace PEAKQuickResume
         internal static void ClearSelectedLevel() => SelectedLevel = "null";
 
         /// <summary>
+        /// Own addition, used by <see cref="RestartOrchestrator"/> only: forces
+        /// <see cref="SelectedLevel"/> directly to a scene name (the CURRENT level's own
+        /// <c>RunLauncher.ActiveSceneName</c>, captured before returning to the Airport)
+        /// rather than resolving it from a save file like <see cref="TryPreStartSetSegment"/>
+        /// does. Restart deliberately has no save/checkpoint involved at all - without
+        /// this, its fresh <c>RunLauncher.StartRun</c> call left <see cref="SelectedLevel"/>
+        /// at "null", so <see cref="MapBakerLevelOverridePatch"/> fell through to vanilla's
+        /// own selection, which is TODAY'S DAILY-ROTATION scene, not necessarily the island
+        /// the player was actually just on - confirmed via a real session report
+        /// (2026-07-25): restarting swapped the host onto the daily map instead of a fresh
+        /// run of the same island
+        /// </summary>
+        internal static void ForceSelectedLevel(string sceneName) =>
+            SelectedLevel = string.IsNullOrEmpty(sceneName) ? "null" : sceneName;
+
+        /// <summary>
         /// Armed on every peer (via <c>OwnNetwork.ArmTerrainRandomizerSuppressionAll</c>,
         /// RpcTarget.All so the host arms itself too, same reasoning as
         /// <c>RequestFalldamageProtectionAll</c>) right before <c>RunLauncher.StartRun</c>
