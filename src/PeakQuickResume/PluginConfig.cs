@@ -26,6 +26,8 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<float> SettleAfterAirport;
         public readonly ConfigEntry<float> SettleAfterLevel;
         public readonly ConfigEntry<float> StepTimeout;
+        public readonly ConfigEntry<float> CoopReadyTimeout;
+        public readonly ConfigEntry<float> PostOrchestrationCooldown;
         public readonly ConfigEntry<float> CoopAirportSettle;
 
         // Phase 8 M3: our own copies of the checkpoint mod's teleport-sequence
@@ -205,6 +207,25 @@ namespace PEAKQuickResume
                     "COOP ONLY: extra seconds to wait at the Airport before starting the fresh run, so other "
                     + "players have finished loading the Airport and will receive the run-start (advanced). "
                     + "Raise this if a client occasionally gets left behind on a slow connection.",
+                    new AcceptableValueRange<float>(0f, 15f)));
+
+            CoopReadyTimeout = cfg.Bind("Timing", "coop-ready-timeout", 60f,
+                new ConfigDescription(
+                    "COOP ONLY: max seconds to wait for every client to report ready after the level loads, before "
+                    + "aborting the resume (advanced). Separate from step-timeout since a slower/heavier-loading "
+                    + "client machine needs real headroom here specifically, not on every other stage.",
+                    new AcceptableValueRange<float>(1f, 180f)));
+
+            PostOrchestrationCooldown = cfg.Bind("Timing", "post-orchestration-cooldown", 3f,
+                new ConfigDescription(
+                    "COOP ONLY: seconds after a resume/restart/return-to-airport finishes before another one is "
+                    + "allowed to actually start a new scene transition. Not a block - pressing resume/restart "
+                    + "again during this window just queues it to run automatically once the cooldown clears "
+                    + "(the latest request replaces any previously queued one). Session-confirmed (2026-07-25): "
+                    + "firing a brand-new scene transition the instant the previous one's client confirmation "
+                    + "lands can still break a client (a Photon scene-sync timing issue below this mod's own "
+                    + "code, not a bug this mod can otherwise fix) - waiting a few real seconds first always "
+                    + "worked. Set to 0 to fully disable this cooldown.",
                     new AcceptableValueRange<float>(0f, 15f)));
 
             OwnTeleportFramesToWait = cfg.Bind("Teleport", "teleport-frames-to-wait", 30,

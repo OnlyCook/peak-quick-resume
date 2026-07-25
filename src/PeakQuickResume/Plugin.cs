@@ -1,5 +1,6 @@
 using BepInEx;
 using HarmonyLib;
+using Photon.Pun;
 using UnityEngine;
 
 namespace PEAKQuickResume
@@ -76,6 +77,10 @@ namespace PEAKQuickResume
             DontDestroyOnLoad(go);
             go.hideFlags = HideFlags.HideAndDontSave;
             _orchestrator = go.AddComponent<ResumeOrchestrator>();
+
+            // Give the shared cooldown/queue (see OrchestrationLock's remarks) a
+            // DontDestroyOnLoad coroutine host to run its queued-request wait on
+            OrchestrationLock.Init(_orchestrator);
 
             // Phase 8 M9: stand up our own message overlay first - several components
             // below need it immediately
@@ -350,15 +355,40 @@ namespace PEAKQuickResume
         /// <summary>Send everyone back to the Airport, no new run started</summary>
         internal void RequestReturnToAirport()
         {
+            // Route through the shared cooldown/queue first - see OrchestrationLock's
+            // remarks. Unlike Resume/Restart this isn't itself a multi-step coroutine, but
+            // it still triggers a full scene transition (GameOverHandler.LoadAirport /
+            // RunLauncher.ReturnToAirport), so it's included for the same safety reason -
+            // per the maintainer's explicit direction (2026-07-25 follow-up)
+            OrchestrationLock.RunOrQueue("return-to-airport", RequestReturnToAirportNow, Logger);
+        }
+
+        private void RequestReturnToAirportNow()
+        {
             if (!RunLauncher.IsHost)
             {
                 Logger.LogWarning("Return to Airport ignored: only the host can do this.");
                 return;
             }
+
+            // Same busy-lock guard Resume/Restart already had against each other - a
+            // Return-to-Airport had none at all before this, despite firing the same kind
+            // of scene-altering RPC (GameOverHandler.LoadAirport) they do
+            if (OrchestrationLock.IsBusy)
+            {
+                Logger.LogInfo("Return to Airport ignored: a resume/restart is already in progress.");
+                return;
+            }
+
             // Us intentionally moving the player away, not a checkpoint-mod teleport -
             // see TeleportWatchdog.LiftWatch
             _watchdog?.LiftWatch();
             RunLauncher.ReturnToAirport(Logger);
+
+            // Arm the post-orchestration cooldown (coop only) - see
+            // PostOrchestrationCooldown's remarks
+            if (!PhotonNetwork.OfflineMode)
+                OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
         }
 
         /// <summary>Open the gate-kiosk UI directly, without walking up to it</summary>

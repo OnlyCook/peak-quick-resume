@@ -2165,6 +2165,56 @@ Design confirmed from decompile: networked scene loads propagate to clients via
   - Upstream levers: checkpoint mod's `jumpLogicWaitTime`, teleport-frames, `teleportJumpLogic`
     (try 1 or 2), and its manual F9 re-teleport.
 
+- **Rare spurious "host left the expedition" on a client, right after a Restart fired close
+  behind a Resume** (session 2026-07-25, coop, host=desktop/client=laptop, post-1.65.a).
+  Full investigation this session fixed THREE confirmed, deterministic bugs first (see
+  `OrchestrationLock.cs`, `OwnNetwork.cs`'s `AllClientsPresentationDone`/ready-status retry,
+  `RestartOrchestrator.cs`'s `ForceSelectedLevel`) - this entry is the ONE remaining loose
+  end after all of that, and it looks environmental/upstream, not something fixed by our
+  own orchestration logic:
+  - **Symptom:** client hit the custom "LOADING SAVE..." overlay (or vanilla "LOADING...")
+    and never recovered; host saw everything succeed normally on its own side.
+  - **Root cause, confirmed via the client's own Unity `Player.log`** (BepInEx's
+    `LogOutput.log` alone did NOT show this - the client-side log just went silent, no
+    exception): the client's game genuinely believed the HOST had disconnected -
+    `Message sent to player log: N1K0 left the expedition.` / `Player <hostUserId> just
+    left.` / `No reconnect record found.` - with none of the normal voluntary-quit markers
+    around it (`Leaving current lobby`, `Leaving game and returning to main menu`, `Photon
+    StartDisconnected`), unlike a real quit. The client then rebuilt its own character from
+    scratch as an isolated session (`Attempting to spawn host's local character -- ... (that's
+    me)`), which is why it looked stuck/broken - not a deadlock, a false disconnect
+    recovery. Character spawn took 42s instead of the usual &lt;1s.
+  - Immediately preceding it: a burst of vanilla (not our own) RPCs -
+    `SyncInventoryRPC`/`OnPickupAccepted`/`ReceivePluginsFromHostRPC` - failing with
+    `PhotonView does not exist`, `By: #01 'N1K0'`. Plausible (not confirmed) causal chain:
+    these are late-arriving tail RPCs from the just-finished Resume's inventory restore,
+    landing after the Restart's scene teardown had already destroyed their target
+    PhotonViews, and something in that failure burst tripped the client's own
+    host-presence heuristic.
+  - **Important caveat:** `SyncAfflictionsRPC`/`RPCA_SyncTime`/`RPCA_SyncFog` "PhotonView
+    does not exist" warnings are a RED HERRING - confirmed present many times in a
+    follow-up fully-successful session (5 restarts + 4 loads, zero failures across 2 game
+    restarts on both machines) with no ill effect. Don't chase those specifically if this
+    recurs; look for the "left the expedition" / "just left" / "No reconnect record found"
+    trio instead, and check the SteamID logged against it matches the HOST's, with no
+    voluntary-quit markers nearby.
+  - **Reproduced exactly once** in this session, out of roughly a dozen aggressive
+    back-to-back resume/restart attempts across two sessions - did not recur across a
+    subsequent 9 back-to-back attempts after the `PostOrchestrationCooldown` fix landed.
+    Likely a genuine but low-frequency Photon-level race sitting below this mod's own
+    code (RPC delivery/ordering across a scene teardown), not something we can
+    deterministically repro or fix with certainty. The maintainer also notes vanilla PEAK
+    itself is easy to soft-lock this way independent of any mod (e.g. starting a run while
+    a joining friend is still mid-load can soft-lock that friend on a plain "LOADING..."
+    screen), which fits this being an upstream fragility rather than a bug unique to our
+    own orchestration.
+  - **If it recurs:** get the client's own Unity `Player.log` (not just BepInEx's
+    `LogOutput.log`), `grep -n "left the expedition\|just left\|No reconnect\|PhotonView
+    does not exist"`. If a mitigation is ever attempted, the most direct lever is raising
+    `Timing.post-orchestration-cooldown` further (default 3s) to widen the margin for any
+    late vanilla RPC backlog to drain before the next scene transition fires - not
+    attempted yet since it isn't reliably reproducible enough to verify against.
+
 ## Watch out for / deferred issues
 
 - **Hard dependency:** we declare a BepInEx hard-dep on `PEAK_Checkpoint_Save`, so

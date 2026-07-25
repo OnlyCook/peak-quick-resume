@@ -57,6 +57,16 @@ namespace PEAKQuickResume
         /// </summary>
         public void RequestResume(ArchivedSave chosen)
         {
+            // Route through the shared cooldown/queue first (see OrchestrationLock's
+            // remarks): if a resume/restart/return-to-airport JUST finished, this queues
+            // rather than running immediately, replacing any previously queued request.
+            // The whole guard chain below is re-evaluated fresh whenever this actually
+            // runs (now, or after the queued wait), not stale-checked up front
+            OrchestrationLock.RunOrQueue("resume", () => RequestResumeNow(chosen), _log);
+        }
+
+        private void RequestResumeNow(ArchivedSave chosen)
+        {
             if (_running)
             {
                 _log.LogInfo("Resume already in progress; ignoring request.");
@@ -85,8 +95,20 @@ namespace PEAKQuickResume
                 return;
             }
 
+            // Acquire the shared lock right before actually starting - see
+            // OrchestrationLock's remarks. Everything above is a plain validation guard
+            // that never touched game state, so there was nothing to release on those
+            // early-return paths
+            if (!OrchestrationLock.TryAcquire(LockOwner))
+            {
+                _log.LogInfo("Cannot resume: a restart is already in progress; ignoring request.");
+                return;
+            }
+
             StartCoroutine(ResumeRoutine());
         }
+
+        private const string LockOwner = "resume";
 
         private IEnumerator ResumeRoutine()
         {
@@ -241,7 +263,13 @@ namespace PEAKQuickResume
                     _log.LogInfo("[stage] Coop: waiting for all clients to report ready...");
                     Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
                     Func<bool> allReady = () => _ownLoadEntryPoints.Network.CheckReadyStatusForPlayers();
-                    yield return WaitFor(allReady, timeout, "all clients ready");
+                    // Own timeout, not the shared step-timeout: this is the one stage where a
+                    // slower/heavier-loading client machine genuinely needs real headroom (the
+                    // client's own ready RPC now retries for up to a minute - see
+                    // OwnNetwork.SendReadyStatusToMaster), whereas every other stage above is
+                    // local-only and should still fail fast if genuinely stuck
+                    float readyTimeout = Mathf.Max(1f, _cfg.CoopReadyTimeout.Value);
+                    yield return WaitFor(allReady, readyTimeout, "all clients ready");
                     if (!_lastWaitOk)
                     {
                         Fail("Timed out waiting for all clients to be ready (some players may still be loading)");
@@ -273,7 +301,52 @@ namespace PEAKQuickResume
             _log.LogInfo("=== Quick Resume: sequence COMPLETE (checkpoint load invoked) ===");
             Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);
             _chosen = null;
+
+            // Keep the shared lock held until OwnTeleportSequence's own tail has actually
+            // finished (fade-out/stand-up, and critically TeleportClientsToHost's up-to-32s
+            // client-arrival confirmation), not just RestoreComplete above - releasing the
+            // lock here let a second Resume/Restart start while a client was still mid-warp,
+            // confirmed via a real session report (2026-07-25): OwnTeleportSequence is a
+            // reused singleton, so two concurrent RunSequence coroutines stomped the same
+            // instance fields and double-fired ClientPresentationOthers RPCs at the client,
+            // leaving its character null/un-teleported for 15+ seconds and eventually
+            // recovering to a stale, days-old cached position. The completion message above
+            // still shows promptly (unaffected, still gated on RestoreComplete only) - only
+            // the NEXT orchestration's ability to start is what waits here
+            float teleportTailTimeout = Mathf.Max(timeout, 40f);
+            yield return WaitFor(() => !_ownLoadEntryPoints.TeleportInProgress, teleportTailTimeout,
+                "teleport sequence to fully finish");
+            if (!_lastWaitOk)
+                _log.LogWarning("[stage] Teleport sequence still running after its own tail timeout; "
+                    + "releasing the lock anyway to avoid a permanent stall.");
+
+            // Own timeline finishing isn't enough in coop: each client runs its own
+            // independently-timed wake-up/fade-out locally (RunClientPresentationExit),
+            // never acknowledged before this fix (see AllClientsPresentationDone's
+            // remarks). Wait for every client to actually confirm THEIRS is done too,
+            // before releasing the lock - a genuine session repro (2026-07-25) showed a
+            // Restart's GameOverHandler.LoadAirport() tearing the scene down while a
+            // client was still mid-way through its own local wake-up animation, even
+            // though the host's own OwnTeleportSequence had already fully finished
+            if (!PhotonNetwork.OfflineMode && _cfg.OwnWakeUpAnimationEnabled.Value)
+            {
+                yield return WaitFor(() => _ownLoadEntryPoints.Network.AllClientsPresentationDone(),
+                    teleportTailTimeout, "all clients to finish their own wake-up presentation");
+                if (!_lastWaitOk)
+                    _log.LogWarning("[stage] Not every client confirmed their wake-up presentation finished; "
+                        + "releasing the lock anyway to avoid a permanent stall.");
+            }
+
+            // Arm the post-orchestration cooldown (coop only - see PostOrchestrationCooldown's
+            // remarks, a Photon scene-sync timing issue below this mod's own code, not
+            // relevant offline where there's no client to race). A genuinely FAILED resume
+            // (Fail() below) does NOT arm this - nothing actually changed, so there's
+            // nothing that needs settling
+            if (!PhotonNetwork.OfflineMode)
+                OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
+
             _running = false;
+            OrchestrationLock.Release(LockOwner);
         }
 
         // On-screen message colours (reuses the checkpoint mod's overlay via interop)
@@ -351,6 +424,7 @@ namespace PEAKQuickResume
             _log.LogError($"Quick Resume aborted: {reason}.");
             _chosen = null;
             _running = false;
+            OrchestrationLock.Release(LockOwner);
         }
     }
 }
