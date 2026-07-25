@@ -1,3 +1,12 @@
+## 2.1.0
+
+- Fixed restarting (as the host) while a resume was still in progress sending the host onto the daily island instead of the loaded save.
+- Fixed co-op clients occasionally getting stuck on an infinite loading screen. This happened especially for clients on slower machines.
+- Fixed cases where if only the host had this mod installed it would fail to resume entirely.
+- Fixed a serious co-op bug where restarting (or loading another save) immediately after a previous load finished could very much corrupt a client's state. Still works like before, but there is now a small (configurable) delay before actually starting.
+- Fixed a co-op player without this mod installed sometimes ending up with their 4th item slot permanently locked. Now that item is just **not restored** at all, as it's impossible to restore if the given client doesn't have Quick Resume installed.
+- Known remaining issue (rare, and appears to be a vanilla PEAK/Photon bug rather than anything in this mod; I am pretty sure I managed to reproduce it in vanilla even): a co-op client can occasionally still get stuck after a host restart, with the client's own game incorrectly believing the host disconnected. If this happens, simply restarting again (almost) always resolves it.
+
 ## 2.0.3
 
 > All your saves created in *v1.64.a* (or older) will (probably) load incorrect islands because the game's map pool was rotated.
