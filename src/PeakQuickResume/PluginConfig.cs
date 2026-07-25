@@ -74,6 +74,12 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> RestorePlayerTempSlot;
         public readonly ConfigEntry<bool> RestoreAchievements;
 
+        // Coop-only: put players who were dead when the checkpoint was saved back into
+        // that state after a load (see DeathStateRestore). Gates ONLY the re-killing
+        // half - the load always revives everyone first, since that half is what stops a
+        // friend who joined the run late from being stuck dead and spectating
+        public readonly ConfigEntry<bool> RestoreDeathState;
+
         // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
         // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
         // same meaning) once we stop reflecting into its instance for this
@@ -311,6 +317,12 @@ namespace PEAKQuickResume
             RestoreAchievements = cfg.Bind("Teleport", "restore-achievements", true,
                 "If enabled, restores this run's in-progress achievement/Steam-stat tracking (Plunderer, "
                 + "Foraging, Mycology, First Aid, Clutch, Knot Tying, and the \"without ever X\" family).");
+
+            RestoreDeathState = cfg.Bind("Teleport", "restore-death-state", true,
+                "COOP ONLY: if enabled, players who were dead (spectating) when the checkpoint was saved are "
+                + "put back into that state once the load has finished. Players with no file in that checkpoint - "
+                + "a friend who joined the run after it was saved, for example - are always restored alive, and "
+                + "so is everyone else if this is disabled.");
 
             OwnEnableClientReadyStatusCheck = cfg.Bind("Network", "enable-client-ready-status-check", true,
                 "COOP ONLY: if enabled, our own save/load restore waits until every connected client has "

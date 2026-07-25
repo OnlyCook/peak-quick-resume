@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -53,8 +54,14 @@ namespace PEAKQuickResume
         /// state: which file each player's state comes from is resolved by
         /// <see cref="SaveSelection.TryGetPlayerFile"/>, and world state is restored
         /// separately by <see cref="OwnTeleportSequence"/> from the host's file alone
+        ///
+        /// <paramref name="restoringAsDead"/> (from
+        /// <see cref="DeathStateRestore.ResolveSavedDeadUserIds"/>, empty in solo and
+        /// whenever the setting is off) lists the players this load is putting back as a
+        /// corpse - they are skipped outright, see the loop's own remarks
         /// </summary>
-        public static IEnumerator RestoreAll(SaveSelection selection, PluginConfig cfg, OwnLoadEntryPoints entryPoints, ManualLogSource log)
+        public static IEnumerator RestoreAll(SaveSelection selection, PluginConfig cfg, OwnLoadEntryPoints entryPoints, ManualLogSource log,
+            HashSet<string> restoringAsDead = null)
         {
             for (int i = 0; i < 60; i++) yield return null;
 
@@ -67,6 +74,27 @@ namespace PEAKQuickResume
 
                 string userId = offline ? "" : NetworkingUtilities.GetUserId(ch.player);
                 PhotonView playerView = player.GetComponent<PhotonView>();
+
+                // This player is being restored as a corpse (see DeathStateRestore): they
+                // were dead when the checkpoint was written, and the death is re-applied
+                // shortly after this coroutine finishes, still behind the loading screen.
+                // Nothing below is worth doing for them - items, backpack, the held item,
+                // afflictions, thorns and ticks are all either meaningless on a spectating
+                // ghost or cleared again the moment anything ever revives them - and their
+                // own save file's inventory is empty by construction anyway, since dying
+                // dropped everything before that save was written. Their current slots are
+                // deliberately left alone rather than emptied: that mirrors vanilla's own
+                // SetDeadAfterReconnect (which also never drops), and emptying them would
+                // need its own inventory resync to be visible on their machine at all.
+                // Achievement progress is restored separately, earlier in the sequence, and
+                // is deliberately NOT skipped - it's this run's progress either way, and it
+                // still matters to them if a statue revives them later
+                if (restoringAsDead != null && restoringAsDead.Contains(userId))
+                {
+                    log?.LogInfo($"OwnInventoryRestore: skipping the per-player restore for '{userId}' "
+                        + "- they were dead when this checkpoint was saved and are being restored as dead.");
+                    continue;
+                }
 
                 // Every field read below is per-player state, and it all comes from THIS
                 // player's own file within the chosen save event - never from the host's

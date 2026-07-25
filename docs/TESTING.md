@@ -120,7 +120,31 @@ restore to work; keep both on all machines to be safe).
      `all clients ready` → `COMPLETE`, and all players are restored at the campfire.
 3. **Coop mid-game:** host presses F7 twice while alive → same, via the networked
    Airport return.
-4. ❓Report per case: did **all** clients reload the fresh instance and get restored?
+4. **Coop alive/dead restore (joined-late client):** host starts a run **alone** and lights a
+   campfire (the save event then contains only the host's file), then invites a friend who
+   joins mid-run — PEAK kills a joining player on arrival, so they spawn as a spectating
+   ghost. Host presses **F7** and loads that save.
+   - Expect: the client is **alive** at the campfire, not spectating. Host log:
+     `OwnTeleportSequence.ReviveDeadPlayers: revived <name> (networked).` and
+     `DeathStateRestore: '<userId>' has no file in this checkpoint's save event … restoring them alive.`
+5. **Coop alive/dead restore (someone really died):** host + client in a run, the **client**
+   dies, then the host lights a campfire and saves with the client dead. Load that save.
+   - Expect: the client is warped to the campfire with everyone else but is **already
+     spectating when their loading screen clears** - they should never be visible standing up
+     and then dropping dead. Host log: `OwnInventoryRestore: skipping the per-player restore
+     for '<userId>' …` followed by `DeathStateRestore: restored <name> as dead …`, both
+     *before* the fade-out. No "teleport bug detected" hint on the client's screen. Setting
+     `restore-death-state = false` in the config should instead bring them back alive with
+     their save restored as normal.
+6. **Coop save taken while the HOST is dead:** host dies, then the **client** lights a campfire
+   (that RPCs the save request to the host). Load that save.
+   - Expect: a normal load at that campfire, with the host restored dead. The host's log must
+     show `OwnSaveCapture: the host is dead … anchoring this save's world state on a living
+     player instead` at **save** time, and a `Pos:` that is a real map position, never
+     `(0, 5000, -5000)` (PEAK's off-map death zone). A save written by an older build with
+     that death-zone position logs `death-zone checkpoint retargeted to the <segment>
+     campfire` on load and should land everyone at the campfire instead of in empty space.
+7. ❓Report per case: did **all** clients reload the fresh instance and get restored?
    Paste the **host's** `Quick Resume / [stage] / [savescan]` log block. If a client
    glitched through the map after load, note it (likely an upstream checkpoint-mod
    teleport quirk — try its `teleportJumpLogic` config = 1 or 2).

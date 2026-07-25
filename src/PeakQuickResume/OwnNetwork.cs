@@ -600,6 +600,25 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.RestoreAchievementProgressFor failed: {e.Message}"); }
         }
 
+        /// <summary>
+        /// Own addition (no decompile counterpart - see <see cref="DeathStateRestore"/>):
+        /// tells the SPECIFIC player we are about to restore as dead that the death is
+        /// deliberate, so their own <see cref="TeleportWatchdog"/> stops watching instead
+        /// of reporting it as one of the known bad-teleport symptoms. Same targeted-RPC
+        /// shape as <see cref="EquipHeldItemFor"/>/<see cref="RestoreThornsFor"/> (the
+        /// watchdog is a client-local component - only that player's own machine can
+        /// silence theirs)
+        /// </summary>
+        public void SuppressWatchdogForRestoredDeath(PhotonView playerView, string userId)
+        {
+            try
+            {
+                if (playerView == null || playerView.Owner == null) return;
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_SuppressWatchdogForRestoredDeath), playerView.Owner, userId);
+            }
+            catch (Exception e) { _log?.LogWarning($"OwnNetwork.SuppressWatchdogForRestoredDeath failed: {e.Message}"); }
+        }
+
         /// <summary>Mirrors decompile line 162: RpcTarget.Others (1), sent by whichever machine actually saved</summary>
         public void RecentlyLitCampfireOthers()
         {
@@ -920,6 +939,29 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 Owner?.LogError($"RPC_RestoreThorns error: {e}");
+            }
+        }
+
+        /// <summary>
+        /// Own addition (no decompile counterpart), see
+        /// <see cref="OwnNetwork.SuppressWatchdogForRestoredDeath"/>. Runs on the machine
+        /// whose own character is about to be restored as dead, right before that death
+        /// lands - see DeathStateRestore's call site for the full reasoning
+        /// </summary>
+        [PunRPC]
+        public void RPC_SuppressWatchdogForRestoredDeath(string userId)
+        {
+            try
+            {
+                Character localCharacter = Character.localCharacter;
+                if (localCharacter == null) return;
+                if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
+
+                Owner?.Watchdog?.SuppressForRestoredDeath();
+            }
+            catch (Exception e)
+            {
+                Owner?.LogError($"RPC_SuppressWatchdogForRestoredDeath error: {e}");
             }
         }
 
