@@ -520,6 +520,15 @@ namespace PEAKQuickResume
 
             if (wakeUpEnabled) _entryPoints.Network?.ClientPresentationOthers(false);
 
+            // Resuming into a Roots campfire with Fairoots installed: that mod starts its own
+            // per-level work as the biome finishes loading, and revealing the world mid-burst
+            // would drop the player straight into a freeze. Held here, behind the still-opaque
+            // screen and BEFORE the cosmetic beat below, so that beat stays the last thing
+            // before the reveal. Costs one bool per frame without Fairoots, or in any other
+            // biome - see FairootsCompat. Refreshes the wake-up hold every frame for the same
+            // reason the two waits above do
+            yield return FairootsCompat.WaitUntilReady(_log, () => _wakeUpEffect?.RefreshHold());
+
             // A short extra pause BEHIND the still-opaque screen (loading-screen-fade-out-delay)
             // before the fade-out itself starts - purely cosmetic breathing room, requested so the
             // reveal doesn't feel like it's cutting straight from "everything just finished

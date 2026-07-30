@@ -312,6 +312,13 @@ namespace PEAKQuickResume
             bool showLoadingScreen = _cfg != null && !_cfg.DebugDisableLoadingScreen.Value;
             if (WakeUpEffect != null) WakeUpEffect.Collapse();
 
+            // Same Fairoots hold as the host's own sequence (see OwnTeleportSequence and
+            // FairootsCompat), and it genuinely has to be repeated per client rather than
+            // covered by the host's: every machine runs its own copy of Fairoots' per-level
+            // work, on its own timing, so the host being finished says nothing about whether
+            // this client is
+            yield return FairootsCompat.WaitUntilReady(_log, () => WakeUpEffect?.RefreshHold());
+
             // A short pause BEHIND the still-opaque screen before the fade-out itself starts -
             // same cosmetic breathing room as the host (see OwnTeleportSequence.cs remarks).
             // Per-frame loop (not a flat WaitForSeconds) so we can re-stamp data.lastPassedOut
