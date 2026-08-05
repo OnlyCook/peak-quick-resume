@@ -89,6 +89,11 @@ namespace PEAKQuickResume
             _messageOverlay = go.AddComponent<OwnMessageOverlay>();
             _messageOverlay.Init(Logger);
 
+            // Suppresses vanilla's forced-quit "game has been updated" modal, which
+            // (unlike vanilla) can otherwise fire at our mid-run Airport pit stop and
+            // brick an unfinished save - see GameUpdateModalSuppressPatch
+            GameUpdateModalSuppressPatch.Apply(harmony, Logger, _messageOverlay);
+
             // Detect the intermittent bad-teleport symptoms after a resume (see
             // TeleportWatchdog / ROADMAP.md Phase 6). Created before the Harmony patches
             // below since TeleportWatchdogPatch needs a reference to it

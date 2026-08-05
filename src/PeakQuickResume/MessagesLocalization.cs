@@ -33,6 +33,7 @@ namespace PEAKQuickResume
         CheckpointModStillInstalled,       // full text, shown on the (persistent) help screen
         CheckpointModStillInstalledShort,  // {0} = help key; the brief one-time popup, points at the help screen
         GameUpdatedSavesMayBeWrong,        // {0} = new game version; one-time notice, log line AND on-screen popup use the exact same text
+        GameUpdateDialogSuppressed,        // shown when we swallow vanilla's forced-quit "game updated" modal (see GameUpdateModalSuppressPatch)
     }
 
     internal static class MessagesLocalization
@@ -404,12 +405,45 @@ namespace PEAKQuickResume
                 "PEAK Checkpoint Save jest nadal zainstalowany i już niepotrzebny. Spodziewaj się nieszkodliwych zduplikowanych zapisów i logów. Naciśnij {0}, aby zobaczyć szczegóły.",
                 "PEAK Checkpoint Save hâlâ yüklü ve artık gerekli değil. Zararsız, yinelenen kayıtlar ve loglar görebilirsiniz. Ayrıntılar için {0} tuşuna basın.",
             },
-            // English only for now (see the conversation this was decided in) - same
-            // exact text used for both the log line and the on-screen popup, deliberately
-            // kept short. {0} = the new game version (e.g. "1.65.a")
+            // Same exact text used for both the log line and the on-screen popup,
+            // deliberately kept short. {0} = the new game version (e.g. "1.65.a")
             [MsgKey.GameUpdatedSavesMayBeWrong] = new[]
             {
                 "Game updated to {0}: your existing save(s) may now LOAD THE WRONG ISLAND as the map pool was likely rotated by the update.",
+                "Le jeu a été mis à jour vers la version {0} : vos sauvegardes existantes risquent maintenant de CHARGER LA MAUVAISE ÎLE, la rotation des cartes ayant probablement changé avec la mise à jour.",
+                "Il gioco è stato aggiornato alla versione {0}: i tuoi salvataggi esistenti potrebbero ora CARICARE L'ISOLA SBAGLIATA, poiché il pool di mappe è stato probabilmente modificato dall'aggiornamento.",
+                "Spiel wurde auf {0} aktualisiert: Deine vorhandenen Speicherstände laden jetzt möglicherweise DIE FALSCHE INSEL, da der Karten-Pool durch das Update wahrscheinlich rotiert wurde.",
+                "El juego se actualizó a la versión {0}: tus partidas guardadas existentes ahora pueden CARGAR LA ISLA INCORRECTA, ya que es probable que el conjunto de mapas haya cambiado con la actualización.",
+                "El juego se actualizó a la versión {0}: tus partidas guardadas existentes ahora pueden CARGAR LA ISLA INCORRECTA, ya que es probable que el conjunto de mapas haya cambiado con la actualización.",
+                "O jogo foi atualizado para {0}: seus saves existentes agora podem CARREGAR A ILHA ERRADA, já que a pool de mapas provavelmente foi alterada pela atualização.",
+                "Игра обновлена до версии {0}: ваши существующие сохранения теперь могут ЗАГРУЖАТЬ НЕПРАВИЛЬНЫЙ ОСТРОВ, так как пул карт, вероятно, был изменён обновлением.",
+                "Гру оновлено до версії {0}: ваші наявні збереження тепер можуть ЗАВАНТАЖУВАТИ НЕПРАВИЛЬНИЙ ОСТРІВ, оскільки пул карт, ймовірно, було змінено оновленням.",
+                "游戏已更新至 {0}:你现有的存档现在可能会加载错误的岛屿,因为地图池很可能已随更新轮换。",
+                "",
+                "ゲームが{0}に更新されました:更新によってマッププールが変更された可能性があるため、既存のセーブデータが間違った島を読み込むことがあります。",
+                "게임이 {0} 버전으로 업데이트되었습니다: 업데이트로 맵 풀이 변경되었을 가능성이 있어 기존 저장 파일이 잘못된 섬을 불러올 수 있습니다.",
+                "Gra została zaktualizowana do wersji {0}: Twoje istniejące zapisy mogą teraz WCZYTAĆ NIEWŁAŚCIWĄ WYSPĘ, ponieważ pula map najprawdopodobniej została zmieniona przez aktualizację.",
+                "Oyun {0} sürümüne güncellendi: mevcut kayıtlarınız artık YANLIŞ ADAYI yükleyebilir, çünkü harita havuzu güncelleme ile muhtemelen değişti.",
+            },
+            // Shown once per session, in place of the vanilla forced-quit "update the
+            // game" popup - see GameUpdateModalSuppressPatch
+            [MsgKey.GameUpdateDialogSuppressed] = new[]
+            {
+                "PEAK has an update available. DO NOT close or update the game until everyone is done with this save. Updating now may make this save load the wrong island or break it entirely.",
+                "Une mise à jour de PEAK est disponible. NE fermez PAS et NE mettez PAS à jour le jeu tant que tout le monde n'a pas terminé avec cette sauvegarde. Mettre à jour maintenant pourrait faire charger la mauvaise île à cette sauvegarde, voire la corrompre complètement.",
+                "È disponibile un aggiornamento per PEAK. NON chiudere né aggiornare il gioco finché tutti non hanno finito con questo salvataggio. Aggiornare ora potrebbe far caricare a questo salvataggio l'isola sbagliata o comprometterlo del tutto.",
+                "Für PEAK ist ein Update verfügbar. Schließe das Spiel NICHT und aktualisiere es NICHT, bis alle mit diesem Speicherstand fertig sind. Ein Update jetzt kann dazu führen, dass dieser Speicherstand die falsche Insel lädt oder komplett unbrauchbar wird.",
+                "Hay una actualización disponible para PEAK. NO cierres ni actualices el juego hasta que todos hayan terminado con esta partida guardada. Actualizar ahora puede hacer que esta partida cargue la isla incorrecta o que se rompa por completo.",
+                "Hay una actualización disponible para PEAK. NO cierres ni actualices el juego hasta que todos hayan terminado con esta partida guardada. Actualizar ahora puede hacer que esta partida cargue la isla incorrecta o que se rompa por completo.",
+                "Uma atualização do PEAK está disponível. NÃO feche nem atualize o jogo até que todos tenham terminado com este save. Atualizar agora pode fazer este save carregar a ilha errada ou quebrá-lo completamente.",
+                "Доступно обновление PEAK. НЕ закрывайте и НЕ обновляйте игру, пока все не закончат с этим сохранением. Обновление сейчас может привести к тому, что это сохранение загрузит неправильный остров или будет полностью повреждено.",
+                "Доступне оновлення PEAK. НЕ закривайте і НЕ оновлюйте гру, поки всі не завершать роботу з цим збереженням. Оновлення зараз може призвести до того, що це збереження завантажить неправильний острів або буде повністю пошкоджене.",
+                "PEAK 有可用更新。在所有人使用完这个存档之前,请不要关闭或更新游戏。现在更新可能会导致此存档加载错误的岛屿,甚至彻底损坏。",
+                "",
+                "PEAKのアップデートが利用可能です。このセーブデータを全員が使い終わるまで、ゲームを閉じたりアップデートしたりしないでください。今アップデートすると、このセーブデータが間違った島を読み込んだり、完全に壊れてしまう可能性があります。",
+                "PEAK 업데이트가 있습니다. 모두가 이 저장 파일 사용을 마칠 때까지 게임을 종료하거나 업데이트하지 마세요. 지금 업데이트하면 이 저장 파일이 잘못된 섬을 불러오거나 완전히 손상될 수 있습니다.",
+                "Dostępna jest aktualizacja PEAK. NIE zamykaj ani NIE aktualizuj gry, dopóki wszyscy nie skończą korzystać z tego zapisu. Aktualizacja teraz może sprawić, że ten zapis wczyta niewłaściwą wyspę albo zostanie całkowicie uszkodzony.",
+                "PEAK için bir güncelleme mevcut. Bu kayıtla herkes işini bitirene kadar oyunu KAPATMAYIN veya GÜNCELLEMEYİN. Şimdi güncellemek, bu kaydın yanlış adayı yüklemesine veya tamamen bozulmasına neden olabilir.",
             },
         };
 
