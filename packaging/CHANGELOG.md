@@ -1,3 +1,9 @@
+## 2.1.1
+
+- Added new system to check for the native `MODAL_OUTOFDATE_TITLE` dialog which would open when loading a save game, locking all players from it since they are forced to update the game. Furthermore if the map pool were to rotated in this update, broken saves would potentially be served instead. You are now informed about this through the mod's in-game logging system.
+- Resolved unlocalized `GameUpdatedSavesMayBeWrong` entry by adding its corresponding translations.
+- Native [Fairoots](https://thunderstore.io/c/peak/p/OnlyCook/Fairoots) compatibility update: these two mods now don't interfere in any way.
+
 ## 2.1.0
 
 - **Saves are now stored in one place only.** Previously a save was written into the old `Checkpoint_Save` folder and then copied into this mod's own archive, and loading a checkpoint copied it back again. That copying is now gone and everything is happening directly inside the `QuickResume/Archive` folder.
