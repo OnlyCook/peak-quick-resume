@@ -168,6 +168,13 @@ namespace PEAKQuickResume
             // solid across a few real sessions
             AchievementDebugLogging.Apply(harmony, Logger);
 
+            // Vanilla bug fix, unrelated to save/restore: RespawnChest.Interact_CastFinished
+            // fires its achievement-progress event unconditionally, even on a repeat cast
+            // against an already-open statue - see RespawnChestDoubleCreditFix's own remarks
+            // for the full diagnosis (session-confirmed root cause of a Clutch Badge
+            // over-credit)
+            RespawnChestDoubleCreditFix.Apply(harmony, Logger);
+
             // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
             // target for the watchdog above (Character is a vanilla type). Our own
             // OwnTeleportSequence/OwnInventoryRestore arm the watchdog's load window

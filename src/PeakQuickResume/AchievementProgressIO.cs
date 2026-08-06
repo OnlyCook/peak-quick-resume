@@ -181,6 +181,31 @@ namespace PEAKQuickResume
 
                 Singleton<AchievementManager>.Instance.InitRunBasedValues((SerializableRunBasedValues)boxedNative);
 
+                // Session-diagnosed bug fix (2026-08-06): ReconnectHandler's host-side
+                // cache of each OTHER player's achievement progress (what
+                // ReconnectHandler.TryGetReconnectData returns, and what
+                // OwnSaveCapture.SavePlayerCoop reads for every non-host player - see
+                // that method's remarks) is only ever refreshed by the native
+                // Player.OnAchievementProgressChanged() -> RPC "UpdateAchievementProgress"
+                // path, which normally fires from AchievementManager.SetRunBasedInt/
+                // SetRunBasedFloat on every real in-game change (a revive, a knot tied,
+                // etc). InitRunBasedValues (just called above) writes runBasedValueData
+                // directly and never goes through those setters, so without this call the
+                // restoring client's rollback is invisible to the host's cache: the NEXT
+                // save captured for this player would silently re-bake in whatever
+                // progress existed right before this load, and each further load/act/save
+                // cycle compounds the drift. Confirmed root cause of a report where
+                // repeatedly loading a save and reviving the same player via the Ancient
+                // Statue granted the Clutch Badge (3 revives in one run) despite never
+                // actually holding 3 concurrent revives - same mechanism silently
+                // corrupts every OTHER run-based achievement counter (Plunderer/
+                // LuggageOpened, First Aid/FriendsHealedAmount, Knot Tying/RopePlaced,
+                // the eaten-food counters) for any non-host player. Mirrors exactly what
+                // a real achievement-progress change already does natively (see
+                // Player.OnAchievementProgressChanged/Update), just triggered manually
+                // since this restore bypasses the setters that normally trigger it
+                Player.localPlayer?.OnAchievementProgressChanged();
+
                 // [achievement-debug]: dumps exactly what got restored, so this can be
                 // eyeballed straight from LogOutput.log after a load - no SAM, no risk
                 // of actually testing an achievement threshold for real. See
@@ -188,18 +213,7 @@ namespace PEAKQuickResume
                 // just change" logging while playing
                 if (saved != null)
                 {
-                    string ints = saved.runBasedInts != null && saved.runBasedInts.Count > 0
-                        ? string.Join(", ", saved.runBasedInts.Select(kv => $"{(RUNBASEDVALUETYPE)kv.Key}={kv.Value}"))
-                        : "(none)";
-                    string floats = saved.runBasedFloats != null && saved.runBasedFloats.Count > 0
-                        ? string.Join(", ", saved.runBasedFloats.Select(kv => $"{(RUNBASEDVALUETYPE)kv.Key}={kv.Value}"))
-                        : "(none)";
-                    log?.LogInfo("[achievement-debug] Restored this run's achievement progress from save:\n"
-                        + $"  ints: {ints}\n"
-                        + $"  floats: {floats}\n"
-                        + $"  fruitsEaten={saved.runBasedFruitsEaten?.Count ?? 0}, shroomBerriesEaten={saved.shroomBerriesEaten?.Count ?? 0}, "
-                        + $"nonToxicMushroomsEaten={saved.nonToxicMushroomsEaten?.Count ?? 0}, gourmandRequirementsEaten={saved.gourmandRequirementsEaten?.Count ?? 0}\n"
-                        + $"  completedAscentsThisRun=[{string.Join(",", saved.completedAscentsThisRun ?? new List<int>())}]");
+                    log?.LogInfo("[achievement-debug] Restored this run's achievement progress from save:\n" + FormatDump(saved));
                 }
                 else
                 {
@@ -209,6 +223,49 @@ namespace PEAKQuickResume
             catch (Exception e)
             {
                 log?.LogWarning($"AchievementProgressIO.ApplyLocal failed (non-fatal): {e.Message}");
+            }
+        }
+
+        private static string FormatDump(OwnSavedAchievementProgress saved)
+        {
+            string ints = saved.runBasedInts != null && saved.runBasedInts.Count > 0
+                ? string.Join(", ", saved.runBasedInts.Select(kv => $"{(RUNBASEDVALUETYPE)kv.Key}={kv.Value}"))
+                : "(none)";
+            string floats = saved.runBasedFloats != null && saved.runBasedFloats.Count > 0
+                ? string.Join(", ", saved.runBasedFloats.Select(kv => $"{(RUNBASEDVALUETYPE)kv.Key}={kv.Value}"))
+                : "(none)";
+            return $"  ints: {ints}\n"
+                + $"  floats: {floats}\n"
+                + $"  fruitsEaten={saved.runBasedFruitsEaten?.Count ?? 0}, shroomBerriesEaten={saved.shroomBerriesEaten?.Count ?? 0}, "
+                + $"nonToxicMushroomsEaten={saved.nonToxicMushroomsEaten?.Count ?? 0}, gourmandRequirementsEaten={saved.gourmandRequirementsEaten?.Count ?? 0}\n"
+                + $"  completedAscentsThisRun=[{string.Join(",", saved.completedAscentsThisRun ?? new List<int>())}]";
+        }
+
+        /// <summary>
+        /// Temporary testing aid (2026-08-06 session): logs a full snapshot of the LOCAL
+        /// client's current live achievement progress, tagged with who/where/when so a
+        /// session with multiple campfires and a final win can be reconstructed after the
+        /// fact straight from LogOutput.log without guessing which SetRunBasedInt_Postfix
+        /// line belongs to which real-world moment. Call at the two moments that matter for
+        /// verifying save/restore correctness: a campfire being lit (right before that
+        /// checkpoint's own capture runs) and the run being won. Remove once no longer needed
+        /// </summary>
+        public static void LogSnapshot(string tag, ManualLogSource log)
+        {
+            try
+            {
+                OwnSavedAchievementProgress saved = CaptureLocal(log);
+                if (saved == null)
+                {
+                    log?.LogInfo($"[achievement-debug] SNAPSHOT[{tag}]: AchievementManager not available, nothing to snapshot.");
+                    return;
+                }
+                string who = Character.localCharacter != null ? Character.localCharacter.characterName : "(unknown)";
+                log?.LogInfo($"[achievement-debug] SNAPSHOT[{tag}] for {who}:\n" + FormatDump(saved));
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"AchievementProgressIO.LogSnapshot({tag}) failed (non-fatal): {e.Message}");
             }
         }
 

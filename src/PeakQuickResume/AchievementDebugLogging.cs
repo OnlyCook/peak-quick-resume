@@ -57,6 +57,12 @@ namespace PEAKQuickResume
                 harmony.Patch(AccessTools.Method(amType, "ThrowAchievement"),
                     prefix: new HarmonyMethod(typeof(AchievementDebugLogging), nameof(ThrowAchievement_Prefix)));
 
+                harmony.Patch(AccessTools.Method(amType, "TestWonRun"),
+                    postfix: new HarmonyMethod(typeof(AchievementDebugLogging), nameof(TestWonRun_Postfix)));
+
+                harmony.Patch(AccessTools.Method(amType, "TestRespawnChestOpened"),
+                    prefix: new HarmonyMethod(typeof(AchievementDebugLogging), nameof(TestRespawnChestOpened_Prefix)));
+
                 log.LogInfo("AchievementDebugLogging: patched AchievementManager for [achievement-debug] logging.");
             }
             catch (Exception e)
@@ -111,7 +117,14 @@ namespace PEAKQuickResume
         // --- Run-scoped counters (Plunderer, First Aid, Clutch, Knot Tying, ...) ---
 
         private static void SetRunBasedInt_Postfix(RUNBASEDVALUETYPE type, int value)
-            => _log?.LogInfo($"[achievement-debug] run-based int '{type}' set to {value}.");
+        {
+            if (type == RUNBASEDVALUETYPE.LuggageOpened)
+                _log?.LogInfo($"[achievement-debug] PlundererBadge: {value}/15 luggages opened this run.");
+            else if (type == RUNBASEDVALUETYPE.ScoutsResurrected)
+                _log?.LogInfo($"[achievement-debug] ClutchBadge: {value}/3 scouts resurrected this run.");
+            else
+                _log?.LogInfo($"[achievement-debug] run-based int '{type}' set to {value}.");
+        }
 
         private static void SetRunBasedFloat_Postfix(RUNBASEDVALUETYPE type, float value)
             => _log?.LogInfo($"[achievement-debug] run-based float '{type}' set to {value}.");
@@ -143,6 +156,37 @@ namespace PEAKQuickResume
         }
 
         // --- Every achievement check, for correlating "I just did X" with the log ---
+
+        // --- Run won: fires once per player, locally, the moment THEY reach the peak ---
+
+        private static void TestWonRun_Postfix()
+            => AchievementProgressIO.LogSnapshot("run-won", _log);
+
+        // --- Temporary (2026-08-06 session): diagnosing a reproducible Clutch over-credit
+        // right after a Quick Resume load. TestRespawnChestOpened's native loop grants one
+        // ScoutsResurrected credit per Character.AllCharacters entry currently dead/fully-
+        // passed-out - if that list ever holds a stale/duplicate entry (e.g. left over from
+        // a previous load in the same session) alongside the real one, a single statue touch
+        // would over-credit. This dumps every entry's identity + flags at the exact moment
+        // the native loop is about to run, so a repro immediately shows whether that's what's
+        // happening. Remove once resolved
+        private static void TestRespawnChestOpened_Prefix(RespawnChest chest, Character opener)
+        {
+            try
+            {
+                _log?.LogInfo($"[achievement-debug] TestRespawnChestOpened: chest='{chest?.name}' opener='{opener?.characterName}' "
+                    + $"(opener.IsLocal={opener?.IsLocal}). Character.AllCharacters snapshot:");
+                foreach (Character c in Character.AllCharacters)
+                {
+                    string userId = "?";
+                    try { userId = c?.player != null ? Peak.Network.NetworkingUtilities.GetUserId(c.player) : "(no player)"; }
+                    catch { /* best-effort */ }
+                    _log?.LogInfo($"  - '{c?.characterName}' instanceId={c?.GetInstanceID()} userId={userId} "
+                        + $"dead={c?.data.dead} fullyPassedOut={c?.data.fullyPassedOut} passedOut={c?.data.passedOut}");
+                }
+            }
+            catch (Exception e) { _log?.LogWarning($"[achievement-debug] TestRespawnChestOpened_Prefix failed: {e.Message}"); }
+        }
 
         private static void ThrowAchievement_Prefix(ACHIEVEMENTTYPE type)
         {

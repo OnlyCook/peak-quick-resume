@@ -72,6 +72,7 @@ namespace PEAKQuickResume
                 _entryPoints?.ArmRecentlyLoadedCooldown(30f);
 
                 _log?.LogInfo("CampfireAutoSavePatch: campfire lit -> autosave triggered.");
+                AchievementProgressIO.LogSnapshot("campfire-lit", _log);
 
                 if (PhotonNetwork.OfflineMode)
                 {
