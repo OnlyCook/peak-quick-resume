@@ -120,7 +120,7 @@ namespace PEAKQuickResume
         public void SuppressForRestoredDeath()
         {
             _suppressedForRestoredDeath = true;
-            _log?.LogInfo("TeleportWatchdog: this load is restoring us as dead on purpose; standing down for it.");
+            _log.Trace("TeleportWatchdog: this load is restoring us as dead on purpose; standing down for it.");
             LiftWatch();
         }
 
@@ -384,7 +384,7 @@ namespace PEAKQuickResume
             if (delta > 0f)
             {
                 c.refs.afflictions.SubtractStatus(CharacterAfflictions.STATUSTYPE.Injury, delta);
-                _log.LogInfo($"TeleportWatchdog: reverted {delta:F3} Injury gained in the "
+                _log.Trace($"TeleportWatchdog: reverted {delta:F3} Injury gained in the "
                     + $"{_cfg.DamageRevertDelaySeconds.Value:F0}s after a flagged bad teleport.");
             }
         }

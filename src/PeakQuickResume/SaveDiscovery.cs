@@ -56,7 +56,7 @@ namespace PEAKQuickResume
                 string dir = OwnSavePaths.ArchiveDir(offlineMode);
                 if (!Directory.Exists(dir))
                 {
-                    log?.LogInfo($"[savescan] Save directory does not exist yet: {dir}");
+                    log.Trace($"[savescan] Save directory does not exist yet: {dir}");
                     return false;
                 }
 
@@ -88,9 +88,9 @@ namespace PEAKQuickResume
                 }
 
                 if (found)
-                    log?.LogInfo($"[savescan] Latest {(offlineMode ? "offline" : "coop")} save: {target} ('{bestFile}').");
+                    log.Trace($"[savescan] Latest {(offlineMode ? "offline" : "coop")} save: {target} ('{bestFile}').");
                 else
-                    log?.LogInfo($"[savescan] No recognizable {(offlineMode ? "offline" : "coop")} saves found in {dir}.");
+                    log.Trace($"[savescan] No recognizable {(offlineMode ? "offline" : "coop")} saves found in {dir}.");
 
                 return found;
             }

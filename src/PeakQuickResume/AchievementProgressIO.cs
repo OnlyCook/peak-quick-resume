@@ -213,11 +213,11 @@ namespace PEAKQuickResume
                 // just change" logging while playing
                 if (saved != null)
                 {
-                    log?.LogInfo("[achievement-debug] Restored this run's achievement progress from save:\n" + FormatDump(saved));
+                    log.Trace("[achievement-debug] Restored this run's achievement progress from save:\n" + FormatDump(saved));
                 }
                 else
                 {
-                    log?.LogInfo("[achievement-debug] No saved achievement progress found - primed a fresh baseline (matches vanilla's own fresh-run behavior).");
+                    log.Trace("[achievement-debug] No saved achievement progress found - primed a fresh baseline (matches vanilla's own fresh-run behavior).");
                 }
             }
             catch (Exception e)
@@ -257,11 +257,11 @@ namespace PEAKQuickResume
                 OwnSavedAchievementProgress saved = CaptureLocal(log);
                 if (saved == null)
                 {
-                    log?.LogInfo($"[achievement-debug] SNAPSHOT[{tag}]: AchievementManager not available, nothing to snapshot.");
+                    log.Trace($"[achievement-debug] SNAPSHOT[{tag}]: AchievementManager not available, nothing to snapshot.");
                     return;
                 }
                 string who = Character.localCharacter != null ? Character.localCharacter.characterName : "(unknown)";
-                log?.LogInfo($"[achievement-debug] SNAPSHOT[{tag}] for {who}:\n" + FormatDump(saved));
+                log.Trace($"[achievement-debug] SNAPSHOT[{tag}] for {who}:\n" + FormatDump(saved));
             }
             catch (Exception e)
             {
@@ -336,7 +336,7 @@ namespace PEAKQuickResume
                     }
                     else
                     {
-                        log?.LogInfo($"AchievementProgressIO: skipping restore for '{userId}' - no save file in this "
+                        log.Trace($"AchievementProgressIO: skipping restore for '{userId}' - no save file in this "
                             + "checkpoint's save event; priming a fresh baseline instead.");
                     }
 

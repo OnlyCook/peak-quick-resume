@@ -19,7 +19,17 @@ namespace PEAKQuickResume
         /// at all (see SaveArchive.ArchivedSave.GameVersion / SavePicker's row display) -
         /// its actual version simply isn't known, so this is a placeholder, not a guess
         /// </summary>
-        public const string NoVersionDisplay = "?.??.?";
+        public const string NoVersionDisplay = "v?.??.?";
+
+        /// <summary>
+        /// The one safe guess for a missing <c>gameVersion</c>: saves written at
+        /// <c>SaveArchive.ArchiveNativeSettingsVersion - 1</c> ("settingsVersion 6") only
+        /// exist from a roughly 3-hour window during the 1.65.a update, for players who
+        /// hadn't updated the mod yet - see SaveArchive.ArchivedSave.DisplayGameVersion.
+        /// Any other missing version could genuinely be anything, so isn't guessed at all
+        /// (shown as <see cref="NoVersionDisplay"/> instead)
+        /// </summary>
+        public const string LegacySettingsVersion6GameVersion = "1.64.a";
 
         /// <summary>"1.64.a" -&gt; "v1.64.a", matching VersionString's own "v"-prefixed
         /// top-left corner label as closely as possible (that's the whole point - see

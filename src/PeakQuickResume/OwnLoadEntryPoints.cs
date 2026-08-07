@@ -260,12 +260,12 @@ namespace PEAKQuickResume
                 }
                 if (_recentlyLoadedUntil > Time.time)
                 {
-                    _log?.LogInfo($"OwnLoadEntryPoints: please wait {(_recentlyLoadedUntil - Time.time):F0}s before loading again.");
+                    _log.Trace($"OwnLoadEntryPoints: please wait {(_recentlyLoadedUntil - Time.time):F0}s before loading again.");
                     return false;
                 }
                 if (!offline && _network != null && !_network.CheckReadyStatusForPlayers() && !LoadedSaveFileThisRound)
                 {
-                    _log?.LogInfo("OwnLoadEntryPoints: please wait until everybody is ready!");
+                    _log.Trace("OwnLoadEntryPoints: please wait until everybody is ready!");
                     return false;
                 }
 

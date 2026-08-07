@@ -55,7 +55,7 @@ namespace PEAKQuickResume
         {
             if (_running)
             {
-                _log.LogInfo("Restart already in progress; ignoring request.");
+                _log.Trace("Restart already in progress; ignoring request.");
                 return;
             }
 
@@ -78,7 +78,7 @@ namespace PEAKQuickResume
             // underneath the Resume and won with a fresh, unrelated run)
             if (!OrchestrationLock.TryAcquire(LockOwner))
             {
-                _log.LogInfo("Cannot restart: a resume is already in progress; ignoring request.");
+                _log.Trace("Cannot restart: a resume is already in progress; ignoring request.");
                 return;
             }
 
@@ -139,7 +139,7 @@ namespace PEAKQuickResume
                 float coopWait = Mathf.Max(0f, _cfg.CoopAirportSettle.Value);
                 if (coopWait > 0f)
                 {
-                    _log.LogInfo($"[stage] Coop: waiting {coopWait:F1}s for other players to reach the Airport.");
+                    _log.Trace($"[stage] Coop: waiting {coopWait:F1}s for other players to reach the Airport.");
                     yield return new WaitForSeconds(coopWait);
                 }
             }

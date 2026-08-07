@@ -140,7 +140,7 @@ namespace PEAKQuickResume
                         // spawn, spectate camera), and the host writing ch.data.dead
                         // locally would never reach it - see the class remarks
                         ch.photonView.RPC("RPCA_SetDead", RpcTarget.All);
-                        log?.LogInfo($"DeathStateRestore: restored {ch.characterName} as dead (they were dead when this checkpoint was saved).");
+                        log.Trace($"DeathStateRestore: restored {ch.characterName} as dead (they were dead when this checkpoint was saved).");
                     }
                     catch (Exception e)
                     {
@@ -189,7 +189,7 @@ namespace PEAKQuickResume
         {
             if (!selection.TryGetPlayerFile(userId, out string path))
             {
-                log?.LogInfo($"DeathStateRestore: '{userId}' has no file in this checkpoint's save event "
+                log.Trace($"DeathStateRestore: '{userId}' has no file in this checkpoint's save event "
                     + "(joined after it was written, most likely) - restoring them alive.");
                 return false;
             }

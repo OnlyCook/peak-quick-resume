@@ -86,19 +86,19 @@ namespace PEAKQuickResume
                 RespawnChest statue = FindNearestStatue(searchCenter);
                 if (statue == null)
                 {
-                    log?.LogInfo($"AncientStatueRestore.Capture: no Ancient Statue found within {StatueSearchRadius}m of {searchCenter}.");
+                    log.Trace($"AncientStatueRestore.Capture: no Ancient Statue found within {StatueSearchRadius}m of {searchCenter}.");
                     return;
                 }
 
                 state = new OwnSavedStatueState { broken = statue.IsOpen };
-                log?.LogInfo($"AncientStatueRestore.Capture: found statue '{statue.name}' at {statue.transform.position} "
+                log.Trace($"AncientStatueRestore.Capture: found statue '{statue.name}' at {statue.transform.position} "
                     + $"({Vector3.Distance(statue.transform.position, searchCenter):F1}m from search center), broken={state.broken}.");
                 if (!state.broken) return;
 
                 Item groundItem = CampfireAreaHelpers.FindNearestFreeItem(statue.transform.position, ItemSearchRadius, claimed);
                 if (groundItem == null)
                 {
-                    log?.LogInfo("AncientStatueRestore.Capture: statue is broken but no unclaimed ground item found nearby.");
+                    log.Trace("AncientStatueRestore.Capture: statue is broken but no unclaimed ground item found nearby.");
                     return;
                 }
 
@@ -118,7 +118,7 @@ namespace PEAKQuickResume
                 state.item = item;
 
                 claimed?.Add(groundItem);
-                log?.LogInfo($"AncientStatueRestore.Capture: statue holds item '{groundItem.name}' (id={item.itemId}) at {groundItem.transform.position}.");
+                log.Trace($"AncientStatueRestore.Capture: statue holds item '{groundItem.name}' (id={item.itemId}) at {groundItem.transform.position}.");
             }
             catch (Exception e)
             {
@@ -140,7 +140,7 @@ namespace PEAKQuickResume
         {
             if (data?.ancientStatue == null || !data.ancientStatue.broken)
             {
-                log?.LogInfo("AncientStatueRestore.Restore: nothing to restore for this load (statue was unbroken when saved, or no save data).");
+                log.Trace("AncientStatueRestore.Restore: nothing to restore for this load (statue was unbroken when saved, or no save data).");
                 return;
             }
             try
@@ -152,7 +152,7 @@ namespace PEAKQuickResume
                     log?.LogWarning($"AncientStatueRestore: no Ancient Statue found within {StatueSearchRadius}m of {searchCenter}, nothing to restore.");
                     return;
                 }
-                log?.LogInfo($"AncientStatueRestore: found statue '{statue.name}' at {statue.transform.position} "
+                log.Trace($"AncientStatueRestore: found statue '{statue.name}' at {statue.transform.position} "
                     + $"({Vector3.Distance(statue.transform.position, searchCenter):F1}m from search center), currently open={statue.IsOpen}.");
 
                 // Defensive only - ResetWorldLoot should already have closed it. If it's
@@ -162,7 +162,7 @@ namespace PEAKQuickResume
                 if (statue.IsOpen) return;
 
                 statue.Break();
-                log?.LogInfo("AncientStatueRestore: restored the Ancient Statue to its broken state.");
+                log.Trace("AncientStatueRestore: restored the Ancient Statue to its broken state.");
 
                 OwnSavedPositionedItem item = data.ancientStatue.item;
                 if (item != null && ItemDatabase.TryGetItem(item.itemId, out Item prefab) && prefab != null)
@@ -189,7 +189,7 @@ namespace PEAKQuickResume
 
                         CampfireAreaHelpers.ApplySavedItemValues(spawned, item.values, log);
 
-                        log?.LogInfo($"AncientStatueRestore: respawned saved item {item.itemId} at {spawnPos} on the Ancient Statue.");
+                        log.Trace($"AncientStatueRestore: respawned saved item {item.itemId} at {spawnPos} on the Ancient Statue.");
                     }
                     else
                     {

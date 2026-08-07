@@ -622,7 +622,7 @@ namespace PEAKQuickResume
                     try
                     {
                         character.photonView.RPC("RPCA_Revive", RpcTarget.All, false);
-                        _log?.LogInfo($"OwnTeleportSequence.ReviveDeadPlayers: revived {character.characterName} (networked).");
+                        _log.Trace($"OwnTeleportSequence.ReviveDeadPlayers: revived {character.characterName} (networked).");
                         continue;
                     }
                     catch (Exception e)
@@ -692,7 +692,7 @@ namespace PEAKQuickResume
                     try
                     {
                         Character.localCharacter.photonView?.RPC("WarpPlayerRPC", RpcTarget.MasterClient, warpPos, false);
-                        _log?.LogInfo($"OwnTeleportSequence: warped {Character.localCharacter.player.name} to {warpPos} "
+                        _log.Trace($"OwnTeleportSequence: warped {Character.localCharacter.player.name} to {warpPos} "
                             + $"(previous position: {Character.localCharacter.Head}).");
                     }
                     catch (Exception e)
@@ -706,7 +706,7 @@ namespace PEAKQuickResume
                 else if (Mathf.Abs(Character.localCharacter.Head.x - warpPos.x) < 6f
                     && Mathf.Abs(Character.localCharacter.Head.z - warpPos.z) < 6f)
                 {
-                    _log?.LogInfo($"OwnTeleportSequence: warped {Character.localCharacter.player.name} after {tried} attempts.");
+                    _log.Trace($"OwnTeleportSequence: warped {Character.localCharacter.player.name} after {tried} attempts.");
                     yield return new WaitForSeconds(0.5f);
                     if (!PhotonNetwork.OfflineMode)
                     {
@@ -804,7 +804,7 @@ namespace PEAKQuickResume
                     // the client's own teleport watchdog / position recovery, not fought from here
                     if (Mathf.Abs(ch.Head.x - hostPos.x) < 6f && Mathf.Abs(ch.Head.z - hostPos.z) < 6f)
                     {
-                        _log?.LogInfo($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} after {tried} attempts.");
+                        _log.Trace($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} after {tried} attempts.");
                         arrived = true;
                         break;
                     }
@@ -827,7 +827,7 @@ namespace PEAKQuickResume
                         try
                         {
                             ch.photonView?.RPC("WarpPlayerRPC", RpcTarget.All, hostPos, false);
-                            _log?.LogInfo($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} to {hostPos} "
+                            _log.Trace($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} to {hostPos} "
                                 + $"(previous position: {ch.Head}, resend {tried + 1}/{maxResends}).");
                         }
                         catch (Exception e)

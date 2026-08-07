@@ -430,9 +430,11 @@ namespace PEAKQuickResume
                     "Seconds for each crossfade into/out of the loading screen (advanced).",
                     new AcceptableValueRange<float>(0f, 5f)));
 
-            EnableDebugLogging = cfg.Bind("Debug", "enable-debug-logging", true,
-                "Verbose logging of every step of the resume sequence. Very useful while the mod is young, "
-                + "please keep this on when reporting issues.");
+            EnableDebugLogging = cfg.Bind("Debug", "enable-debug-logging", false,
+                "Verbose step-by-step logging of the resume sequence, saves, and restores. Off by default "
+                + "to keep LogOutput.log small; the fundamentals (saves, loads, restarts, and any errors) "
+                + "are always logged regardless. Turn this on before reproducing an issue you're about to "
+                + "report, then attach the resulting log.");
 
             DebugDisableLoadingScreen = cfg.Bind("Debug", "disable-loading-screen", false,
                 "If enabled, skips showing the custom loading screen during Quick Resume's wake-up "

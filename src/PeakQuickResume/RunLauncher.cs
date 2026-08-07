@@ -147,7 +147,7 @@ namespace PEAKQuickResume
                     return true;
                 }
 
-                log.LogInfo("LoadAirportDirect: networked LoadingScreenHandler load of Airport.");
+                log.Trace("LoadAirportDirect: networked LoadingScreenHandler load of Airport.");
                 handler.Load(
                     LoadingScreen.LoadingScreenType.Basic,
                     null,

@@ -70,7 +70,7 @@ namespace PEAKQuickResume
         {
             if (_running)
             {
-                _log.LogInfo("Resume already in progress; ignoring request.");
+                _log.Trace("Resume already in progress; ignoring request.");
                 return;
             }
 
@@ -102,7 +102,7 @@ namespace PEAKQuickResume
             // early-return paths
             if (!OrchestrationLock.TryAcquire(LockOwner))
             {
-                _log.LogInfo("Cannot resume: a restart is already in progress; ignoring request.");
+                _log.Trace("Cannot resume: a restart is already in progress; ignoring request.");
                 return;
             }
 
@@ -131,13 +131,13 @@ namespace PEAKQuickResume
             // resolve from context (current run mid-run, or newest on disk at the Airport)
             SaveTarget target = _chosen != null ? _chosen.Target : ResolveTarget();
             int ascent = target.Ascent; // custom runs force ascent 0 in the game anyway
-            _log.LogInfo($"[stage] Target={target} (ascent={ascent}, custom={target.IsCustom}, "
+            _log.Trace($"[stage] Target={target} (ascent={ascent}, custom={target.IsCustom}, "
                 + $"chosen={_chosen != null}). Starting scene='{RunLauncher.ActiveSceneName}'.");
 
             // --- 2. Ensure we are at the Airport ---
             if (!RunLauncher.InAirport)
             {
-                _log.LogInfo("[stage] Not at Airport; requesting return to Airport.");
+                _log.Trace("[stage] Not at Airport; requesting return to Airport.");
                 // Don't kick off a second airport load if one is already running
                 // (e.g. solo auto-returns to the Airport a few seconds after death)
                 if (!RunLauncher.IsLoading)
@@ -146,13 +146,13 @@ namespace PEAKQuickResume
                 }
                 else
                 {
-                    _log.LogInfo("[stage] A load is already in progress; waiting for the Airport instead of forcing a return.");
+                    _log.Trace("[stage] A load is already in progress; waiting for the Airport instead of forcing a return.");
                 }
 
                 yield return WaitFor(() => RunLauncher.InAirport, timeout, "Airport scene");
                 if (!_lastWaitOk) { Fail("Timed out waiting for the Airport scene"); yield break; }
             }
-            _log.LogInfo("[stage] At Airport.");
+            _log.Trace("[stage] At Airport.");
 
             // Wait for any loading screen to clear, kiosk.StartGame() no-ops while loading
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "airport loading to finish");
@@ -163,7 +163,7 @@ namespace PEAKQuickResume
                 () => UnityEngine.Object.FindObjectOfType<AirportCheckInKiosk>() != null,
                 timeout, "AirportCheckInKiosk");
             if (!_lastWaitOk) { Fail("Timed out waiting for the check-in kiosk"); yield break; }
-            _log.LogInfo("[stage] Found check-in kiosk.");
+            _log.Trace("[stage] Found check-in kiosk.");
 
             // --- 3. Point our own loader at the saved run & start it ---
             // Resolve, once, exactly which files this load will read: the host's file for
@@ -211,7 +211,7 @@ namespace PEAKQuickResume
                     : MessagesLocalization.Get(MsgKey.NoSaveDifficulty, ascent), MsgError);
                 yield break;
             }
-            _log.LogInfo("[stage] Save confirmed for this difficulty; starting fresh run.");
+            _log.Trace("[stage] Save confirmed for this difficulty; starting fresh run.");
             Msg(MessagesLocalization.Get(MsgKey.StartingFreshRun), MsgInfo);
 
             // Coop: give other players time to finish loading the Airport before we fire
@@ -222,7 +222,7 @@ namespace PEAKQuickResume
                 float coopWait = Mathf.Max(0f, _cfg.CoopAirportSettle.Value);
                 if (coopWait > 0f)
                 {
-                    _log.LogInfo($"[stage] Coop: waiting {coopWait:F1}s for other players to reach the Airport.");
+                    _log.Trace($"[stage] Coop: waiting {coopWait:F1}s for other players to reach the Airport.");
                     yield return new WaitForSeconds(coopWait);
                 }
             }
@@ -238,7 +238,7 @@ namespace PEAKQuickResume
             _ownLoadEntryPoints.Network?.ArmTerrainRandomizerSuppressionAll();
 
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
-            _log.LogInfo("[stage] StartRun invoked; waiting for the level to load.");
+            _log.Trace("[stage] StartRun invoked; waiting for the level to load.");
 
             // --- 4. Wait for the level, then trigger the checkpoint load ---
             // First wait to LEAVE the Airport so we don't mistake the current scene
@@ -248,7 +248,7 @@ namespace PEAKQuickResume
 
             yield return WaitFor(() => RunLauncher.InLevel, timeout, "level scene");
             if (!_lastWaitOk) { Fail("Timed out waiting for the level scene to load"); yield break; }
-            _log.LogInfo($"[stage] Level scene loaded: '{RunLauncher.ActiveSceneName}'.");
+            _log.Trace($"[stage] Level scene loaded: '{RunLauncher.ActiveSceneName}'.");
 
             // Wait for the level's own loading screen to finish and the character to exist
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "level loading to finish");
@@ -256,7 +256,7 @@ namespace PEAKQuickResume
 
             yield return WaitFor(() => LocalCharacterExists(), timeout, "local character");
             if (!_lastWaitOk) { Fail("Timed out waiting for the local character to spawn"); yield break; }
-            _log.LogInfo("[stage] Local character present.");
+            _log.Trace("[stage] Local character present.");
 
             yield return new WaitForSeconds(Mathf.Max(0f, _cfg.SettleAfterLevel.Value));
 
@@ -268,7 +268,7 @@ namespace PEAKQuickResume
             {
                 if (_cfg.OwnEnableClientReadyStatusCheck.Value)
                 {
-                    _log.LogInfo("[stage] Coop: waiting for all clients to report ready...");
+                    _log.Trace("[stage] Coop: waiting for all clients to report ready...");
                     Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
                     Func<bool> allReady = () => _ownLoadEntryPoints.Network.CheckReadyStatusForPlayers();
                     // Own timeout, not the shared step-timeout: this is the one stage where a
@@ -284,12 +284,12 @@ namespace PEAKQuickResume
                         Msg(MessagesLocalization.Get(MsgKey.PlayersTimedOut), MsgError);
                         yield break;
                     }
-                    _log.LogInfo("[stage] Coop: all clients ready.");
+                    _log.Trace("[stage] Coop: all clients ready.");
                 }
             }
 
             // Loads go through our own restore path
-            _log.LogInfo("[stage] Triggering our own restore.");
+            _log.Trace("[stage] Triggering our own restore.");
             if (!_ownLoadEntryPoints.TryLoadPlayer(selection)) { Fail("Load call failed"); yield break; }
 
             // TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's coroutine and
@@ -381,10 +381,10 @@ namespace PEAKQuickResume
             {
                 if (RunLauncher.IsCustomRun)
                 {
-                    _log.LogInfo("[stage] In a custom run: resuming the custom-run save.");
+                    _log.Trace("[stage] In a custom run: resuming the custom-run save.");
                     return SaveTarget.Custom();
                 }
-                _log.LogInfo($"[stage] In a run: resuming current difficulty (ascent {current}).");
+                _log.Trace($"[stage] In a run: resuming current difficulty (ascent {current}).");
                 return SaveTarget.Normal(current);
             }
 
@@ -393,7 +393,7 @@ namespace PEAKQuickResume
 
             if (SaveDiscovery.TryGetLatestSave(_log, offline, out SaveTarget latest))
             {
-                _log.LogInfo($"[stage] At Airport: using latest save on disk ({latest}).");
+                _log.Trace($"[stage] At Airport: using latest save on disk ({latest}).");
                 return latest;
             }
 

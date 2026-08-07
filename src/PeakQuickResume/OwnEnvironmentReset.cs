@@ -74,7 +74,7 @@ namespace PEAKQuickResume
             lava.ended = false;
             typeof(LavaRising).GetField("shownLavaRisingMessage", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(lava, false);
 
-            log?.LogInfo("OwnEnvironmentReset: lava fully reset.");
+            log.Trace("OwnEnvironmentReset: lava fully reset.");
         }
 
         /// <summary>Mirrors SpawnFlaresAtPeak exactly (decompile 2218-2237)</summary>

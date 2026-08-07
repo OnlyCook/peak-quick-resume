@@ -4,6 +4,8 @@
 - Resolved unlocalized `GameUpdatedSavesMayBeWrong` entry by adding its corresponding translations.
 - Native [Fairoots](https://thunderstore.io/c/peak/p/OnlyCook/Fairoots) compatibility update: these two mods now don't interfere in any way.
 - Fixed 'Clutch Badge' progress being counted twice upon activating the Ancient Statue after loading a save when only one client was resurrected.
+- `enable-debug-logging` is now disabled by default and only fundamental logging is added with it disabled.
+- Reverted temporary save measures added in v2.0.3.
 
 ## 2.1.0
 

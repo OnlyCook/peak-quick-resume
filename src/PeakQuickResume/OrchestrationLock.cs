@@ -108,7 +108,7 @@ namespace PEAKQuickResume
 
             _queuedAction = action;
             _queuedDescription = description;
-            log?.LogInfo($"[cooldown] '{description}' queued (busy={IsBusy}, {RemainingCooldown:F1}s cooldown "
+            log.Trace($"[cooldown] '{description}' queued (busy={IsBusy}, {RemainingCooldown:F1}s cooldown "
                 + "remaining); will auto-run once clear (replaces any previously queued request).");
 
             if (_queuedCoroutine == null && _coroutineHost != null)
@@ -126,7 +126,7 @@ namespace PEAKQuickResume
             _queuedDescription = null;
 
             if (toRun == null) yield break;
-            log?.LogInfo($"[cooldown] running queued '{description}'.");
+            log.Trace($"[cooldown] running queued '{description}'.");
             toRun();
         }
     }

@@ -91,7 +91,7 @@ namespace PEAKQuickResume
                 // still matters to them if a statue revives them later
                 if (restoringAsDead != null && restoringAsDead.Contains(userId))
                 {
-                    log?.LogInfo($"OwnInventoryRestore: skipping the per-player restore for '{userId}' "
+                    log.Trace($"OwnInventoryRestore: skipping the per-player restore for '{userId}' "
                         + "- they were dead when this checkpoint was saved and are being restored as dead.");
                     continue;
                 }
@@ -116,7 +116,7 @@ namespace PEAKQuickResume
                 }
                 else
                 {
-                    log?.LogInfo($"OwnInventoryRestore: skipping restore for '{userId}' - they have no save file "
+                    log.Trace($"OwnInventoryRestore: skipping restore for '{userId}' - they have no save file "
                         + "in this checkpoint's save event; leaving their current state untouched.");
                 }
 
@@ -183,7 +183,7 @@ namespace PEAKQuickResume
                     }
                     else if (data.heldItemState != null)
                     {
-                        log?.LogInfo($"OwnInventoryRestore: skipping held-item restore for '{userId}' "
+                        log.Trace($"OwnInventoryRestore: skipping held-item restore for '{userId}' "
                             + "- not confirmed to be running Quick Resume, would leave the slot reserved but empty.");
                     }
                 }
@@ -490,7 +490,7 @@ namespace PEAKQuickResume
                 }
             }
 
-            log?.LogInfo($"OwnInventoryRestore: backpack states loaded for {NetworkingUtilities.GetUserId(player)} (items={data.backpackItemStates.Count}).");
+            log.Trace($"OwnInventoryRestore: backpack states loaded for {NetworkingUtilities.GetUserId(player)} (items={data.backpackItemStates.Count}).");
         }
 
         /// <summary>Mirrors GetBackpackData exactly (decompile 3188-3211)</summary>

@@ -62,7 +62,7 @@ namespace PEAKQuickResume
                 List<Luggage> boxes = FindLuggageNear(searchCenter);
                 if (boxes.Count == 0)
                 {
-                    log?.LogInfo($"LuggageRestore.Capture: no luggage found within {LuggageSearchRadius}m of {searchCenter}.");
+                    log.Trace($"LuggageRestore.Capture: no luggage found within {LuggageSearchRadius}m of {searchCenter}.");
                     return;
                 }
 
@@ -95,7 +95,7 @@ namespace PEAKQuickResume
                         }
                     }
                     states.Add(state);
-                    log?.LogInfo($"LuggageRestore.Capture: luggage '{box.name}' at {box.transform.position}, "
+                    log.Trace($"LuggageRestore.Capture: luggage '{box.name}' at {box.transform.position}, "
                         + $"opened={state.opened}, items={state.items.Count}.");
                 }
             }
@@ -118,7 +118,7 @@ namespace PEAKQuickResume
         {
             if (data?.luggageStates == null || data.luggageStates.Count == 0)
             {
-                log?.LogInfo("LuggageRestore.Restore: nothing to restore for this load.");
+                log.Trace("LuggageRestore.Restore: nothing to restore for this load.");
                 return;
             }
             try
@@ -164,7 +164,7 @@ namespace PEAKQuickResume
             // vanilla flow rolling a fresh random item - mirrors RespawnChest.Break()
             // exactly, see class remarks
             pv.RPC("OpenLuggageRPC", RpcTarget.AllBuffered, false);
-            log?.LogInfo($"LuggageRestore: restored luggage '{box.name}' to its open state.");
+            log.Trace($"LuggageRestore: restored luggage '{box.name}' to its open state.");
 
             if (state.items.Count == 0) return;
 
@@ -193,7 +193,7 @@ namespace PEAKQuickResume
 
                 CampfireAreaHelpers.ApplySavedItemValues(spawned, saved.values, log);
 
-                log?.LogInfo($"LuggageRestore: respawned saved item {saved.itemId} at {spawnPos} for luggage '{box.name}'.");
+                log.Trace($"LuggageRestore: respawned saved item {saved.itemId} at {spawnPos} for luggage '{box.name}'.");
             }
         }
 

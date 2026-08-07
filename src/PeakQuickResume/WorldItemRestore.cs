@@ -107,7 +107,7 @@ namespace PEAKQuickResume
                     claimed.Add(item);
                 }
 
-                log?.LogInfo($"WorldItemRestore.Capture: found {candidates.Count} candidate(s) within {SearchRadius}m of {searchCenter}, "
+                log.Trace($"WorldItemRestore.Capture: found {candidates.Count} candidate(s) within {SearchRadius}m of {searchCenter}, "
                     + $"saved {items.Count} (skipped {skippedPendingBackpacks} pending backpack-mitigation restore(s)).");
             }
             catch (Exception e)
@@ -133,14 +133,14 @@ namespace PEAKQuickResume
         {
             if (data?.worldItemStates == null)
             {
-                log?.LogInfo("WorldItemRestore.Restore: no saved data for this feature (old save, or nothing was ever captured), skipping.");
+                log.Trace("WorldItemRestore.Restore: no saved data for this feature (old save, or nothing was ever captured), skipping.");
                 return;
             }
             bool restoreItems = cfg.RestoreGroundedItems.Value;
             bool restoreBackpacks = cfg.RestoreGroundedBackpacks.Value;
             if (!restoreItems && !restoreBackpacks)
             {
-                log?.LogInfo("WorldItemRestore.Restore: both restore-grounded-items and restore-grounded-backpacks are disabled, skipping.");
+                log.Trace("WorldItemRestore.Restore: both restore-grounded-items and restore-grounded-backpacks are disabled, skipping.");
                 return;
             }
             try
@@ -170,7 +170,7 @@ namespace PEAKQuickResume
                         log?.LogWarning($"WorldItemRestore: failed to clear stale item '{item.name}' (non-fatal): {e.Message}");
                     }
                 }
-                log?.LogInfo($"WorldItemRestore: cleared {destroyed} naturally-spawned item(s) within {SearchRadius}m of {searchCenter}.");
+                log.Trace($"WorldItemRestore: cleared {destroyed} naturally-spawned item(s) within {SearchRadius}m of {searchCenter}.");
 
                 int restored = 0;
                 foreach (OwnSavedPositionedItem saved in data.worldItemStates)
@@ -213,7 +213,7 @@ namespace PEAKQuickResume
 
                     restored++;
                 }
-                log?.LogInfo($"WorldItemRestore: restored {restored}/{data.worldItemStates.Count} saved item(s) within {SearchRadius}m of {searchCenter}.");
+                log.Trace($"WorldItemRestore: restored {restored}/{data.worldItemStates.Count} saved item(s) within {SearchRadius}m of {searchCenter}.");
             }
             catch (Exception e)
             {

@@ -64,7 +64,7 @@ namespace PEAKQuickResume
                         ResetLootObjectGeneric(behaviour, ChestResetMethodNames);
                     }
                 }
-                log?.LogInfo($"OwnWorldLootReset: ResetWorldLoot touched luggage={luggageCount}, chests={chestCount}.");
+                log.Trace($"OwnWorldLootReset: ResetWorldLoot touched luggage={luggageCount}, chests={chestCount}.");
             }
             catch (Exception e)
             {
@@ -107,7 +107,7 @@ namespace PEAKQuickResume
                     else UnityEngine.Object.Destroy(go);
                     destroyed++;
                 }
-                log?.LogInfo($"OwnWorldLootReset: ResetDroppedRuntimeItems destroyed={destroyed}, skipped={skipped}.");
+                log.Trace($"OwnWorldLootReset: ResetDroppedRuntimeItems destroyed={destroyed}, skipped={skipped}.");
             }
             catch (Exception e)
             {

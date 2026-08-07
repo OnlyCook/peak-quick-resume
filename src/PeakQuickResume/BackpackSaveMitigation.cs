@@ -122,9 +122,9 @@ namespace PEAKQuickResume
 
                 string userId = SafeUserId(___character);
                 if (_tracked.ContainsKey(userId))
-                    _log?.LogInfo($"[backpack-mitigation] Replacing an earlier tracked drop for userId '{userId}' with this newer one (the earlier one now falls through to WorldItemRestore's normal ground-item save).");
+                    _log.Trace($"[backpack-mitigation] Replacing an earlier tracked drop for userId '{userId}' with this newer one (the earlier one now falls through to WorldItemRestore's normal ground-item save).");
                 _tracked[userId] = new TrackedDrop { UserId = userId, Backpack = backpack };
-                _log?.LogInfo($"[backpack-mitigation] Tracking a dropped backpack near the unlit campfire (owner userId '{userId}').");
+                _log.Trace($"[backpack-mitigation] Tracking a dropped backpack near the unlit campfire (owner userId '{userId}').");
             }
             catch (Exception e)
             {
@@ -173,7 +173,7 @@ namespace PEAKQuickResume
                         BackpackItemStates = states,
                         BackpackViewId = drop.Backpack.photonView.ViewID,
                     });
-                    _log?.LogInfo($"[backpack-mitigation] Queued a backpack restore for userId '{drop.UserId}' ({target}, {states.Count} item(s)).");
+                    _log.Trace($"[backpack-mitigation] Queued a backpack restore for userId '{drop.UserId}' ({target}, {states.Count} item(s)).");
                 }
             }
             catch (Exception e)
@@ -210,7 +210,7 @@ namespace PEAKQuickResume
                 }, log);
 
                 if (applied)
-                    log?.LogInfo($"[backpack-mitigation] Restored a dropped backpack into the save for userId '{restore.UserId}'.");
+                    log.Trace($"[backpack-mitigation] Restored a dropped backpack into the save for userId '{restore.UserId}'.");
                 else
                     log?.LogWarning($"[backpack-mitigation] Could not find a save file for userId '{restore.UserId}' to restore the dropped backpack into.");
             }

@@ -71,7 +71,7 @@ namespace PEAKQuickResume
                 if (!everWaited)
                 {
                     everWaited = true;
-                    log?.LogInfo("FairootsCompat: Fairoots is preparing the Roots biome - holding the loading screen.");
+                    log.Trace("FairootsCompat: Fairoots is preparing the Roots biome - holding the loading screen.");
                 }
 
                 onFrame?.Invoke();
@@ -85,7 +85,7 @@ namespace PEAKQuickResume
             }
             else if (everWaited)
             {
-                log?.LogInfo($"FairootsCompat: Fairoots finished after {waited:F1}s - continuing.");
+                log.Trace($"FairootsCompat: Fairoots finished after {waited:F1}s - continuing.");
             }
         }
 
@@ -138,7 +138,7 @@ namespace PEAKQuickResume
                     return false;
                 }
 
-                log?.LogInfo("FairootsCompat: Fairoots detected - the loading screen will wait for its Roots setup.");
+                log.Trace("FairootsCompat: Fairoots detected - the loading screen will wait for its Roots setup.");
                 return true;
             }
             catch (Exception e)

@@ -177,7 +177,7 @@ namespace PEAKQuickResume
                 if (ctrlRect.parent is RectTransform parentRect)
                     LayoutRebuilder.ForceRebuildLayoutImmediate(parentRect);
 
-                _log.LogInfo("RebindControlsRelocationPatch: re-checked Rebind Controls position after Settings page init.");
+                _log.Trace("RebindControlsRelocationPatch: re-checked Rebind Controls position after Settings page init.");
             }
             catch (Exception e)
             {
@@ -236,7 +236,7 @@ namespace PEAKQuickResume
                 LayoutRebuilder.ForceRebuildLayoutImmediate(parentRect);
 
             state.Moved = true;
-            _log.LogInfo("RebindControlsRelocationPatch: moved Rebind Controls into the Settings page.");
+            _log.Trace("RebindControlsRelocationPatch: moved Rebind Controls into the Settings page.");
         }
 
         // The settings page's own scrollable list of actual settings (audio/graphics/
@@ -303,7 +303,7 @@ namespace PEAKQuickResume
             pos.x = fallback.position.x; // same on-screen column as Back
             ctrlRect.position = pos;
 
-            _log.LogInfo($"RebindControlsRelocationPatch: positioned below '{lowest.name}' "
+            _log.Trace($"RebindControlsRelocationPatch: positioned below '{lowest.name}' "
                 + $"(world bottom {lowestBottomWorldY:F1}), final world pos {pos}, parent '{ctrlRect.parent?.name}', "
                 + $"active-in-hierarchy={ctrlRect.gameObject.activeInHierarchy}.");
         }
@@ -330,7 +330,7 @@ namespace PEAKQuickResume
                 LayoutRebuilder.ForceRebuildLayoutImmediate(parentRect);
 
             state.Moved = false;
-            _log.LogInfo("RebindControlsRelocationPatch: moved Rebind Controls back to the pause menu.");
+            _log.Trace("RebindControlsRelocationPatch: moved Rebind Controls back to the pause menu.");
         }
     }
 }

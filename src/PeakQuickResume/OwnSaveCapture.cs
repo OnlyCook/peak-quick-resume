@@ -286,7 +286,7 @@ namespace PEAKQuickResume
                     Character ch = p != null ? p.character : null;
                     if (ch == null || ch == local || ch.data.dead) continue;
 
-                    log?.LogInfo($"OwnSaveCapture: world state anchored on {ch.characterName} at {ch.Head}.");
+                    log.Trace($"OwnSaveCapture: world state anchored on {ch.characterName} at {ch.Head}.");
                     return ch.Head;
                 }
             }
@@ -547,7 +547,7 @@ namespace PEAKQuickResume
                 if (pv != null && pv.IsMine)
                 {
                     _cachedLocalPlayer = player;
-                    log?.LogInfo("OwnSaveCapture: local Player via PhotonView.IsMine found.");
+                    log.Trace("OwnSaveCapture: local Player via PhotonView.IsMine found.");
                     return _cachedLocalPlayer;
                 }
             }

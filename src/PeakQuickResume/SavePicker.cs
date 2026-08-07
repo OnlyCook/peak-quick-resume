@@ -80,7 +80,7 @@ namespace PEAKQuickResume
             _entries = SaveArchive.List(offline, _log);
             if (_entries.Count == 0)
             {
-                _log?.LogInfo($"[picker] No {(offline ? "offline" : "coop")} saves to show.");
+                _log.Trace($"[picker] No {(offline ? "offline" : "coop")} saves to show.");
                 return false;
             }
 
@@ -123,7 +123,7 @@ namespace PEAKQuickResume
                 ShowRealMenu(skipDimFade: false);
             }
 
-            _log?.LogInfo($"[picker] Opened with {_entries.Count} {(offline ? "offline" : "coop")} save(s); selected #{_selected}.");
+            _log.Trace($"[picker] Opened with {_entries.Count} {(offline ? "offline" : "coop")} save(s); selected #{_selected}.");
             return true;
         }
 
@@ -177,7 +177,7 @@ namespace PEAKQuickResume
             ClearPendingDelete();
             _root?.SetActive(false);
             _loadingRoot?.SetActive(false);
-            _log?.LogInfo("[picker] Closed.");
+            _log.Trace("[picker] Closed.");
         }
 
         private void Update()
@@ -730,7 +730,7 @@ namespace PEAKQuickResume
             // column width to budget for any language - deliberately reuses this slot
             // instead of adding an icon precisely so it can't overflow the row layout
             string playtime = e.IsStaleVersion
-                ? (string.IsNullOrEmpty(e.GameVersion) ? GameVersionCompat.NoVersionDisplay : GameVersionCompat.Display(e.GameVersion))
+                ? (string.IsNullOrEmpty(e.DisplayGameVersion) ? GameVersionCompat.NoVersionDisplay : GameVersionCompat.Display(e.DisplayGameVersion))
                 : FormatPlaytime(e.Playtime);
             // Co-op: show everyone who played this run, tacked onto the last column
             // (rather than as its own column) since it's optional/co-op-only

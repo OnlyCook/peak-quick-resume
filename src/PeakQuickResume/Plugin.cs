@@ -23,6 +23,11 @@ namespace PEAKQuickResume
     {
         internal static Plugin Instance { get; private set; }
 
+        /// <summary>Read by DebugLog.Trace so every file can gate its verbose tracing
+        /// without needing a PluginConfig reference threaded through it.</summary>
+        internal static bool DebugLoggingEnabled =>
+            Instance != null && Instance._cfg != null && Instance._cfg.EnableDebugLogging.Value;
+
         private PluginConfig _cfg;
         private ResumeOrchestrator _orchestrator;
         private RestartOrchestrator _restart;
@@ -164,9 +169,11 @@ namespace PEAKQuickResume
 
             // Pure observability for achievement-progress restore (see AchievementProgressIO) -
             // logs run-based counters/steam-stat changes as "[achievement-debug]" lines, no
-            // gameplay effect. TODO: remove once the achievement-progress restore is confirmed
-            // solid across a few real sessions
-            AchievementDebugLogging.Apply(harmony, Logger);
+            // gameplay effect. Entirely a debug aid, so it's not even patched in unless debug
+            // logging is on - no point paying the Harmony patch cost for lines nobody will see.
+            // TODO: remove once the achievement-progress restore is confirmed solid across a
+            // few real sessions
+            if (_cfg.EnableDebugLogging.Value) AchievementDebugLogging.Apply(harmony, Logger);
 
             // Vanilla bug fix, unrelated to save/restore: RespawnChest.Interact_CastFinished
             // fires its achievement-progress event unconditionally, even on a repeat cast
@@ -299,7 +306,7 @@ namespace PEAKQuickResume
             // instead of opening a picker that can't do anything
             if (!RunLauncher.IsHost)
             {
-                Logger.LogInfo("Resume key ignored: only the host can resume.");
+                Logger.Trace("Resume key ignored: only the host can resume.");
                 _messageOverlay.Show(MessagesLocalization.Get(MsgKey.OnlyHostResume),
                     new Color(1f, 0.5f, 0.5f, 1f), 3f);
                 return;
@@ -307,7 +314,7 @@ namespace PEAKQuickResume
 
             if (_orchestrator.IsRunning)
             {
-                Logger.LogInfo("Resume key ignored: a resume is already in progress.");
+                Logger.Trace("Resume key ignored: a resume is already in progress.");
                 return;
             }
 
@@ -315,7 +322,7 @@ namespace PEAKQuickResume
             bool midGame = RunLauncher.InLevel && !PlayerIsDead();
             if (midGame && !_cfg.AllowMidGame.Value)
             {
-                Logger.LogInfo("Mid-game resume is disabled (allowMidGame=false).");
+                Logger.Trace("Mid-game resume is disabled (allowMidGame=false).");
                 return;
             }
 
@@ -386,7 +393,7 @@ namespace PEAKQuickResume
             // of scene-altering RPC (GameOverHandler.LoadAirport) they do
             if (OrchestrationLock.IsBusy)
             {
-                Logger.LogInfo("Return to Airport ignored: a resume/restart is already in progress.");
+                Logger.Trace("Return to Airport ignored: a resume/restart is already in progress.");
                 return;
             }
 

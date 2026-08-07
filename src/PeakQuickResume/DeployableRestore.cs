@@ -103,7 +103,7 @@ namespace PEAKQuickResume
                     });
                 }
 
-                log?.LogInfo($"DeployableRestore.Capture({label}): found {found.Count} player-placed within {SearchRadius}m of {searchCenter}, saved {states.Count}.");
+                log.Trace($"DeployableRestore.Capture({label}): found {found.Count} player-placed within {SearchRadius}m of {searchCenter}, saved {states.Count}.");
             }
             catch (Exception e)
             {
@@ -125,7 +125,7 @@ namespace PEAKQuickResume
         {
             if (saved == null || saved.Count == 0)
             {
-                log?.LogInfo($"DeployableRestore.Restore({label}): nothing to restore for this load.");
+                log.Trace($"DeployableRestore.Restore({label}): nothing to restore for this load.");
                 return;
             }
             try
@@ -145,7 +145,7 @@ namespace PEAKQuickResume
                     }
                     restored++;
                 }
-                log?.LogInfo($"DeployableRestore.Restore({label}): restored {restored}/{saved.Count} within range of the loaded campfire.");
+                log.Trace($"DeployableRestore.Restore({label}): restored {restored}/{saved.Count} within range of the loaded campfire.");
             }
             catch (Exception e)
             {

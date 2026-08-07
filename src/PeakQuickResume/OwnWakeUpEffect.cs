@@ -81,7 +81,7 @@ namespace PEAKQuickResume
             Character character = ResolveCharacter("Collapse");
             if (character == null) return;
 
-            _log?.LogInfo("OwnWakeUpEffect: collapsing into the passed-out pose.");
+            _log.Trace("OwnWakeUpEffect: collapsing into the passed-out pose.");
             SnapPassOut(character, true);
         }
 
@@ -111,7 +111,7 @@ namespace PEAKQuickResume
             Character character = ResolveCharacter("Wake");
             if (character != null)
             {
-                _log?.LogInfo("OwnWakeUpEffect: waking up (starting the native stand-up recovery).");
+                _log.Trace("OwnWakeUpEffect: waking up (starting the native stand-up recovery).");
                 SnapPassOut(character, false);
             }
 

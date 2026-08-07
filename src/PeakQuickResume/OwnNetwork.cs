@@ -111,7 +111,7 @@ namespace PEAKQuickResume
                 var rpc = _networkGo.AddComponent<OwnNetworkRpc>();
                 rpc.Owner = this;
                 _pv.ViewID = ViewId;
-                _log?.LogInfo($"OwnNetwork: PhotonView created (ViewID={ViewId}).");
+                _log.Trace($"OwnNetwork: PhotonView created (ViewID={ViewId}).");
             }
             catch (Exception e)
             {
@@ -249,7 +249,7 @@ namespace PEAKQuickResume
             try
             {
                 _playerModVersions[userId] = version;
-                _log?.LogInfo($"OwnNetwork: client {userId} reports Quick Resume v{version}.");
+                _log.Trace($"OwnNetwork: client {userId} reports Quick Resume v{version}.");
             }
             catch (Exception e)
             {
@@ -370,7 +370,7 @@ namespace PEAKQuickResume
                 if (!_playerReceivedReadyStatus.ContainsKey(userId))
                     _playerReceivedReadyStatus.Add(userId, userName);
 
-                _log?.LogInfo($"OwnNetwork: RPC_SendReadyStatusToMaster userId={userId}, userName={userName}.");
+                _log.Trace($"OwnNetwork: RPC_SendReadyStatusToMaster userId={userId}, userName={userName}.");
             }
             catch (Exception e)
             {
@@ -666,7 +666,7 @@ namespace PEAKQuickResume
             {
                 if (!_playerPresentationDone.ContainsKey(userId))
                     _playerPresentationDone[userId] = true;
-                _log?.LogInfo($"OwnNetwork: RPC_ClientPresentationDone userId={userId}.");
+                _log.Trace($"OwnNetwork: RPC_ClientPresentationDone userId={userId}.");
             }
             catch (Exception e)
             {

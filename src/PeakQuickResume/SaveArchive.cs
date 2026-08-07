@@ -50,21 +50,36 @@ namespace PEAKQuickResume
         public int SettingsVersion;
 
         // Game version this save was written under (e.g. "1.65.a"), or "" if it
-        // predates that field entirely (see SavePicker's use of GameVersionCompat.NoVersionDisplay
-        // for how that's shown).
+        // predates that field entirely (see DisplayGameVersion for how that's resolved
+        // for display/staleness, and SavePicker for how it's shown).
         public string GameVersion = "";
 
         public string DifficultyLabel => SaveArchive.DifficultyLabel(Target);
 
         /// <summary>
+        /// GameVersion as stored, or a safe guess for the one legacy case where it's
+        /// missing but still knowable: a settingsVersion 6 save (see
+        /// SaveArchive.ArchivedSave.SettingsVersion / ArchiveNativeSettingsVersion) can
+        /// only have been written during that narrow 1.65.a-update window, so
+        /// GameVersionCompat.LegacySettingsVersion6GameVersion is a safe stand-in. Any
+        /// other missing-GameVersion save (older or newer settingsVersion) truly could be
+        /// from anywhere, so stays "" (shown as GameVersionCompat.NoVersionDisplay).
+        /// </summary>
+        public string DisplayGameVersion =>
+            !string.IsNullOrEmpty(GameVersion) ? GameVersion
+            : SettingsVersion == 6 ? GameVersionCompat.LegacySettingsVersion6GameVersion
+            : "";
+
+        /// <summary>
         /// True if this save was written under an older game version than the one
         /// currently running - the map pool was very likely rotated since, so it may
         /// load the wrong island (see GameVersionCompat, SavePicker's use of this for
-        /// the "vX.Y.z instead of playtime" row indicator). A missing GameVersion counts
-        /// as stale too (GameVersionCompat.IsOlderThan treats "" that way) - we just don't
-        /// know which version it was, so best to flag it rather than assume it's current.
+        /// the "vX.Y.z instead of playtime" row indicator). A missing DisplayGameVersion
+        /// counts as stale too (GameVersionCompat.IsOlderThan treats "" that way) - we
+        /// just don't know which version it was, so best to flag it rather than assume
+        /// it's current.
         /// </summary>
-        public bool IsStaleVersion => GameVersionCompat.IsOlderThan(GameVersion, GameVersionCompat.Current);
+        public bool IsStaleVersion => GameVersionCompat.IsOlderThan(DisplayGameVersion, GameVersionCompat.Current);
     }
 
     /// <summary>
@@ -382,12 +397,12 @@ namespace PEAKQuickResume
                     foreach (var kv in bestByUser)
                     {
                         selection.PlayerFiles[kv.Key] = kv.Value.file;
-                        log?.LogInfo($"[archive] Legacy save: matched userId '{kv.Key}' to a sibling "
+                        log.Trace($"[archive] Legacy save: matched userId '{kv.Key}' to a sibling "
                             + $"{kv.Value.delta.TotalSeconds:F1}s away from the chosen checkpoint.");
                     }
                 }
 
-                log?.LogInfo($"[archive] Selection for event '{save.Stamp}' ({save.Target}): "
+                log.Trace($"[archive] Selection for event '{save.Stamp}' ({save.Target}): "
                     + $"host='{Path.GetFileName(save.FilePath)}', {selection.PlayerFiles.Count} player file(s).");
             }
             catch (Exception e)
