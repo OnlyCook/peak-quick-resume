@@ -729,7 +729,9 @@ namespace PEAKQuickResume
             // game's own top-left corner version label. No new UI element, no extra
             // column width to budget for any language - deliberately reuses this slot
             // instead of adding an icon precisely so it can't overflow the row layout
-            string playtime = e.IsStaleVersion ? GameVersionCompat.Display(e.EffectiveGameVersion) : FormatPlaytime(e.Playtime);
+            string playtime = e.IsStaleVersion
+                ? (string.IsNullOrEmpty(e.GameVersion) ? GameVersionCompat.NoVersionDisplay : GameVersionCompat.Display(e.GameVersion))
+                : FormatPlaytime(e.Playtime);
             // Co-op: show everyone who played this run, tacked onto the last column
             // (rather than as its own column) since it's optional/co-op-only
             if (!_offline && !string.IsNullOrEmpty(e.Players))

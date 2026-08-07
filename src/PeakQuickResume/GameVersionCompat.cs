@@ -15,15 +15,11 @@ namespace PEAKQuickResume
         public static string Current => Application.version;
 
         /// <summary>
-        /// Every save this mod wrote before this feature existed has no stored
-        /// <c>gameVersion</c> at all. The mod only ever supported 1.64.a up to this
-        /// point, so nearly all such saves were in fact written on 1.64.a - accepted
-        /// as a flat fallback (not derived from file timestamps: a hardcoded real-world
-        /// cutoff moment only ever matches THIS machine's own update time, not every
-        /// player's - see the conversation this was decided in). A future mod update
-        /// can drop this fallback once every save in the wild has a real stamp
+        /// Shown in place of a real "vX.Y.z" for a save with no stored <c>gameVersion</c>
+        /// at all (see SaveArchive.ArchivedSave.GameVersion / SavePicker's row display) -
+        /// its actual version simply isn't known, so this is a placeholder, not a guess
         /// </summary>
-        public const string FallbackVersion = "1.64.a";
+        public const string NoVersionDisplay = "?.??.?";
 
         /// <summary>"1.64.a" -&gt; "v1.64.a", matching VersionString's own "v"-prefixed
         /// top-left corner label as closely as possible (that's the whole point - see

@@ -50,24 +50,21 @@ namespace PEAKQuickResume
         public int SettingsVersion;
 
         // Game version this save was written under (e.g. "1.65.a"), or "" if it
-        // predates that field entirely (see GameVersionCompat.FallbackVersion).
+        // predates that field entirely (see SavePicker's use of GameVersionCompat.NoVersionDisplay
+        // for how that's shown).
         public string GameVersion = "";
 
         public string DifficultyLabel => SaveArchive.DifficultyLabel(Target);
-
-        // GameVersion as stored, or the flat fallback for saves that predate that
-        // field entirely (see GameVersionCompat.FallbackVersion for why a flat
-        // fallback instead of a timestamp-derived guess).
-        public string EffectiveGameVersion =>
-            string.IsNullOrEmpty(GameVersion) ? GameVersionCompat.FallbackVersion : GameVersion;
 
         /// <summary>
         /// True if this save was written under an older game version than the one
         /// currently running - the map pool was very likely rotated since, so it may
         /// load the wrong island (see GameVersionCompat, SavePicker's use of this for
-        /// the "vX.Y.z instead of playtime" row indicator, and Plugin's launch notice)
+        /// the "vX.Y.z instead of playtime" row indicator). A missing GameVersion counts
+        /// as stale too (GameVersionCompat.IsOlderThan treats "" that way) - we just don't
+        /// know which version it was, so best to flag it rather than assume it's current.
         /// </summary>
-        public bool IsStaleVersion => GameVersionCompat.IsOlderThan(EffectiveGameVersion, GameVersionCompat.Current);
+        public bool IsStaleVersion => GameVersionCompat.IsOlderThan(GameVersion, GameVersionCompat.Current);
     }
 
     /// <summary>

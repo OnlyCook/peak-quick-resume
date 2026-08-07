@@ -224,38 +224,34 @@ namespace PEAKQuickResume
                 }
             }
 
-            // One-time (per version bump) game-update notice: only actually shown if at
-            // least one of our own archived saves predates the currently running game
-            // version (see ArchivedSave.IsStaleVersion / GameVersionCompat) - a save made
-            // right after this exact launch isn't affected, so there's nothing to warn
-            // about for a player who never saved on an older version. Deferred to
-            // Airport/Level for the same reasons as the check above (overlay on-screen,
-            // not over the title)
+            // One-time (per version bump) game-update notice: shown when the game version
+            // this session is running under has moved past the one last recorded here (see
+            // GameVersionCompat.IsOlderThan - major/minor only, the trailing hotfix letter
+            // doesn't count). An empty slot means either a fresh install or an upgrade from
+            // a mod version that predates this feature - neither has a real baseline to
+            // compare against, so it's deliberately treated as "nothing to warn about" rather
+            // than firing on the very first launch. Deferred to Airport/Level for the same
+            // reasons as the check above (overlay on-screen, not over the title)
             if (!_versionCheckDone && _messageOverlay != null
                 && (RunLauncher.InAirport || RunLauncher.InLevel))
             {
                 _versionCheckDone = true;
                 string current = GameVersionCompat.Current;
-                if (_cfg.LastCheckedGameVersion.Value != current)
+                string lastChecked = _cfg.LastCheckedGameVersion.Value;
+                if (!string.IsNullOrEmpty(lastChecked) && GameVersionCompat.IsOlderThan(lastChecked, current))
                 {
-                    bool anyStale = false;
-                    foreach (ArchivedSave save in SaveArchive.List(offline: true, Logger)) anyStale |= save.IsStaleVersion;
-                    foreach (ArchivedSave save in SaveArchive.List(offline: false, Logger)) anyStale |= save.IsStaleVersion;
-
-                    if (anyStale)
-                    {
-                        string msg = MessagesLocalization.Get(MsgKey.GameUpdatedSavesMayBeWrong, current);
-                        Logger.LogWarning(msg);
-                        // Longer than the "still installed" popup above (7s) - more
-                        // important (loading the wrong island is an actual gameplay
-                        // problem, not just a cosmetic duplicate-log heads-up)
-                        _messageOverlay.Show(msg, new Color(1f, 0.8f, 0.4f, 1f), 12f);
-                    }
-
-                    // Rewritten regardless of anyStale, so a bump that affects nobody's
-                    // saves still updates the baseline and isn't re-evaluated forever
-                    _cfg.LastCheckedGameVersion.Value = current;
+                    string msg = MessagesLocalization.Get(MsgKey.GameUpdatedSavesMayBeWrong, current);
+                    Logger.LogWarning(msg);
+                    // Longer than the "still installed" popup above (7s) - more
+                    // important (loading the wrong island is an actual gameplay
+                    // problem, not just a cosmetic duplicate-log heads-up)
+                    _messageOverlay.Show(msg, new Color(1f, 0.8f, 0.4f, 1f), 12f);
                 }
+
+                // Rewritten regardless of outcome, so a bump that fires no notice (or an
+                // empty starting slot) still updates the baseline and isn't re-evaluated
+                // forever
+                _cfg.LastCheckedGameVersion.Value = current;
             }
 
             // While the picker is open, Enter is an alternative "load selected"; the
