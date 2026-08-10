@@ -1,6 +1,6 @@
 **Automatically saves when you light a campfire. Press F7 to browse your campfires and jump straight back to any of them.**
 
-Press **F7** anywhere and a **save picker** opens listing all your checkpoints for the current mode. Choose one with the arrow keys and press **Enter** and it will:
+Press **F7** anywhere and a **save picker** opens listing all your checkpoints for the current mode. Choose one with the arrow keys, press **Enter** and it will:
 1. Start a **fresh run** of that save's difficulty, then
 2. Automatically **load that checkpoint**. So you're back at that campfire with your items and progress.
 
