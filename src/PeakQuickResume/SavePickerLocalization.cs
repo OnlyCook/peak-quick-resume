@@ -20,7 +20,7 @@ namespace PEAKQuickResume
         Select,
         Load,
         Delete,
-        Cancel,
+        Close,
         DeleteConfirm,
         Star,
         Unstar,
@@ -71,10 +71,13 @@ namespace PEAKQuickResume
                 "Delete", "Supprimer", "Elimina", "Löschen", "Eliminar", "Eliminar", "Excluir",
                 "Удалить", "Видалити", "删除", "", "削除", "삭제", "Usuń", "Sil",
             },
-            [PickerText.Cancel] = new[]
+            // Same wording as the help screen's own close label (HelpScreenLocalization.
+            // Close), kept in sync deliberately: both are the "this key shuts the panel"
+            // footer entry, not a "discard your changes" cancel
+            [PickerText.Close] = new[]
             {
-                "Cancel", "Annuler", "Annulla", "Abbrechen", "Cancelar", "Cancelar", "Cancelar",
-                "Отмена", "Скасувати", "取消", "", "キャンセル", "취소", "Anuluj", "İptal",
+                "Close", "Fermer", "Chiudi", "Schließen", "Cerrar", "Cerrar", "Fechar",
+                "Закрыть", "Закрити", "关闭", "", "閉じる", "닫기", "Zamknij", "Kapat",
             },
             [PickerText.DeleteConfirm] = new[]
             {

@@ -4,13 +4,13 @@
 
 **Automatically saves when you light a campfire. Press F7 to browse your campfires and jump straight back to any of them.**
 
-Press **F7** anywhere and a **save picker** opens listing all your checkpoints for the current mode. Choose one with the arrow keys and press **F7** (or Enter) and it will:
+Press **F7** anywhere and a **save picker** opens listing all your checkpoints for the current mode. Choose one with the arrow keys and press **Enter** and it will:
 1. Start a **fresh run** of that save's difficulty, then
 2. Automatically **load that checkpoint**. So you're back at that campfire with your items and progress.
 
-The newest save is preselected, so **pressing F7 twice will load your latest checkpoint**.
+The newest save is preselected, so **pressing F7 and then Enter will load your latest checkpoint**.
 
-<img width="1569" height="588" alt="new-pause-menu-btns" src="https://raw.githubusercontent.com/OnlyCook/peak-quick-resume/refs/heads/main/packaging/in-game-menu-screenshot.png" />
+<img width="1440" height="540" alt="new-pause-menu-btns" src="https://raw.githubusercontent.com/OnlyCook/peak-quick-resume/refs/heads/main/packaging/in-game-menu-screenshot.png" />
 
 Works **after you die**, **from the Airport**, or **mid-run** (so no need to die first). Full **co-op** support: the host presses F7 and everyone is brought along and restored.
 
@@ -22,11 +22,11 @@ Works **after you die**, **from the Airport**, or **mid-run** (so no need to die
 
 1. Play as normal. Lighting a campfire saves automatically. Each save is added to your history.
 2. Press **F7** to open the save picker.
-3. Use **↑/↓** to highlight a checkpoint, then press **F7** again (or Enter) to load it. Just want the latest? Press **F7** twice.  
+3. Use **↑/↓** to highlight a checkpoint, then press **Enter** to load it. Just want the latest? Press **F7** and then **Enter**.  
   
 - Press **Del** to delete the highlighted save (press it twice to confirm).  
 - Press **B** to star the highlighted save (press **B** again to unstar it). Starred saves are moved to the top and can't be deleted until unstarred again.
-- Press **Esc** to close the menu.  
+- Press **F7** or **Esc** to close the menu.  
 
 In co-op, only the **host** can use F7 and everyone is restored together.
 
@@ -57,8 +57,8 @@ Config file: `BepInEx/config/OnlyCook.PEAKQuickResume.cfg`.
 
 If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/ModConfig/) installed, every setting below is also editable in the game's settings under **Mod Settings → PEAK Quick Resume**, no need to touch the config file by hand.
 
-- **resume-key**: the key to open the picker / load the highlighted save (default **F7**). Rebindable directly in ModConfig's menu.
-- **resume-key-also-confirms-load**: if disabled, pressing the resume key while the picker is open does nothing, only Enter confirms a load (useful if you keep accidentally reloading while trying to close the picker).
+- **resume-key**: the key to open and close the picker (default **F7**). Rebindable directly in ModConfig's menu.
+- **resume-key-loads-instead-of-closing**: if enabled, pressing the resume key while the picker is open loads the highlighted save instead of closing the picker (so pressing it twice loads your latest checkpoint), and only Esc closes the menu. Off by default.
 - **help-key**: the key to open the help menu (default **F4**).
 - **allow-mid-game**: allow resuming while still alive (default on).
 - **panel-opacity**: how see-through the picker's background panel is (0 = fully see-through; 1 = fully opaque, default).

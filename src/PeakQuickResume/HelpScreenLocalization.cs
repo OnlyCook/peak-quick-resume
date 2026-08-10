@@ -17,7 +17,8 @@ namespace PEAKQuickResume
         HelpTitleWord,         // combined with the untranslated "Quick Resume" as "Quick Resume {0}"
         Close,
         Intro1,
-        QuickResumeFormat,     // {0} = resume key badge (used twice in the sentence)
+        QuickResumeFormat,          // {0} = resume key badge (used twice in the sentence)
+        QuickResumeKeyLoadsFormat,  // same, for resume-key-loads-instead-of-closing
         RestartTip,
         AchievementsNote,
     }
@@ -58,6 +59,24 @@ namespace PEAKQuickResume
                 "İlerleme yaktığın her kamp ateşinde kaydedilir (yalnızca sunucu; sunucu her oturumda yeniden yüklemelidir).",
             },
             [HelpText.QuickResumeFormat] = new[]
+            {
+                "Press {0} ANYWHERE to open the save picker, arrow keys to choose, Enter to load (the newest save is preselected), {0} or Escape to close.",
+                "Appuyez sur {0} N'IMPORTE OÙ pour ouvrir le sélecteur de sauvegardes, les flèches pour choisir, Entrée pour charger (la sauvegarde la plus récente est présélectionnée), {0} ou Échap pour fermer.",
+                "Premi {0} OVUNQUE per aprire il selettore dei salvataggi, le frecce per scegliere, Invio per caricare (il salvataggio più recente è preselezionato), {0} o Esc per chiudere.",
+                "Drücke {0} ÜBERALL, um die Speicherstandauswahl zu öffnen, Pfeiltasten zum Auswählen, Enter zum Laden (der neueste Speicherstand ist vorausgewählt), {0} oder Escape zum Schließen.",
+                "Pulsa {0} EN CUALQUIER LUGAR para abrir el selector de partidas, flechas para elegir, Intro para cargar (la partida más reciente está preseleccionada), {0} o Escape para cerrar.",
+                "Presiona {0} EN CUALQUIER LUGAR para abrir el selector de partidas, flechas para elegir, Enter para cargar (la partida más reciente está preseleccionada), {0} o Escape para cerrar.",
+                "Pressione {0} EM QUALQUER LUGAR para abrir o seletor de saves, setas para escolher, Enter para carregar (o save mais recente já vem selecionado), {0} ou Esc para fechar.",
+                "Нажмите {0} В ЛЮБОМ МЕСТЕ, чтобы открыть выбор сохранений, стрелки для выбора, Enter для загрузки (последнее сохранение уже выбрано), {0} или Escape для закрытия.",
+                "Натисніть {0} БУДЬ-ДЕ, щоб відкрити вибір збережень, стрілки для вибору, Enter для завантаження (останнє збереження вже вибрано), {0} або Escape, щоб закрити.",
+                "在任何地方按下 {0} 打开存档选择器，方向键选择，回车加载（已默认选中最新存档），{0} 或 Esc 关闭。",
+                "",
+                "どこでも {0} を押すとセーブ選択画面が開きます。矢印キーで選択し、Enterでロード（最新のセーブが初期選択）、{0} または Esc で閉じます。",
+                "어디서든 {0}을(를) 눌러 저장 파일 선택 화면을 열고, 방향키로 선택한 뒤 Enter로 불러오세요 (최신 저장 파일이 미리 선택됩니다). {0} 또는 Esc로 닫습니다.",
+                "Naciśnij {0} GDZIEKOLWIEK, aby otworzyć wybór zapisów, strzałki do wyboru, Enter do wczytania (najnowszy zapis jest już wybrany), {0} lub Esc, aby zamknąć.",
+                "Kayıt seçiciyi açmak için HER YERDE {0} tuşuna basın, seçim için ok tuşları, yüklemek için Enter (en yeni kayıt önceden seçilidir), kapatmak için {0} veya Esc.",
+            },
+            [HelpText.QuickResumeKeyLoadsFormat] = new[]
             {
                 "Press {0} ANYWHERE to open the save picker, arrow keys to choose, {0}/Enter to load (press it twice for your latest).",
                 "Appuyez sur {0} N'IMPORTE OÙ pour ouvrir le sélecteur de sauvegardes, les flèches pour choisir, {0}/Entrée pour charger (appuyez-y deux fois pour la plus récente).",

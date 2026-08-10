@@ -12,13 +12,13 @@ namespace PEAKQuickResume
     /// The in-game F7 save picker: an overlay listing every archived checkpoint for the
     /// CURRENT network category (offline saves when solo, coop saves when in coop), newest
     /// first. Arrow keys move the highlight (holding one repeats it), Delete removes a save
-    /// (two-step), Escape closes. The resume key itself (open / confirm-load) is driven by
+    /// (two-step), Escape closes. The resume key itself (open / close, or confirm-load when
+    /// <see cref="PluginConfig.ResumeKeyLoadsInsteadOfClosing"/> is enabled) is driven by
     /// <see cref="Plugin"/> so a single key press never both opens and confirms
     ///
-    /// The newest save is preselected, so "press F7, press F7 again" still loads the
-    /// latest checkpoint exactly like before the picker existed (unless
-    /// <see cref="PluginConfig.ResumeKeyAlsoConfirmsLoad"/> is disabled, in which case only
-    /// Enter confirms)
+    /// The newest save is preselected, so "press F7, press Enter" loads the latest
+    /// checkpoint (or "press F7, press F7 again" when
+    /// <see cref="PluginConfig.ResumeKeyLoadsInsteadOfClosing"/> is enabled)
     ///
     /// Rendered as a real UGUI Canvas (built once, lazily, then just toggled/updated)
     /// rather than IMGUI, both for a look that sits closer to the game's own menus (real
@@ -191,7 +191,7 @@ namespace PEAKQuickResume
                 _dimImage.color = new Color(DimColor.r, DimColor.g, DimColor.b, DimColor.a * t);
             }
 
-            // Navigation (the resume key + Enter confirm live in Plugin). Holding an
+            // Navigation (the resume key + Enter load live in Plugin). Holding an
             // arrow repeats it after an initial delay, like any normal menu list. Holding
             // Shift jumps by JumpStep entries instead of 1, both on the initial press and
             // on every repeat while held
@@ -955,14 +955,15 @@ namespace PEAKQuickResume
         }
 
         // Cheap refresh for just the footer row: reflects the CURRENT resume key (in
-        // case it was rebound) and whether it also confirms a load while open, so it
-        // never shows a key that no longer does what it says
+        // case it was rebound) and whether it loads or closes while the picker is open,
+        // so it never shows a key that no longer does what it says
         private void RefreshFooter()
         {
             if (_footerRow == null || _footerEntries.Count < 5) return;
             string key = _cfg != null ? _cfg.ResumeKey.Value.ToString() : "F7";
-            bool keyAlsoLoads = _cfg == null || _cfg.ResumeKeyAlsoConfirmsLoad.Value;
-            string loadKeys = keyAlsoLoads ? $"{key} / Enter" : "Enter";
+            bool keyLoads = _cfg != null && _cfg.ResumeKeyLoadsInsteadOfClosing.Value;
+            string loadKeys = keyLoads ? $"{key} / Enter" : "Enter";
+            string closeKeys = keyLoads ? "Esc" : $"{key} / Esc";
             string starKey = _cfg != null ? _cfg.StarKey.Value.ToString() : "B";
             bool starred = Selected != null && Selected.Starred;
 
@@ -970,7 +971,7 @@ namespace PEAKQuickResume
             SetFooterEntry(_footerEntries[1], loadKeys, SavePickerLocalization.Get(PickerText.Load));
             SetFooterEntry(_footerEntries[2], starKey, SavePickerLocalization.Get(starred ? PickerText.Unstar : PickerText.Star));
             SetFooterEntry(_footerEntries[3], "Del", SavePickerLocalization.Get(PickerText.Delete));
-            SetFooterEntry(_footerEntries[4], "Esc", SavePickerLocalization.Get(PickerText.Cancel));
+            SetFooterEntry(_footerEntries[4], closeKeys, SavePickerLocalization.Get(PickerText.Close));
 
             // Badge widths are driven by ContentSizeFitter off the key text's own
             // preferred size, force an immediate layout pass so a changed key (e.g. the
@@ -991,8 +992,8 @@ namespace PEAKQuickResume
             entry.LabelText.text = label;
         }
 
-        // Builds the row of "[key badge] label" pairs (↑/↓ Select, F7/Enter Load, Del
-        // Delete, Esc Cancel). A real rounded-rect Image behind each key, not a TMP
+        // Builds the row of "[key badge] label" pairs (↑/↓ Select, Enter Load, Del
+        // Delete, F7/Esc Close). A real rounded-rect Image behind each key, not a TMP
         // <mark> tag (no rounded corners, and its background doesn't vertically center
         // against the text the way a normal layout does)
         private const float TitleIconSize = 30f;

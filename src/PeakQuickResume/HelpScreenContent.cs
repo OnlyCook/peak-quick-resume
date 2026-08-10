@@ -31,7 +31,14 @@ namespace PEAKQuickResume
             // warning are gone (our own restore path has no native-key equivalent). The
             // restart tip below is kept regardless: quitting/rejoining still fixes most
             // load or teleport hiccups, whatever their source (possibly even vanilla ones)
-            sb.Append(HelpScreenLocalization.Get(HelpText.QuickResumeFormat, Key(resumeKey))).Append("\n\n");
+            // Two variants of the same line, matching whichever picker key layout is
+            // configured: by default the resume key opens AND closes the picker and only
+            // Enter loads, with the old "press it twice to load" layout available via
+            // resume-key-loads-instead-of-closing
+            bool keyLoads = cfg != null && cfg.ResumeKeyLoadsInsteadOfClosing.Value;
+            sb.Append(HelpScreenLocalization.Get(
+                keyLoads ? HelpText.QuickResumeKeyLoadsFormat : HelpText.QuickResumeFormat,
+                Key(resumeKey))).Append("\n\n");
 
             // Accent-color just the tip's opening question, matching the gold key badges
             // (same treatment the old BugTitle line had). The question ends where the

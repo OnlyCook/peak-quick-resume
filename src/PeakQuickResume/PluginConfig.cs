@@ -7,7 +7,7 @@ namespace PEAKQuickResume
     public class PluginConfig
     {
         public readonly ConfigEntry<KeyCode> ResumeKey;
-        public readonly ConfigEntry<bool> ResumeKeyAlsoConfirmsLoad;
+        public readonly ConfigEntry<bool> ResumeKeyLoadsInsteadOfClosing;
         public readonly ConfigEntry<KeyCode> HelpKey;
         public readonly ConfigEntry<KeyCode> StarKey;
         public readonly ConfigEntry<bool> AllowMidGame;
@@ -134,16 +134,16 @@ namespace PEAKQuickResume
             // ever assigns a single KeyCode anyway, so that ceiling already existed
             // for anyone using it to rebind
             ResumeKey = cfg.Bind("General", "resume-key", KeyCode.F7,
-                "Opens the save picker (a menu of your checkpoints for the current solo/co-op category). "
-                + "Use the arrow keys to choose, then press this key again (or Enter) to load. The newest "
-                + "save is preselected, so pressing it twice loads your latest checkpoint. Delete removes "
-                + "the highlighted save; Escape closes the menu.");
+                "Opens the save picker (a menu of your checkpoints for the current solo/co-op category), and "
+                + "closes it again. Use the arrow keys to choose, then press Enter to load. The newest save is "
+                + "preselected, so Enter right after opening loads your latest checkpoint. Delete removes the "
+                + "highlighted save; Escape also closes the menu.");
 
-            ResumeKeyAlsoConfirmsLoad = cfg.Bind("General", "resume-key-also-confirms-load", true,
-                "If enabled (default), pressing the resume key again while the save picker is open loads the "
-                + "highlighted save (so pressing it twice loads the latest checkpoint). If disabled, only Enter "
-                + "confirms a load while the picker is open, pressing the resume key does nothing, useful if "
-                + "you keep accidentally loading a save while trying to close the picker with it.");
+            ResumeKeyLoadsInsteadOfClosing = cfg.Bind("General", "resume-key-loads-instead-of-closing", false,
+                "If disabled (default), pressing the resume key again while the save picker is open just closes "
+                + "the picker, and only Enter loads the highlighted save. If enabled, the resume key loads the "
+                + "highlighted save instead (so pressing it twice loads the latest checkpoint) and only Escape "
+                + "closes the picker (the behaviour from earlier versions).");
 
             // Same plain-KeyCode reasoning as resume-key above (ModConfig only renders a
             // rebind widget for KeyCode, not KeyboardShortcut)

@@ -1,3 +1,9 @@
+## 2.X.X
+
+- By default now only **Enter** loads a save when in the picker, **F7** closes the menu. This is to prevent accidentally loading an unwanted save. By enabling `resume-key-loads-instead-of-closing` you can return to the old behavior. Thanks to **Cat-As$-Trophy** for the final nudge to change this!
+- Removed `resume-key-also-confirms-load` setting since its been deprecated and replaced (see above).
+- Renamed *Cancel* to *Close* in the footer of the save picker.
+
 ## 2.1.1
 
 - Added new system to check for the native `MODAL_OUTOFDATE_TITLE` dialog which would open when loading a save game locking all players from it since they are forced to update the game. Furthermore if the map pool were to be rotated in this update, broken saves would potentially be served instead. You are now informed about this through the mod's in-game logging system.

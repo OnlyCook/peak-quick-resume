@@ -261,8 +261,9 @@ namespace PEAKQuickResume
                 _cfg.LastCheckedGameVersion.Value = current;
             }
 
-            // While the picker is open, Enter is an alternative "load selected"; the
-            // picker itself handles arrows / Delete / Escape
+            // While the picker is open, Enter is the "load selected" key (the only one,
+            // unless resume-key-loads-instead-of-closing is on); the picker itself
+            // handles arrows / Delete / Escape
             if (_picker != null && _picker.IsOpen
                 && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)))
             {
@@ -285,14 +286,17 @@ namespace PEAKQuickResume
 
         private void OnResumeKey()
         {
-            // Picker already open → this second press loads the highlighted save
-            // (Newest is preselected, so F7 then F7 still loads the latest checkpoint.)
-            // Unless disabled via config, in which case only Enter confirms a load and
-            // the resume key is a no-op while the picker is open (avoids accidental loads
-            // from players trying to close the picker with the same key that opened it)
+            // Picker already open → the resume key toggles it shut again, which is what
+            // muscle memory expects from the key that opened it (players kept loading a
+            // save by accident while trying to close the picker). Loading is Enter's job
+            //
+            // Opt-in via config: the old behaviour, where this second press loads the
+            // highlighted save instead (newest is preselected, so F7 then F7 loads the
+            // latest checkpoint) and only Escape closes the picker
             if (_picker != null && _picker.IsOpen)
             {
-                if (_cfg.ResumeKeyAlsoConfirmsLoad.Value) ConfirmLoad();
+                if (_cfg.ResumeKeyLoadsInsteadOfClosing.Value) ConfirmLoad();
+                else _picker.Close();
                 return;
             }
 
