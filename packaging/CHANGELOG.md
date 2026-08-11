@@ -1,5 +1,7 @@
 ## 2.2.0
 
+> **Note:** all your old saves (v1.65.a or older) can be deleted since they simply aren't compatible with v2.0.a and won't load.
+
 - **PEAK 2.0.a compatibility update.** The update changed so many things the mod relies on, but it's all fixed and the new stuff also works now.
   - Fixed saving being broken entirely: the game made its run timer private, which made the whole save routine fail before it wrote anything.
   - Fixed loading hanging forever: backpacks became typed, which made the whole restore routine fail before it did anything at all.
