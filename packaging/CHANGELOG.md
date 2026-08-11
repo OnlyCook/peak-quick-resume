@@ -20,7 +20,6 @@
 - Fixed a co-op client being restored dead and stranded when the host loaded a save that client had no file in.
 - The "High Altitude" badge no longer counts your restored altitude as a fresh climb.
 - Added translations for Traditional Chinese.
-- **Added Traditional Chinese translations** for every one of the mod's own texts (save picker, pause menu buttons, help screen and all in-game messages). It was the one language left blank, falling back to English.
 - If you had the old `resume-key-also-confirms-load` setting, its value is **carried over automatically** to the new `resume-key-loads-instead-of-closing`, so the resume key keeps behaving exactly the way you had it instead of silently switching to the new default. The dead setting is then removed from your config file.
 - Renamed *Cancel* to *Close* in the footer of the save picker.
 
