@@ -124,6 +124,9 @@ namespace PEAKQuickResume
 
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo("=== Quick Resume: sequence START ===");
+            // No HeightClimbed credit for the altitude swings a resume goes through
+            // (airport -> fresh spawn -> warp target) - see HeightAchievementGuard
+            HeightAchievementGuard.Suppress("resume sequence");
             Msg(MessagesLocalization.Get(MsgKey.QuickResumeStarting), MsgInfo);
 
             // --- 1. Decide which run to resume (ascent or custom) ---
@@ -351,6 +354,10 @@ namespace PEAKQuickResume
             if (!PhotonNetwork.OfflineMode)
                 OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
 
+            // Height credit resumes here, seeding this run's mark from where the player
+            // actually ended up - see HeightAchievementGuard
+            HeightAchievementGuard.Release("resume sequence");
+
             _running = false;
             OrchestrationLock.Release(LockOwner);
         }
@@ -428,6 +435,9 @@ namespace PEAKQuickResume
         private void Fail(string reason)
         {
             _log.LogError($"Quick Resume aborted: {reason}.");
+            // Must release on the abort paths too, or a failed resume would leave height
+            // credit paused until the guard's own safety timeout expires
+            HeightAchievementGuard.Release("resume aborted");
             _chosen = null;
             _running = false;
             OrchestrationLock.Release(LockOwner);

@@ -837,9 +837,13 @@ namespace PEAKQuickResume
             if (enable == "true")
             {
                 Owner?.Watchdog?.BeginLoadWindow();
+                // AchievementManager is client-local, so each machine has to pause its own
+                // height counting for its own load - see HeightAchievementGuard
+                HeightAchievementGuard.Suppress("client load window");
             }
             else
             {
+                HeightAchievementGuard.Release("client load window");
                 // End the window, passing the host-forwarded real target so a client that
                 // never got warped can still recover to it - see OwnNetwork.LoadingScreenOthers
                 Owner?.Watchdog?.ArmPendingWatch(OwnNetwork.ParseVector(targetPayload));
