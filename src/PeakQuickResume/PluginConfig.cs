@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Reflection;
 using BepInEx.Configuration;
 using UnityEngine;
 
@@ -139,11 +141,23 @@ namespace PEAKQuickResume
                 + "preselected, so Enter right after opening loads your latest checkpoint. Delete removes the "
                 + "highlighted save; Escape also closes the menu.");
 
+            // Read BEFORE binding, see the method - binding consumes the orphaned entries
+            // this inspects
+            bool? inheritedFromOldSetting = TryReadDeprecatedResumeKeyConfirmsLoad(cfg);
+
             ResumeKeyLoadsInsteadOfClosing = cfg.Bind("General", "resume-key-loads-instead-of-closing", false,
                 "If disabled (default), pressing the resume key again while the save picker is open just closes "
                 + "the picker, and only Enter loads the highlighted save. If enabled, the resume key loads the "
                 + "highlighted save instead (so pressing it twice loads the latest checkpoint) and only Escape "
                 + "closes the picker (the behaviour from earlier versions).");
+
+            if (inheritedFromOldSetting.HasValue)
+            {
+                ResumeKeyLoadsInsteadOfClosing.Value = inheritedFromOldSetting.Value;
+                Debug.Log($"[PEAK Quick Resume] Carried your old 'resume-key-also-confirms-load' setting over to "
+                    + $"'resume-key-loads-instead-of-closing' ({inheritedFromOldSetting.Value}), so the resume key "
+                    + "keeps behaving the way you had it. The old setting has been removed from the config file.");
+            }
 
             // Same plain-KeyCode reasoning as resume-key above (ModConfig only renders a
             // rebind widget for KeyCode, not KeyboardShortcut)
@@ -447,6 +461,75 @@ namespace PEAKQuickResume
             LastCheckedGameVersion = cfg.Bind("Internal", "last-checked-game-version", "",
                 "Internal bookkeeping - do not edit by hand. The game version this mod last saw at "
                 + "launch, used to show a one-time notice after a game update rotates the map pool.");
+
+            // Deliberately last: Save() writes every BOUND entry plus any leftover orphans,
+            // so flushing before the binds above would rewrite the file while most settings
+            // were still orphans and strip their comments. Only needed when nothing else
+            // marked the config dirty - a migrated value already triggers its own save
+            if (_removedDeprecatedEntry) cfg.Save();
+        }
+
+        // Set when the deprecated entry below was dropped, so the constructor knows it has
+        // to force a save - removing an orphan alone changes nothing on disk
+        private bool _removedDeprecatedEntry;
+
+        // The setting resume-key-loads-instead-of-closing replaced, removed in 2.2.0
+        private static readonly ConfigDefinition DeprecatedConfirmsLoad =
+            new ConfigDefinition("General", "resume-key-also-confirms-load");
+        private static readonly ConfigDefinition CurrentKeyLoads =
+            new ConfigDefinition("General", "resume-key-loads-instead-of-closing");
+
+        /// <summary>
+        /// One-time migration of the removed <c>resume-key-also-confirms-load</c> setting
+        /// onto its replacement, <c>resume-key-loads-instead-of-closing</c>. The two mean
+        /// the same thing (does the resume key load, or just close?), so anyone who had
+        /// deliberately turned the old one off - or simply kept its default-on behaviour
+        /// and got used to double-tapping F7 to load - keeps exactly the behaviour they
+        /// had, instead of silently getting the new default and wondering why the key
+        /// stopped loading.
+        ///
+        /// Returns the value to carry over, or null when there is nothing to migrate.
+        ///
+        /// MUST BE CALLED BEFORE BINDING the replacement. BepInEx parks every setting it
+        /// reads from disk in a private <c>OrphanedEntries</c> map and removes each one as
+        /// it gets bound, so this can distinguish the two cases that matter:
+        ///  - the replacement is ALREADY in the file: this user has run a version that had
+        ///    it, their choice stands, migrate nothing
+        ///  - only the old key is there: they are coming from an older version, carry it
+        ///
+        /// The old entry is then dropped from that map, because <c>ConfigFile.Save</c>
+        /// writes leftover orphans back out - without this it would linger in every config
+        /// file forever, looking like a setting that still does something
+        /// </summary>
+        private bool? TryReadDeprecatedResumeKeyConfirmsLoad(ConfigFile cfg)
+        {
+            try
+            {
+                var property = typeof(ConfigFile).GetProperty("OrphanedEntries",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (!(property?.GetValue(cfg) is IDictionary<ConfigDefinition, string> orphans)) return null;
+
+                if (!orphans.TryGetValue(DeprecatedConfirmsLoad, out string raw)) return null;
+
+                // Drop it UNCONDITIONALLY, even when not migrating below. Save() writes
+                // leftover orphans back out, so skipping this for someone who already has
+                // the replacement would strand a dead setting in their config permanently
+                orphans.Remove(DeprecatedConfirmsLoad);
+                _removedDeprecatedEntry = true;
+
+                // The replacement is already in their file, so they have run a version that
+                // had it and their choice stands - clean up, but never overwrite it
+                if (orphans.ContainsKey(CurrentKeyLoads)) return null;
+
+                // Unparseable means a hand-edited file; fall back to the old setting's own
+                // default (true), which is the behaviour that user actually experienced
+                return bool.TryParse(raw?.Trim(), out bool value) ? value : true;
+            }
+            catch
+            {
+                // Purely a convenience migration - never let it stop the config loading
+                return null;
+            }
         }
     }
 }

@@ -6,8 +6,7 @@ namespace PEAKQuickResume
     /// Translations for the F1 help screen's body text (<see cref="HelpScreenContent"/>).
     /// Same rules as <see cref="SavePickerLocalization"/>/<see cref="PauseMenuLocalization"/>:
     /// indexed by <c>(int)LocalizedText.Language</c>, covering every language the game
-    /// itself ships; "Traditional Chinese" is left blank (not one of the game's shipped
-    /// languages) and falls back to English
+    /// itself ships, Traditional Chinese included; any entry left blank falls back to English
     ///
     /// Key names (F6/F7/Enter) are left untranslated everywhere, same as
     /// "PEAK Checkpoint Save"/"Quick Resume" - they're literal identifiers, not prose
@@ -33,12 +32,12 @@ namespace PEAKQuickResume
             [HelpText.HelpTitleWord] = new[]
             {
                 "Help", "Aide", "Aiuto", "Hilfe", "Ayuda", "Ayuda", "Ajuda",
-                "Справка", "Довідка", "帮助", "", "ヘルプ", "도움말", "Pomoc", "Yardım",
+                "Справка", "Довідка", "帮助", "幫助", "ヘルプ", "도움말", "Pomoc", "Yardım",
             },
             [HelpText.Close] = new[]
             {
                 "Close", "Fermer", "Chiudi", "Schließen", "Cerrar", "Cerrar", "Fechar",
-                "Закрыть", "Закрити", "关闭", "", "閉じる", "닫기", "Zamknij", "Kapat",
+                "Закрыть", "Закрити", "关闭", "關閉", "閉じる", "닫기", "Zamknij", "Kapat",
             },
             [HelpText.Intro1] = new[]
             {
@@ -52,7 +51,7 @@ namespace PEAKQuickResume
                 "Прогресс сохраняется у каждого зажжённого костра (только у хоста, хосту нужно перезагружать каждую сессию).",
                 "Прогрес зберігається біля кожного запаленого вогнища (лише в хоста, хосту потрібно перезавантажувати щосесії).",
                 "在你点燃的每个篝火处保存进度（仅限房主，房主每次都需要重新加载）。",
-                "",
+                "在你點燃的每個營火處儲存進度（僅限房主，房主每次遊戲都需要重新載入）。",
                 "焚き火を灯すたびに進行状況が保存されます（ホストのみ。ホストはセッションごとに再読み込みが必要です）。",
                 "모닥불을 피울 때마다 진행 상황이 저장됩니다 (호스트 전용, 호스트는 매 세션마다 다시 불러와야 합니다).",
                 "Postęp zapisuje się przy każdym rozpalonym ognisku (tylko host, host musi wczytywać ponownie co sesję).",
@@ -70,7 +69,7 @@ namespace PEAKQuickResume
                 "Нажмите {0} В ЛЮБОМ МЕСТЕ, чтобы открыть выбор сохранений, стрелки для выбора, Enter для загрузки (последнее сохранение уже выбрано), {0} или Escape для закрытия.",
                 "Натисніть {0} БУДЬ-ДЕ, щоб відкрити вибір збережень, стрілки для вибору, Enter для завантаження (останнє збереження вже вибрано), {0} або Escape, щоб закрити.",
                 "在任何地方按下 {0} 打开存档选择器，方向键选择，回车加载（已默认选中最新存档），{0} 或 Esc 关闭。",
-                "",
+                "在任何地方按下 {0} 開啟存檔選擇器，方向鍵選擇，Enter 載入（已預設選取最新存檔），{0} 或 Esc 關閉。",
                 "どこでも {0} を押すとセーブ選択画面が開きます。矢印キーで選択し、Enterでロード（最新のセーブが初期選択）、{0} または Esc で閉じます。",
                 "어디서든 {0}을(를) 눌러 저장 파일 선택 화면을 열고, 방향키로 선택한 뒤 Enter로 불러오세요 (최신 저장 파일이 미리 선택됩니다). {0} 또는 Esc로 닫습니다.",
                 "Naciśnij {0} GDZIEKOLWIEK, aby otworzyć wybór zapisów, strzałki do wyboru, Enter do wczytania (najnowszy zapis jest już wybrany), {0} lub Esc, aby zamknąć.",
@@ -88,7 +87,7 @@ namespace PEAKQuickResume
                 "Нажмите {0} В ЛЮБОМ МЕСТЕ, чтобы открыть выбор сохранений, стрелки для выбора, {0}/Enter для загрузки (нажмите дважды для последнего).",
                 "Натисніть {0} БУДЬ-ДЕ, щоб відкрити вибір збережень, стрілки для вибору, {0}/Enter для завантаження (натисніть двічі для останнього).",
                 "在任何地方按下 {0} 打开存档选择器，方向键选择，{0}/回车加载（连按两次加载最新存档）。",
-                "",
+                "在任何地方按下 {0} 開啟存檔選擇器，方向鍵選擇，{0}/Enter 載入（連按兩次載入最新存檔）。",
                 "どこでも {0} を押すとセーブ選択画面が開きます。矢印キーで選択し、{0}/Enterでロード（2回押すと最新のセーブをロード）。",
                 "어디서든 {0}을(를) 눌러 저장 파일 선택 화면을 열고, 방향키로 선택한 뒤 {0}/Enter로 불러오세요 (두 번 누르면 최신 저장 파일을 불러옵니다).",
                 "Naciśnij {0} GDZIEKOLWIEK, aby otworzyć wybór zapisów, strzałki do wyboru, {0}/Enter do wczytania (naciśnij dwukrotnie, aby wczytać najnowszy).",
@@ -106,7 +105,7 @@ namespace PEAKQuickResume
                 "Что-то пошло не так после загрузки? (пустая карта, подпрыгивание вверх-вниз, падение сквозь пол, или вы так и не добрались до костра)\nПусть все выйдут и снова зайдут в игру (или полностью перезапустят её), а затем загрузите то же сохранение. Одно это решает большинство проблем.",
                 "Щось пішло не так після завантаження? (порожня карта, підстрибування вгору-вниз, падіння крізь підлогу, або ви так і не дісталися до вогнища)\nНехай усі вийдуть і знову зайдуть у гру (або повністю перезапустять її), а потім завантажте те саме збереження. Одне це вирішує більшість проблем.",
                 "加载后出问题了吗？（地图空白、上下弹跳、穿过地板掉落，或者其实根本没有到达篝火旁）\n让所有人退出并重新加入游戏（或彻底重启游戏），然后再加载同一个存档。仅此一步就能解决大多数问题。",
-                "",
+                "載入後出問題了嗎？（地圖空白、上下彈跳、穿過地板掉落，或是根本沒有到達營火旁）\n讓所有人退出並重新加入遊戲（或完全重啟遊戲），然後再次載入同一個存檔。光是這一步就能解決大多數問題。",
                 "ロード後に問題が起きましたか？（マップが空、上下に跳ね続ける、床をすり抜けて落下する、または実際には焚き火にたどり着いていない）\n全員が一度ゲームを退出して再参加する（またはゲームを完全に再起動する）、その後同じセーブをロードし直してください。これだけでほとんどの問題が解決します。",
                 "불러온 뒤 문제가 발생했나요? (빈 맵, 위아래로 튕김, 바닥을 뚫고 떨어짐, 또는 실제로 모닥불에 도착하지 않음)\n모두가 게임을 나갔다가 다시 참가하거나(또는 게임을 완전히 재시작) 한 뒤, 같은 저장 파일을 다시 불러오세요. 이것만으로 대부분의 문제가 해결됩니다.",
                 "Czy po wczytaniu coś poszło nie tak? (pusta mapa, odbijanie się góra-dół, przepadanie przez podłogę, albo w ogóle nie dotarłeś do ogniska)\nNiech wszyscy opuszczą grę i dołączą ponownie (albo całkowicie ją zrestartują), a następnie wczytajcie ten sam zapis. Samo to rozwiązuje większość problemów.",
@@ -128,7 +127,7 @@ namespace PEAKQuickResume
                 "Прогресс достижений корректно сохраняется и восстанавливается при загрузке чекпоинта, но <color=#FFF2B8>только для игроков, у которых сам установлен PEAK Quick Resume</color>.",
                 "Прогрес досягнень коректно зберігається та відновлюється під час завантаження чекпоінта, але <color=#FFF2B8>лише для гравців, які самі встановили PEAK Quick Resume</color>.",
                 "加载存档点时，成就进度会被正确保存和恢复，但<color=#FFF2B8>仅限自己安装了 PEAK Quick Resume 的玩家</color>。",
-                "",
+                "載入存檔點時，成就進度會被正確儲存與復原，但<color=#FFF2B8>僅限自己安裝了 PEAK Quick Resume 的玩家</color>。",
                 "チェックポイントをロードすると実績の進行状況が正しく保存・復元されますが、<color=#FFF2B8>これはPEAK Quick Resumeを自分自身でインストールしているプレイヤーにのみ適用されます</color>。",
                 "체크포인트를 불러오면 업적 진행 상황이 올바르게 저장 및 복원되지만, <color=#FFF2B8>본인이 직접 PEAK Quick Resume를 설치한 플레이어에게만 해당됩니다</color>.",
                 "Postęp osiągnięć jest poprawnie zapisywany i przywracany podczas wczytywania punktu kontrolnego, ale <color=#FFF2B8>tylko dla graczy, którzy sami mają zainstalowany PEAK Quick Resume</color>.",

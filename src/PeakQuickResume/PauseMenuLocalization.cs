@@ -10,9 +10,9 @@ namespace PEAKQuickResume
     /// Indexed by <c>(int)LocalizedText.Language</c>, covering every language the game itself
     /// currently ships (per its own settings menu): English, French, Italian, German, Spanish
     /// (Spain), Spanish (Latin America), Portuguese (Brazil), Russian, Ukrainian, Simplified
-    /// Chinese, Japanese, Korean, Polish, Turkish. "Traditional Chinese" exists as an enum value
-    /// but isn't one of the game's shipped languages, left blank here, falls back to English,
-    /// same behavior as the game's own <c>LocalizedText.GetText</c> for a missing translation
+    /// Chinese, Traditional Chinese, Japanese, Korean, Polish, Turkish. Any entry left blank
+    /// falls back to English, the same behavior as the game's own <c>LocalizedText.GetText</c>
+    /// for a missing translation
     ///
     /// "Board Flight" instead reuses the game's own official "BOARDFLIGHT" string (the same
     /// text shown when interacting with the kiosk directly), so it's guaranteed to match
@@ -49,7 +49,7 @@ namespace PEAKQuickResume
                 "ПЕРЕЗАПУСК",        // Russian
                 "ПЕРЕЗАПУСК",        // Ukrainian
                 "重新开始",            // Simplified Chinese
-                "",                  // Traditional Chinese (unsupported, falls back to English)
+                "重新開始",                  // Traditional Chinese
                 "リスタート",          // Japanese
                 "재시작",              // Korean
                 "RESTART",           // Polish (commonly used as-is in games/tech)
@@ -67,7 +67,7 @@ namespace PEAKQuickResume
                 "ВЕРНУТЬСЯ В АЭРОПОРТ",      // Russian
                 "ПОВЕРНУТИСЯ В АЕРОПОРТ",    // Ukrainian
                 "返回机场",                    // Simplified Chinese
-                "",                          // Traditional Chinese (unsupported, falls back to English)
+                "返回機場",                          // Traditional Chinese
                 "空港に戻る",                  // Japanese
                 "공항으로 돌아가기",            // Korean
                 "WRÓĆ NA LOTNISKO",          // Polish
@@ -89,7 +89,7 @@ namespace PEAKQuickResume
                 "Перезапустить этот забег? Все вернутся в аэропорт, и сразу начнётся новый забег той же сложности (сохранение не будет загружено).", // Russian
                 "Перезапустити цей забіг? Усі повернуться в аеропорт, і одразу почнеться новий забіг тієї ж складності (збереження не буде завантажено).", // Ukrainian
                 "重新开始本局游戏?所有人将返回机场,并立即开始相同难度的新一局(不会加载任何存档)。", // Simplified Chinese
-                "", // Traditional Chinese (unsupported, falls back to English)
+                "要重新開始這一局嗎？所有人將返回機場，並立即開始相同難度的新一局（不會載入任何存檔）。", // Traditional Chinese
                 "このランを再開始しますか?全員が空港に戻り、同じ難易度の新しいランがすぐに始まります(チェックポイントは読み込まれません)。", // Japanese
                 "이번 런을 재시작하시겠습니까? 모두 공항으로 돌아가고 동일한 난이도의 새로운 런이 즉시 시작됩니다 (체크포인트는 불러오지 않습니다).", // Korean
                 "Zrestartować ten przebieg? Wszyscy wrócą na lotnisko i natychmiast rozpocznie się nowy przebieg tej samej trudności (żaden zapis nie zostanie wczytany).", // Polish
@@ -107,7 +107,7 @@ namespace PEAKQuickResume
                 "Вернуть всех в аэропорт сейчас?", // Russian
                 "Повернути всіх в аеропорт зараз?", // Ukrainian
                 "现在让所有人返回机场?", // Simplified Chinese
-                "", // Traditional Chinese (unsupported, falls back to English)
+                "現在讓所有人返回機場嗎？", // Traditional Chinese
                 "今すぐ全員を空港に戻しますか?", // Japanese
                 "지금 모두를 공항으로 돌려보내시겠습니까?", // Korean
                 "Odesłać teraz wszystkich na lotnisko?", // Polish
