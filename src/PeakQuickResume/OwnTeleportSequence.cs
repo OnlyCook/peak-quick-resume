@@ -46,6 +46,15 @@ namespace PEAKQuickResume
         private OwnWakeUpEffect _wakeUpEffect;
         private OwnLoadingScreen _loadingScreen;
 
+        /// <summary>
+        /// Character's revive <c>[PunRPC]</c>, named here rather than inline because
+        /// PEAK 2.0.a renamed it from <c>RPCA_Revive</c> to <c>ReviveCharacter</c>. A
+        /// string RPC name can't be checked by the compiler, so a rename like that fails
+        /// silently at runtime (Photon just reports an unknown method and nobody gets
+        /// revived) - see <see cref="ReviveDeadPlayers"/> for the full rationale
+        /// </summary>
+        private const string ReviveRpcName = "ReviveCharacter";
+
         // Coop client-warp settle tracking (see TeleportClientsToHost's class remarks and
         // the wait block near the end of RunSequence): TeleportClientsToHost used to be
         // fired fully fire-and-forget, so the host's own "LOADING SAVE..." overlay could
@@ -594,14 +603,22 @@ namespace PEAKQuickResume
         /// after the host (and was therefore killed on arrival by the game's own
         /// <c>DeathOnArrival</c>) was still dead and spectating after a checkpoint load
         ///
-        /// In co-op we therefore broadcast the game's own <c>RPCA_Revive(false)</c> on that
-        /// character's view instead, which runs these exact same field writes (plus the
-        /// affliction/thorn clears below) on EVERY machine, including the owning client.
+        /// In co-op we therefore broadcast the game's own revive RPC on that character's
+        /// view instead, which runs these exact same field writes (plus the affliction/
+        /// thorn clears below) on EVERY machine, including the owning client.
         /// <c>false</c> = don't apply the post-revive Curse/Hunger status, matching what the
         /// original's direct writes did (i.e. nothing). Solo keeps the literal direct-write
         /// path untouched - there is no second machine to reach, and the local writes have
         /// been proven there since M3. The direct writes also stay as the fallback if the
         /// RPC itself throws
+        ///
+        /// PEAK 2.0.a RENAMED that RPC from <c>RPCA_Revive</c> to <c>ReviveCharacter</c>
+        /// (same <c>[PunRPC]</c>, same lone <c>bool applyStatus</c> parameter, same body) -
+        /// see <see cref="ReviveRpcName"/>. Deliberately NOT the similarly named
+        /// <c>RPCA_ReviveAtPosition</c> that also exists in 2.0.a: that one additionally
+        /// does <c>DropAllItems(includeBackpack: true)</c> and warps the character, both
+        /// of which would fight the inventory restore and the warps this sequence runs
+        /// itself
         ///
         /// Everyone flagged is revived here regardless of what the save says, so the segment
         /// jump and the warps below all run on living characters; whoever the checkpoint
@@ -621,16 +638,27 @@ namespace PEAKQuickResume
                 {
                     try
                     {
-                        character.photonView.RPC("RPCA_Revive", RpcTarget.All, false);
+                        character.photonView.RPC(ReviveRpcName, RpcTarget.All, false);
                         _log.Trace($"OwnTeleportSequence.ReviveDeadPlayers: revived {character.characterName} (networked).");
                         continue;
                     }
                     catch (Exception e)
                     {
-                        _log?.LogWarning($"OwnTeleportSequence.ReviveDeadPlayers: RPCA_Revive failed for "
+                        _log?.LogWarning($"OwnTeleportSequence.ReviveDeadPlayers: {ReviveRpcName} failed for "
                             + $"{character.characterName} ({e.Message}); falling back to a local-only revive.");
                     }
                 }
+
+                // Mirrors the body of the game's own revive (Character.ReviveCharacter,
+                // called RPCA_Revive before 2.0.a) for the machine that owns this
+                // character. Two of these lines track additions 2.0.a made to it:
+                // the ragdoll collision re-enable, and the Petrify reduction. Note
+                // ClearAllStatus(true) still matches vanilla's own parameterless call
+                // exactly - 2.0.a's new second parameter (excludePetrify) defaults to
+                // true, which is why the -0.75 nudge below is a separate step there too
+                // rather than petrify simply being cleared outright
+                try { character.refs.ragdoll.ToggleCollision(enableCollision: true); }
+                catch { /* pre-2.0.a shape, or no ragdoll refs - not worth failing over */ }
 
                 character.data.dead = false;
                 character.data.deathTimer = 0f;
@@ -638,7 +666,8 @@ namespace PEAKQuickResume
                 character.data.fullyPassedOut = false;
                 character.data.sinceGrounded = 0f;
                 character.refs.afflictions.ClearAllStatus(true);
-                character.refs.afflictions.RemoveAllThorns();
+                character.refs.afflictions.AdjustStatus(CharacterAfflictions.STATUSTYPE.Petrify, -0.75f);
+                ThornsAndTicksRestore.ClearThornsSilently(character, _log);
                 character.refs.afflictions.ClearAllAfflictions();
                 character.data.fallSeconds = 0f;
             }

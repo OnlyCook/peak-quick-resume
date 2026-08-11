@@ -120,7 +120,10 @@ namespace PEAKQuickResume
                         + "in this checkpoint's save event; leaving their current state untouched.");
                 }
 
-                ch.refs.afflictions.RemoveAllThorns();
+                // Silently: a plain RemoveAllThorns() counts as the player pulling every
+                // thorn/arrow out, which applies Injury and plays the impact sound once
+                // per arrow. See ThornsAndTicksRestore.ClearThornsSilently
+                ThornsAndTicksRestore.ClearThornsSilently(ch, log);
 
                 if (cfg.RestoreInventory.Value && data != null)
                 {
@@ -132,7 +135,7 @@ namespace PEAKQuickResume
                             try { slot.EmptyOut(); } catch { /* matches the original's own swallow */ }
                         }
                     }
-                    if (ch.player.backpackSlot.hasBackpack)
+                    if (BackpackTypeCompat.HasAny(ch.player.backpackSlot))
                     {
                         try { ((ItemSlot)ch.player.backpackSlot).EmptyOut(); }
                         catch { /* matches the original's own swallow */ }
@@ -205,12 +208,11 @@ namespace PEAKQuickResume
                         try { ch.SetExtraStamina(data.extraStamina > 0f && data.extraStamina <= 1f ? data.extraStamina : 0f); }
                         catch { /* matches the original's own swallow */ }
 
+                        // Length-tolerant on purpose: 2.0.a appended three STATUSTYPEs, so
+                        // an exact-length guard here would skip the whole restore for
+                        // every save written before it. See AfflictionArrayCompat
                         CharacterAfflictions afflictions = ch.refs.afflictions;
-                        if (data.afflictions_current != null && afflictions.currentStatuses != null
-                            && afflictions.currentStatuses.Length == data.afflictions_current.Length)
-                        {
-                            Array.Copy(data.afflictions_current, afflictions.currentStatuses, afflictions.currentStatuses.Length);
-                        }
+                        AfflictionArrayCompat.CopyOverlap(data.afflictions_current, afflictions.currentStatuses);
                     }
                     catch { /* matches the original's own outer swallow */ }
                 }
@@ -371,9 +373,9 @@ namespace PEAKQuickResume
                 RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
                 if (runManager == null) return;
 
-                runManager.timeSinceRunStarted = hostData.timePlayed;
-                typeof(RunManager).GetMethod("SyncTimeMaster", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                    ?.Invoke(runManager, null);
+                // 2.0.a made the backing field private behind a read-only property, so
+                // this can only be written by reflection now - see RunTimerCompat
+                RunTimerCompat.TryWrite(runManager, hostData.timePlayed, log);
             }
             catch (Exception e)
             {
@@ -395,13 +397,23 @@ namespace PEAKQuickResume
                 return;
             }
 
-            if (data.hasBackpack)
+            // 2.0.a: a backpack is no longer one fixed item - it's whichever of
+            // Backpack/Fannypack/Jetpack/Rocketpack was worn, so the ID is resolved from
+            // the saved variant instead of the hardcoded 6 this used to pass (which now
+            // means "a plain Backpack" specifically, not "the backpack item").
+            // Player.AddItem stamps backpackSlot.backpackType from the prefab itself
+            int savedBackpackType = BackpackTypeCompat.FromSave(data.hasBackpack, data.backpackType);
+            try
             {
-                try { AddItemToInventory(player, 6, log); }
-                catch (Exception e)
+                if (BackpackTypeCompat.TryResolveItemId(savedBackpackType, out ushort backpackItemId, log))
                 {
-                    log?.LogWarning($"OwnInventoryRestore.LoadPlayerInventory: instantiate failed for 'Backpack': {e}");
+                    AddItemToInventory(player, backpackItemId, log);
+                    RestoreBackpackOwnValues(data, player, cfg, log);
                 }
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"OwnInventoryRestore.LoadPlayerInventory: backpack restore failed for type {savedBackpackType}: {e}");
             }
 
             if (data.inventoryItemStates != null && data.inventoryItemStates.Count > 0)
@@ -422,6 +434,37 @@ namespace PEAKQuickResume
                             log?.LogWarning($"OwnInventoryRestore: could not apply '{kv.Key}' for item {itemState.itemId}.");
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Puts the worn backpack's own stats back onto the slot that
+        /// <c>Player.AddItem</c> just filled - in practice a Jetpack's/Rocketpack's
+        /// <c>DataEntryKey.Fuel</c>. Must run AFTER the backpack has been added, since the
+        /// slot's ItemInstanceData only exists from that point on; a freshly granted
+        /// backpack otherwise carries the prefab's default (full) fuel.
+        ///
+        /// Gated on the same RestoreItemStats toggle as every other item's stats, and
+        /// silently does nothing for saves written before backpackOwnValues existed
+        /// </summary>
+        private static void RestoreBackpackOwnValues(OwnSaveData data, Player player, PluginConfig cfg, ManualLogSource log)
+        {
+            if (data.backpackOwnValues == null || data.backpackOwnValues.Count == 0) return;
+            if (cfg == null || !cfg.RestoreItemStats.Value) return;
+
+            ItemInstanceData instanceData = player?.backpackSlot?.data;
+            if (instanceData == null)
+            {
+                log?.LogWarning("OwnInventoryRestore: the restored backpack has no instance data; its own stats (e.g. fuel) were not applied.");
+                return;
+            }
+
+            foreach (var kv in data.backpackOwnValues)
+            {
+                if (!OwnItemStateIO.TryGetKey(kv.Key, out DataEntryKey key)) continue;
+                OwnSavedEntry entry = kv.Value;
+                if (entry != null && !OwnItemStateIO.TrySetOrCreateEntry(instanceData, key, entry.type, entry.value, log))
+                    log?.LogWarning($"OwnInventoryRestore: could not apply worn-backpack stat '{kv.Key}'.");
             }
         }
 
@@ -496,7 +539,7 @@ namespace PEAKQuickResume
         /// <summary>Mirrors GetBackpackData exactly (decompile 3188-3211)</summary>
         public static BackpackData GetBackpackData(Player p)
         {
-            if (p == null || p.backpackSlot == null || !p.backpackSlot.hasBackpack) return null;
+            if (p == null || !BackpackTypeCompat.HasAny(p)) return null;
 
             ItemSlot backpackSlot = p.backpackSlot;
             if (backpackSlot.data == null) return null;

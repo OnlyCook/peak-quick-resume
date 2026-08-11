@@ -1,6 +1,19 @@
 ## 2.X.X
 
-- By default now only **Enter** loads a save when in the picker, **F7** closes the menu. This is to prevent accidentally loading an unwanted save. By enabling `resume-key-loads-instead-of-closing` you can return to the old behavior. Thanks to **Cat-As$-Trophy** for the final nudge to change this!
+- **PEAK 2.0.a compatibility.** The update changed several things the mod relies on, which broke both halves of it: lighting a campfire silently saved nothing, and loading a save hung forever on the *LOADING SAVE...* screen. Both are fixed.
+  - Fixed saving being broken entirely: the game made its run timer private, which made the whole save routine fail before it wrote anything.
+  - Fixed loading hanging forever: backpacks became typed (Backpack/Fannypack/Jetpack/Rocketpack) instead of a simple yes/no, which made the whole restore routine fail before it did anything at all.
+  - **Backpack variants are now saved and restored properly.** A Fannypack, Jetpack or Rocketpack comes back as itself rather than turning into an ordinary backpack. Older saves keep restoring a normal backpack, as that's the only kind that existed when they were written.
+  - Fixed nobody actually being revived on load, as the game renamed its revive call.
+  - Fixed the wrong thorns being restored (random ones instead of the saved ones), caused by a changed parameter order on the game's own thorn call.
+  - Fixed status effects not being restored **at all** from any save made before 2.0.a, since the update added three new ones (Arrow, Petrify, Fly Trap) and the saved list no longer lined up. Statuses that a save predates are simply left alone now.
+  - The local revive fallback now matches the game's current behavior again (ragdoll collision and the new Petrify reduction).
+  - **The two new areas are now saved under their own names.** *Gloom* and *The Citadel* were being recorded (and shown in the save picker) as *Caldera* and *The Kiln*. Area names now come from the game itself instead of a hardcoded list, so they are correct, properly localized, and any future area is picked up automatically.
+  - **A worn Jetpack's fuel is now saved and restored** instead of coming back full. A jetpack lying on the ground already restored its fuel correctly; only the one on your back didn't.
+  - **Restored arrows no longer replay the arrow-hit sound.** Each arrow announced itself with its impact sound as it was re-attached (three sounds per arrow, in fact), making a load sound like being shot.
+  - Thorns and arrows being put back also no longer re-trigger the "hurt" status effects once per thorn.
+  - Loading a save while you have thorns or arrows stuck in you no longer counts as *you* pulling each one out, which was charging you real Injury damage (harmless in solo, where it got overwritten a moment later, but not necessarily elsewhere).
+- By default now only **Enter** loads a save when in the picker, **F7** closes the menu. This is to prevent accidentally loading an unwanted save. By enabling `resume-key-loads-instead-of-closing` you can return to the old behavior. Thanks to **Cat-As$-Trophy** for the final push to change this!
 - Removed `resume-key-also-confirms-load` setting since its been deprecated and replaced (see above).
 - Renamed *Cancel* to *Close* in the footer of the save picker.
 

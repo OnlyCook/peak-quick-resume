@@ -200,6 +200,9 @@ namespace PEAKQuickResume
             // behind the F7 save picker closing (see PauseSuppressPatch for why)
             PauseSuppressPatch.Apply(harmony, Logger);
 
+            // Keeps a restored arrow from replaying its impact sound as it re-attaches
+            ThornRestoreSilencer.Apply(harmony, Logger);
+
             Logger.LogInfo($"{PluginInfo.Name} {PluginInfo.Version} loaded. "
                 + $"Resume key: {_cfg.ResumeKey.Value}.");
         }

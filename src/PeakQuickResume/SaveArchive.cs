@@ -665,12 +665,32 @@ namespace PEAKQuickResume
             { "Peak", "PEAK" },
         };
 
+        // Saves written since the AreaNameCompat change store the game's own progress-
+        // point title, which IS the localization key already ("SHORE", "THE CITADEL", ...)
+        // rather than an internal enum name. Those need no table entry, and adding one per
+        // area would just reintroduce the hardcoded list that missed GLOOM and THE CITADEL
+        // in the first place - so an unmapped name is tried as a key directly before
+        // giving up. The table above stays for the older internal-name saves ("Beach",
+        // "TheKiln", "Volcano", ...), which are NOT valid keys and would otherwise fail.
+        //
+        // The pass-through is gated on the key actually being in the localization table,
+        // because GetText does NOT stay quiet about misses: even with printDebug false it
+        // returns "" *and* fires a Debug.LogError. Handing it every unrecognized
+        // campfireName would turn one bad value into an error per save-picker row
         private static string TryGetOfficialCampfireTitle(string internalName)
         {
             try
             {
                 if (string.IsNullOrEmpty(internalName)) return null;
-                if (!CampfireLocKeys.TryGetValue(internalName, out string key)) return null;
+
+                if (!CampfireLocKeys.TryGetValue(internalName, out string key))
+                {
+                    // GetText upper-cases the id before lookup, so match that here
+                    key = internalName.ToUpperInvariant();
+                    var table = LocalizedText.mainTable;
+                    if (table == null || !table.ContainsKey(key)) return null;
+                }
+
                 string text = LocalizedText.GetText(key, printDebug: false);
                 return string.IsNullOrEmpty(text) ? null : text;
             }
