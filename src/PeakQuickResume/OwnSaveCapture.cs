@@ -186,7 +186,7 @@ namespace PEAKQuickResume
                     // Per-player half - written into every file, including the host's
                     var data = new OwnSaveData
                     {
-                        settingsVersion = SaveArchive.ArchiveNativeSettingsVersion,
+                        settingsVersion = SaveArchive.CurrentSettingsVersion,
                         saveDate = DateTime.Now.ToString("dd.MM.yyyy | HH:mm:ss"),
                         hasBackpack = BackpackTypeCompat.HasAny(player),
                         backpackType = BackpackTypeCompat.Capture(player),
@@ -408,7 +408,7 @@ namespace PEAKQuickResume
                 {
                     // Offline has exactly one player, so this single file is both the host
                     // file and that player's own file - no split to make here
-                    settingsVersion = SaveArchive.ArchiveNativeSettingsVersion,
+                    settingsVersion = SaveArchive.CurrentSettingsVersion,
                     posX = pos.x,
                     posY = pos.y,
                     posZ = pos.z,
@@ -509,6 +509,13 @@ namespace PEAKQuickResume
                 // itemID only drives the ExcludedItemIds consumable carve-out, which can't
                 // apply to a backpack - 0 simply means "not an excluded consumable"
                 CaptureItemStateValues(instanceData, 0, values, log);
+
+                // Only the PREFAB carries the JetpackItem component (the worn backpack is a
+                // slot, not a live item), while the values live on the slot's instance
+                // data - hence the two separate arguments. Without an explicit Fuel here a
+                // worn jetpack restores as a full tank, same as a loose one
+                BackpackTypeCompat.EnsureFuelCaptured(localPlayer.backpackSlot?.prefab, instanceData, values, log);
+
                 return values.Count > 0 ? values : null;
             }
             catch (Exception e)

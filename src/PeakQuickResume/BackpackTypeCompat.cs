@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Logging;
 using Zorro.Core;
 
@@ -120,6 +121,94 @@ namespace PEAKQuickResume
 
             log?.LogWarning($"BackpackTypeCompat: no prefab for backpack type {wanted} ('{prefabName}') in the item database - skipping the backpack restore.");
             return false;
+        }
+
+        /// <summary>
+        /// Guarantees the save carries an explicit <c>Fuel</c> value for anything that
+        /// burns it (currently the Jetpack, via 2.0.a's new <c>JetpackItem</c> component).
+        ///
+        /// WHY THIS IS NEEDED: on restore we push an ItemInstanceData built purely from
+        /// what the save contains, and that push makes the game run
+        /// <code>
+        /// JetpackItem.OnInstanceDataSet()
+        ///   -> fuel = GetData(DataEntryKey.Fuel, SetupDefaultFuel).Value
+        ///      -> SetupDefaultFuel() => new FloatItemData { Value = startingFuel }   // FULL
+        /// </code>
+        /// So a MISSING Fuel entry is not restored as "no fuel" - the game helpfully
+        /// creates one at <c>startingFuel</c> and hands the player a full tank. A jetpack
+        /// that had a fuel entry (say 19%) round-trips correctly; one without ever having
+        /// had it comes back full, which is the reported bug.
+        ///
+        /// Note the game is inconsistent about this default: <c>Backpack.GetFuel()</c>
+        /// reads <c>GetData&lt;FloatItemData&gt;(Fuel)</c> with no factory, so a missing
+        /// entry defaults to 0 there, while JetpackItem defaults it to full. Writing the
+        /// value explicitly means neither default is ever consulted on restore
+        /// </summary>
+        /// <param name="fuelSource">
+        /// The component carrying the fuel behaviour. For a loose item that is the item
+        /// itself; for a worn backpack it is the slot's prefab, since only the prefab has
+        /// the component while the live values live on the slot's own instance data
+        /// </param>
+        /// <param name="data">The instance data actually holding this backpack's values</param>
+        public static void EnsureFuelCaptured(Item fuelSource, ItemInstanceData data, Dictionary<string, OwnSavedEntry> values, ManualLogSource log)
+        {
+            if (fuelSource == null || values == null || values.ContainsKey("Fuel")) return;
+
+            try
+            {
+                var jetpack = fuelSource.GetComponent<JetpackItem>();
+                if (jetpack == null) return; // nothing here burns fuel
+
+                // The stored entry first, since that is authoritative in both shapes and is
+                // the only meaningful source for a worn backpack
+                float fuel;
+                string source;
+                if (data != null && data.TryGetDataEntry(DataEntryKey.Fuel, out FloatItemData entry) && entry != null)
+                {
+                    fuel = entry.Value;
+                    source = "stored entry";
+                }
+                // No entry: for a LOOSE item the component's own synced field is the live
+                // truth (JetpackItem keeps `fuel` in step over IPunObservable). Only trust
+                // it when fuelSource really is that live item - for a worn backpack it is
+                // the prefab, whose field is just the authored value and says nothing about
+                // this player's tank
+                else if (ReferenceEquals(fuelSource.data, data) && TryReadLiveFuel(jetpack, out fuel))
+                {
+                    source = "live JetpackItem.fuel";
+                }
+                // Nothing better available: match what the game would have defaulted to,
+                // so this is never worse than the behaviour without us
+                else
+                {
+                    fuel = jetpack.startingFuel;
+                    source = "startingFuel default";
+                }
+
+                values["Fuel"] = new OwnSavedEntry { type = typeof(FloatItemData).AssemblyQualifiedName, value = fuel };
+                log?.LogInfo($"OwnSaveCapture: '{fuelSource.name}' had no saved Fuel value; stamped "
+                    + $"Fuel={fuel:0.###} from its {source} (without this it would restore as a full tank).");
+            }
+            catch (System.Exception e)
+            {
+                log?.LogWarning($"BackpackTypeCompat: could not capture jetpack fuel ({e.Message}); "
+                    + "it may come back full.");
+            }
+        }
+
+        /// <summary><c>JetpackItem.fuel</c> is private and [SerializeField], hence reflection</summary>
+        private static bool TryReadLiveFuel(JetpackItem jetpack, out float fuel)
+        {
+            fuel = 0f;
+            var field = typeof(JetpackItem).GetField("fuel",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            if (field == null) return false;
+
+            object value = field.GetValue(jetpack);
+            if (!(value is float f)) return false;
+
+            fuel = f;
+            return true;
         }
 
         /// <summary>

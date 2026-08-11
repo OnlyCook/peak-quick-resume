@@ -286,8 +286,10 @@ namespace PEAKQuickResume
                 + "dropped or lying free) found within range of the loaded campfire.");
 
             RestoreGroundedBackpacks = cfg.Bind("Teleport", "restore-grounded-backpacks", true,
-                "If enabled, restores backpacks (natural spawns or player drops) found lying on the ground "
-                + "within range of the loaded campfire, contents included.");
+                "If enabled, restores backpacks of every kind (Backpack, Fannypack, Jetpack, Rocketpack - "
+                + "natural spawns or player drops) found lying on the ground within range of the loaded "
+                + "campfire, contents and fuel included. Does not affect a backpack you are WEARING, "
+                + "which follows restore-inventory instead.");
 
             RestoreDeployables = cfg.Bind("Teleport", "restore-deployables", true,
                 "If enabled, restores player-placed Portable Stoves and Scout Cannons found near the loaded campfire.");

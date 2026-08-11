@@ -148,11 +148,33 @@ namespace PEAKQuickResume
     public static class SaveArchive
     {
         /// <summary>
-        /// <c>settingsVersion</c> written by the archive-native save path. Saves at or
-        /// above this were written with a shared per-event stamp, so their co-op siblings
-        /// match exactly; anything below is a legacy save copied in from the old
-        /// canonical-file layout, where each player's file got its own write-time stamp a
-        /// few milliseconds apart and siblings can only be matched fuzzily
+        /// <c>settingsVersion</c> stamped into every save this version writes.
+        ///
+        /// Bumped to 8 for the PEAK 2.0.a work, which added fields older saves simply do
+        /// not have: <c>backpackType</c> (backpacks became typed - Backpack/Fannypack/
+        /// Jetpack/Rocketpack), <c>backpackOwnValues</c> (the worn backpack's own stats,
+        /// i.e. a jetpack's fuel), a 15-entry rather than 12-entry <c>afflictions_current</c>,
+        /// and area names taken from the game's own progress points so the 2.0.a areas
+        /// are no longer recorded as Caldera/The Kiln.
+        ///
+        /// Reading stays fully backward compatible - every one of those fields degrades on
+        /// its own (see BackpackTypeCompat.FromSave, AfflictionArrayCompat.CopyOverlap and
+        /// SaveArchive's campfire-name table), so this is a marker of what a file contains
+        /// rather than a compatibility gate
+        /// </summary>
+        public const int CurrentSettingsVersion = 8;
+
+        /// <summary>
+        /// The oldest <c>settingsVersion</c> written by the archive-native save path.
+        /// Saves at or above this were written with a shared per-event stamp, so their
+        /// co-op siblings match exactly; anything below is a legacy save copied in from
+        /// the old canonical-file layout, where each player's file got its own write-time
+        /// stamp a few milliseconds apart and siblings can only be matched fuzzily.
+        ///
+        /// DELIBERATELY NOT bumped alongside <see cref="CurrentSettingsVersion"/>: this is
+        /// a THRESHOLD, not the current version. Raising it would reclassify every
+        /// existing version-7 save as legacy and send it down the fuzzy sibling-matching
+        /// path, even though those saves do carry proper shared event stamps
         /// </summary>
         public const int ArchiveNativeSettingsVersion = 7;
 
