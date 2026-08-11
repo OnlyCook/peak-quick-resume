@@ -722,6 +722,13 @@ namespace PEAKQuickResume
         internal void SavePlayerCoopFromRpc() => OwnSaveCapture.SavePlayerCoop(_cfg, _log, this);
 
         internal void LogError(string message) => _log?.LogError(message);
+
+        /// <summary>
+        /// The log source itself, for the few helpers shared with the non-networked
+        /// restore path that take a <see cref="ManualLogSource"/> directly rather than
+        /// going through <see cref="LogError"/> (e.g. ThornsAndTicksRestore.ApplyThorns)
+        /// </summary>
+        internal ManualLogSource Log => _log;
     }
 
     /// <summary>
@@ -830,9 +837,13 @@ namespace PEAKQuickResume
             if (enable == "true")
             {
                 Owner?.Watchdog?.BeginLoadWindow();
+                // AchievementManager is client-local, so each machine has to pause its own
+                // height counting for its own load - see HeightAchievementGuard
+                HeightAchievementGuard.Suppress("client load window");
             }
             else
             {
+                HeightAchievementGuard.Release("client load window");
                 // End the window, passing the host-forwarded real target so a client that
                 // never got warped can still recover to it - see OwnNetwork.LoadingScreenOthers
                 Owner?.Watchdog?.ArmPendingWatch(OwnNetwork.ParseVector(targetPayload));
@@ -882,9 +893,11 @@ namespace PEAKQuickResume
                 if (localCharacter == null) return;
                 if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
 
+                // Length-tolerant: the STATUSTYPE count grew in 2.0.a, and this also has
+                // to survive a host and client briefly disagreeing on it. See
+                // AfflictionArrayCompat
                 CharacterAfflictions afflictions = localCharacter.refs.afflictions;
-                if (statuses != null && afflictions.currentStatuses != null && afflictions.currentStatuses.Length == statuses.Length)
-                    Array.Copy(statuses, afflictions.currentStatuses, afflictions.currentStatuses.Length);
+                AfflictionArrayCompat.CopyOverlap(statuses, afflictions.currentStatuses);
 
                 try { localCharacter.SetExtraStamina(extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f); }
                 catch { /* matches the original's own swallow */ }
@@ -940,8 +953,12 @@ namespace PEAKQuickResume
                 if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
                 if (thornIndices == null) return;
 
-                foreach (int index in thornIndices)
-                    localCharacter.refs.afflictions.AddThorn((ushort)index);
+                // Shared with the solo path rather than looping over AddThorn here, so the
+                // co-op restore gets the same correct thorn indices AND the same
+                // suppression of the per-arrow hit sound - see ThornsAndTicksRestore
+                var indices = new List<ushort>(thornIndices.Length);
+                foreach (int index in thornIndices) indices.Add((ushort)index);
+                ThornsAndTicksRestore.ApplyThorns(localCharacter, indices, Owner?.Log);
             }
             catch (Exception e)
             {

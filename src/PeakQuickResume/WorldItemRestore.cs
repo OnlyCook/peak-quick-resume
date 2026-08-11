@@ -97,6 +97,10 @@ namespace PEAKQuickResume
                     foreach (var kv in OwnItemStateIO.ReadItemStateValues(item.data, item.itemID))
                         positioned.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
 
+                    // A jetpack with no Fuel entry restores as a FULL tank unless the value
+                    // is written explicitly - see BackpackTypeCompat.EnsureFuelCaptured
+                    BackpackTypeCompat.EnsureFuelCaptured(item, item.data, positioned.values, log);
+
                     if (item is Backpack backpack)
                     {
                         List<OwnSavedBackpackItemState> contents = CaptureBackpackContents(backpack, log);
@@ -171,7 +175,6 @@ namespace PEAKQuickResume
                     }
                 }
                 log.Trace($"WorldItemRestore: cleared {destroyed} naturally-spawned item(s) within {SearchRadius}m of {searchCenter}.");
-
                 int restored = 0;
                 foreach (OwnSavedPositionedItem saved in data.worldItemStates)
                 {

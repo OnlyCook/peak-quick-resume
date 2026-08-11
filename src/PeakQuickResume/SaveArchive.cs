@@ -148,11 +148,33 @@ namespace PEAKQuickResume
     public static class SaveArchive
     {
         /// <summary>
-        /// <c>settingsVersion</c> written by the archive-native save path. Saves at or
-        /// above this were written with a shared per-event stamp, so their co-op siblings
-        /// match exactly; anything below is a legacy save copied in from the old
-        /// canonical-file layout, where each player's file got its own write-time stamp a
-        /// few milliseconds apart and siblings can only be matched fuzzily
+        /// <c>settingsVersion</c> stamped into every save this version writes.
+        ///
+        /// Bumped to 8 for the PEAK 2.0.a work, which added fields older saves simply do
+        /// not have: <c>backpackType</c> (backpacks became typed - Backpack/Fannypack/
+        /// Jetpack/Rocketpack), <c>backpackOwnValues</c> (the worn backpack's own stats,
+        /// i.e. a jetpack's fuel), a 15-entry rather than 12-entry <c>afflictions_current</c>,
+        /// and area names taken from the game's own progress points so the 2.0.a areas
+        /// are no longer recorded as Caldera/The Kiln.
+        ///
+        /// Reading stays fully backward compatible - every one of those fields degrades on
+        /// its own (see BackpackTypeCompat.FromSave, AfflictionArrayCompat.CopyOverlap and
+        /// SaveArchive's campfire-name table), so this is a marker of what a file contains
+        /// rather than a compatibility gate
+        /// </summary>
+        public const int CurrentSettingsVersion = 8;
+
+        /// <summary>
+        /// The oldest <c>settingsVersion</c> written by the archive-native save path.
+        /// Saves at or above this were written with a shared per-event stamp, so their
+        /// co-op siblings match exactly; anything below is a legacy save copied in from
+        /// the old canonical-file layout, where each player's file got its own write-time
+        /// stamp a few milliseconds apart and siblings can only be matched fuzzily.
+        ///
+        /// DELIBERATELY NOT bumped alongside <see cref="CurrentSettingsVersion"/>: this is
+        /// a THRESHOLD, not the current version. Raising it would reclassify every
+        /// existing version-7 save as legacy and send it down the fuzzy sibling-matching
+        /// path, even though those saves do carry proper shared event stamps
         /// </summary>
         public const int ArchiveNativeSettingsVersion = 7;
 
@@ -665,12 +687,32 @@ namespace PEAKQuickResume
             { "Peak", "PEAK" },
         };
 
+        // Saves written since the AreaNameCompat change store the game's own progress-
+        // point title, which IS the localization key already ("SHORE", "THE CITADEL", ...)
+        // rather than an internal enum name. Those need no table entry, and adding one per
+        // area would just reintroduce the hardcoded list that missed GLOOM and THE CITADEL
+        // in the first place - so an unmapped name is tried as a key directly before
+        // giving up. The table above stays for the older internal-name saves ("Beach",
+        // "TheKiln", "Volcano", ...), which are NOT valid keys and would otherwise fail.
+        //
+        // The pass-through is gated on the key actually being in the localization table,
+        // because GetText does NOT stay quiet about misses: even with printDebug false it
+        // returns "" *and* fires a Debug.LogError. Handing it every unrecognized
+        // campfireName would turn one bad value into an error per save-picker row
         private static string TryGetOfficialCampfireTitle(string internalName)
         {
             try
             {
                 if (string.IsNullOrEmpty(internalName)) return null;
-                if (!CampfireLocKeys.TryGetValue(internalName, out string key)) return null;
+
+                if (!CampfireLocKeys.TryGetValue(internalName, out string key))
+                {
+                    // GetText upper-cases the id before lookup, so match that here
+                    key = internalName.ToUpperInvariant();
+                    var table = LocalizedText.mainTable;
+                    if (table == null || !table.ContainsKey(key)) return null;
+                }
+
                 string text = LocalizedText.GetText(key, printDebug: false);
                 return string.IsNullOrEmpty(text) ? null : text;
             }

@@ -46,6 +46,15 @@ namespace PEAKQuickResume
         private OwnWakeUpEffect _wakeUpEffect;
         private OwnLoadingScreen _loadingScreen;
 
+        /// <summary>
+        /// Character's revive <c>[PunRPC]</c>, named here rather than inline because
+        /// PEAK 2.0.a renamed it from <c>RPCA_Revive</c> to <c>ReviveCharacter</c>. A
+        /// string RPC name can't be checked by the compiler, so a rename like that fails
+        /// silently at runtime (Photon just reports an unknown method and nobody gets
+        /// revived) - see <see cref="ReviveDeadPlayers"/> for the full rationale
+        /// </summary>
+        private const string ReviveRpcName = "ReviveCharacter";
+
         // Coop client-warp settle tracking (see TeleportClientsToHost's class remarks and
         // the wait block near the end of RunSequence): TeleportClientsToHost used to be
         // fired fully fire-and-forget, so the host's own "LOADING SAVE..." overlay could
@@ -110,6 +119,11 @@ namespace PEAKQuickResume
             // RestoreComplete is force-set true here too (not just on the happy path further
             // down) for the same reason - a throw partway through must never leave it stuck
             // false, or ResumeOrchestrator's own wait on it would hang out its full timeout
+            // Brackets the teleport itself, independently of ResumeOrchestrator's own
+            // (wider) window - this sequence also runs for paths that never went through a
+            // resume, and the try/finally guarantees the pause is lifted even on a throw.
+            // Nested windows are reference counted, see HeightAchievementGuard
+            HeightAchievementGuard.Suppress("teleport sequence");
             try
             {
                 yield return RunSequence(data, selection);
@@ -118,6 +132,7 @@ namespace PEAKQuickResume
             {
                 IsRunning = false;
                 RestoreComplete = true;
+                HeightAchievementGuard.Release("teleport sequence");
             }
         }
 
@@ -444,7 +459,12 @@ namespace PEAKQuickResume
 
             bool inventoryRestoreDone = !RunLauncher.IsHost;
             if (RunLauncher.IsHost)
+            {
+                // Breadcrumb: pairs with "restore sequence complete". If this line appears
+                // without that one, the restore itself is where a stalled load died
+                _log?.LogInfo("OwnTeleportSequence: starting the inventory/world restore.");
                 StartCoroutine(RunInventoryRestoreAndSignal());
+            }
 
             IEnumerator RunInventoryRestoreAndSignal()
             {
@@ -510,7 +530,15 @@ namespace PEAKQuickResume
             // A player with no file in this save event (a friend who joined after it was
             // written) is never in this set - see DeathStateRestore
             if (RunLauncher.IsHost)
+            {
+                // Alive first, then the wanted deaths - order matters, or a player revived
+                // here would immediately be re-killed and vice versa. This catches anyone
+                // who died in the window after their warp landed (a fall mid-restore, a late
+                // joined-late arrival kill); the warp step revives on its own behalf too,
+                // because a dead character cannot be warped at all
+                DeathStateRestore.EnsureUnsavedPlayersAlive(restoringAsDead, _log);
                 DeathStateRestore.ApplySavedDeaths(restoringAsDead, _entryPoints, _log);
+            }
 
             // Items/backpacks/afflictions are now confirmed in place - ResumeOrchestrator polls
             // this to show "Save loaded. Welcome back!" right here: after the restore, but
@@ -594,14 +622,22 @@ namespace PEAKQuickResume
         /// after the host (and was therefore killed on arrival by the game's own
         /// <c>DeathOnArrival</c>) was still dead and spectating after a checkpoint load
         ///
-        /// In co-op we therefore broadcast the game's own <c>RPCA_Revive(false)</c> on that
-        /// character's view instead, which runs these exact same field writes (plus the
-        /// affliction/thorn clears below) on EVERY machine, including the owning client.
+        /// In co-op we therefore broadcast the game's own revive RPC on that character's
+        /// view instead, which runs these exact same field writes (plus the affliction/
+        /// thorn clears below) on EVERY machine, including the owning client.
         /// <c>false</c> = don't apply the post-revive Curse/Hunger status, matching what the
         /// original's direct writes did (i.e. nothing). Solo keeps the literal direct-write
         /// path untouched - there is no second machine to reach, and the local writes have
         /// been proven there since M3. The direct writes also stay as the fallback if the
         /// RPC itself throws
+        ///
+        /// PEAK 2.0.a RENAMED that RPC from <c>RPCA_Revive</c> to <c>ReviveCharacter</c>
+        /// (same <c>[PunRPC]</c>, same lone <c>bool applyStatus</c> parameter, same body) -
+        /// see <see cref="ReviveRpcName"/>. Deliberately NOT the similarly named
+        /// <c>RPCA_ReviveAtPosition</c> that also exists in 2.0.a: that one additionally
+        /// does <c>DropAllItems(includeBackpack: true)</c> and warps the character, both
+        /// of which would fight the inventory restore and the warps this sequence runs
+        /// itself
         ///
         /// Everyone flagged is revived here regardless of what the save says, so the segment
         /// jump and the warps below all run on living characters; whoever the checkpoint
@@ -621,16 +657,27 @@ namespace PEAKQuickResume
                 {
                     try
                     {
-                        character.photonView.RPC("RPCA_Revive", RpcTarget.All, false);
+                        character.photonView.RPC(ReviveRpcName, RpcTarget.All, false);
                         _log.Trace($"OwnTeleportSequence.ReviveDeadPlayers: revived {character.characterName} (networked).");
                         continue;
                     }
                     catch (Exception e)
                     {
-                        _log?.LogWarning($"OwnTeleportSequence.ReviveDeadPlayers: RPCA_Revive failed for "
+                        _log?.LogWarning($"OwnTeleportSequence.ReviveDeadPlayers: {ReviveRpcName} failed for "
                             + $"{character.characterName} ({e.Message}); falling back to a local-only revive.");
                     }
                 }
+
+                // Mirrors the body of the game's own revive (Character.ReviveCharacter,
+                // called RPCA_Revive before 2.0.a) for the machine that owns this
+                // character. Two of these lines track additions 2.0.a made to it:
+                // the ragdoll collision re-enable, and the Petrify reduction. Note
+                // ClearAllStatus(true) still matches vanilla's own parameterless call
+                // exactly - 2.0.a's new second parameter (excludePetrify) defaults to
+                // true, which is why the -0.75 nudge below is a separate step there too
+                // rather than petrify simply being cleared outright
+                try { character.refs.ragdoll.ToggleCollision(enableCollision: true); }
+                catch { /* pre-2.0.a shape, or no ragdoll refs - not worth failing over */ }
 
                 character.data.dead = false;
                 character.data.deathTimer = 0f;
@@ -638,7 +685,8 @@ namespace PEAKQuickResume
                 character.data.fullyPassedOut = false;
                 character.data.sinceGrounded = 0f;
                 character.refs.afflictions.ClearAllStatus(true);
-                character.refs.afflictions.RemoveAllThorns();
+                character.refs.afflictions.AdjustStatus(CharacterAfflictions.STATUSTYPE.Petrify, -0.75f);
+                ThornsAndTicksRestore.ClearThornsSilently(character, _log);
                 character.refs.afflictions.ClearAllAfflictions();
                 character.data.fallSeconds = 0f;
             }
@@ -671,6 +719,19 @@ namespace PEAKQuickResume
         {
             if (Character.localCharacter == null) yield break;
 
+            // Same precondition as the client warps below: a DEAD character cannot be
+            // warped at all, because Character.Update routes it into HandleDeath, which
+            // re-parks the body at Character.DeathPos() - (0, 5000, -5000) - every frame.
+            // The loop below would then burn its full 30-second budget re-warping into a
+            // position that is undone each frame, and because RunSequence yields on this
+            // coroutine, the ENTIRE restore never even starts: no items, no afflictions,
+            // and the "LOADING SAVE..." overlay stays up on every machine.
+            //
+            // ReviveDeadPlayers runs much earlier in the sequence, so a host that died
+            // after that point (or whose revive did not take) reaches here still dead with
+            // nothing left to catch it. Cheap to re-check, and a no-op in the normal case
+            ReviveBeforeWarp(Character.localCharacter);
+
             Vector3 warpPos = pos + new Vector3(0f, 0.5f, 0f);
 
             // Hand the watchdog the real target up front (see TeleportWatchdog.SetKnownTarget):
@@ -684,6 +745,7 @@ namespace PEAKQuickResume
             float startTime = Time.time;
             int tried = 0;
             int framesToWait = Mathf.Max(1, _cfg.OwnTeleportFramesToWait.Value);
+            bool arrived = false;
 
             while (Time.time - startTime < 30f && Character.localCharacter != null)
             {
@@ -707,6 +769,7 @@ namespace PEAKQuickResume
                     && Mathf.Abs(Character.localCharacter.Head.z - warpPos.z) < 6f)
                 {
                     _log.Trace($"OwnTeleportSequence: warped {Character.localCharacter.player.name} after {tried} attempts.");
+                    arrived = true;
                     yield return new WaitForSeconds(0.5f);
                     if (!PhotonNetwork.OfflineMode)
                     {
@@ -717,6 +780,23 @@ namespace PEAKQuickResume
                 }
 
                 for (int i = 0; i < framesToWait; i++) yield return null;
+            }
+
+            // Say so LOUDLY when the host's own warp never landed. RunSequence yields on
+            // this coroutine, so failing here silently stalls the entire load for the full
+            // 30s budget and then continues into a restore that has nowhere to restore TO -
+            // which surfaces to players as both machines sitting on "LOADING SAVE..."
+            // forever, with nothing in the log between the loading screen and the timeout.
+            // Never leave that window silent again
+            if (!arrived)
+            {
+                Character local = Character.localCharacter;
+                string where = local != null ? local.Head.ToString() : "(no character)";
+                bool isDead = local != null && local.data.dead;
+                _log?.LogError($"OwnTeleportSequence: the HOST's own warp to {warpPos} never landed after "
+                    + $"{tried} attempt(s) / {Time.time - startTime:0.#}s - still at {where} (dead={isDead}). "
+                    + "The restore runs against the wrong position from here, so the load will not complete "
+                    + "properly. A character that is dead cannot be warped at all (see ReviveBeforeWarp).");
             }
         }
 
@@ -760,6 +840,37 @@ namespace PEAKQuickResume
         ///     interval (<see cref="PluginConfig.OwnClientWarpResendGraceSeconds"/>), then hand off
         ///     to the client's own teleport watchdog / position recovery rather than firing endlessly
         /// </summary>
+        /// <summary>
+        /// Revives <paramref name="ch"/> if it is dead, so a warp aimed at it can actually
+        /// stick - see the call site for why a dead character is un-warpable. Anyone the
+        /// checkpoint recorded as dead is re-killed later by
+        /// <see cref="DeathStateRestore.ApplySavedDeaths"/>, so reviving unconditionally
+        /// here costs nothing and keeps this free of save-file knowledge
+        /// </summary>
+        private void ReviveBeforeWarp(Character ch)
+        {
+            if (ch == null || ch.photonView == null) return;
+
+            // ONLY data.dead, deliberately. Character.Update routes just that state into
+            // HandleDeath (the one that parks the body at DeathPos and eats the warp);
+            // passedOut/fullyPassedOut go to HandlePassedOut, which warps perfectly well.
+            // Reviving a merely passed-out character here would be both unnecessary and
+            // destructive - ReviveCharacter clears afflictions and thorns
+            if (!ch.data.dead) return;
+
+            try
+            {
+                ch.photonView.RPC(ReviveRpcName, RpcTarget.All, false);
+                _log?.LogInfo($"OwnTeleportSequence: {ch.characterName} was dead before being warped "
+                    + "(joined-late arrival kill, most likely) - revived so the warp can land.");
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnTeleportSequence: could not revive {ch.characterName} before warping "
+                    + $"({e.Message}); the warp will probably not stick.");
+            }
+        }
+
         private IEnumerator TeleportClientsToHost(Vector3 hostPos)
         {
             int framesToWait = Mathf.Max(1, _cfg.OwnTeleportFramesToWait.Value);
@@ -781,6 +892,23 @@ namespace PEAKQuickResume
             {
                 Character ch = player.character;
                 if (ch == null || ch == Character.localCharacter) continue;
+
+                // A dead client CANNOT be warped: Character.Update routes a dead character
+                // into HandleDeath, which parks the body at Character.DeathPos() -
+                // (0, 5000, -5000) - EVERY FRAME. The warp below lands and is immediately
+                // dragged back, so all the re-sends below burn out against it and the client
+                // is left 7km away, watching their own camera get yanked back and forth.
+                //
+                // This happens on a perfectly ordinary load: a client who joined the run
+                // late is killed on arrival by the game itself (DeathOnArrival ->
+                // KillImmediately), and "arrival" for them is when THEY finish loading into
+                // the fresh run - which is well after ReviveDeadPlayers already ran at the
+                // top of this sequence and found nothing to do. So revive here too, right
+                // before the warp, where being alive is a precondition rather than a nicety.
+                // Whoever the checkpoint genuinely recorded as dead is put back that way
+                // afterwards by DeathStateRestore.ApplySavedDeaths, still behind the
+                // opaque loading screen
+                ReviveBeforeWarp(ch);
 
                 ch.photonView.RPC("WarpPlayerRPC", RpcTarget.All, hostPos, false);
                 float startTime = Time.time;

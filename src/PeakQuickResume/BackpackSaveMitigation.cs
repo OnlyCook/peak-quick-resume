@@ -75,6 +75,15 @@ namespace PEAKQuickResume
             public SaveTarget Target;
             public JArray BackpackItemStates;
             public int BackpackViewId;
+
+            // Which backpack variant was dropped (BackpackSlot.BackpackType as its raw
+            // enum value). Carried through so the phantom re-equip below puts back the
+            // same kind that was dropped - since 2.0.a a dropped "backpack" can just as
+            // well be a Fannypack/Jetpack/Rocketpack
+            public int BackpackType;
+
+            // The dropped backpack's own stats (fuel), see BuildBackpackOwnValues
+            public JObject BackpackOwnValues;
         }
         private static readonly List<PendingRestore> _pending = new List<PendingRestore>();
 
@@ -172,6 +181,8 @@ namespace PEAKQuickResume
                         Target = target,
                         BackpackItemStates = states,
                         BackpackViewId = drop.Backpack.photonView.ViewID,
+                        BackpackType = (int)drop.Backpack.backpackType,
+                        BackpackOwnValues = BuildBackpackOwnValues(drop.Backpack),
                     });
                     _log.Trace($"[backpack-mitigation] Queued a backpack restore for userId '{drop.UserId}' ({target}, {states.Count} item(s)).");
                 }
@@ -206,7 +217,13 @@ namespace PEAKQuickResume
                 bool applied = SaveArchive.PatchSaveFile(path, json =>
                 {
                     json["hasBackpack"] = true;
+                    // Must be written alongside hasBackpack since 2.0.a, or the restore
+                    // would hand back a plain Backpack regardless of what was dropped
+                    // (see OwnSaveData.backpackType / BackpackTypeCompat.FromSave)
+                    json["backpackType"] = restore.BackpackType;
                     json["backpackItemStates"] = restore.BackpackItemStates;
+                    if (restore.BackpackOwnValues != null)
+                        json["backpackOwnValues"] = restore.BackpackOwnValues;
                 }, log);
 
                 if (applied)
@@ -269,6 +286,32 @@ namespace PEAKQuickResume
             }
         }
 
+        /// <summary>
+        /// The dropped backpack's OWN stats (its fuel, for a Jetpack/Rocketpack), in the
+        /// same JSON shape as <c>OwnSaveData.backpackOwnValues</c>. Needed because a
+        /// mitigated backpack is re-equipped from the save rather than left on the ground,
+        /// so <see cref="WorldItemRestore"/> - which would otherwise have preserved this
+        /// as part of the whole world item - deliberately skips it (see BackpackViewId)
+        /// </summary>
+        private static JObject BuildBackpackOwnValues(Backpack backpack)
+        {
+            try
+            {
+                if (backpack?.data == null) return null;
+
+                var values = new JObject();
+                foreach (var kv in OwnItemStateIO.ReadItemStateValues(backpack.data, backpack.itemID))
+                    values[kv.Key] = new JObject { ["type"] = kv.Value.TypeName, ["value"] = kv.Value.Value };
+
+                return values.Count > 0 ? values : null;
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"[backpack-mitigation] Could not read the dropped backpack's own stats: {e.Message}");
+                return null;
+            }
+        }
+
         private static bool PlayerAlreadyHasBackpack(string userId)
         {
             try
@@ -276,7 +319,7 @@ namespace PEAKQuickResume
                 foreach (var ch in PlayerHandler.GetAllPlayerCharacters())
                 {
                     if (SafeUserId(ch) != userId) continue;
-                    return ch.player?.backpackSlot != null && ch.player.backpackSlot.hasBackpack;
+                    return BackpackTypeCompat.HasAny(ch.player);
                 }
             }
             catch { /* fall through: couldn't tell, default to allowing the restore */ }

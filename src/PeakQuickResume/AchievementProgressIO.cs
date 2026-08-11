@@ -158,9 +158,22 @@ namespace PEAKQuickResume
 
                 if (saved != null && !AnyFieldMissing())
                 {
+                    // MaxHeightReached is deliberately NOT restored from the save. It is not
+                    // really "progress" - it is the high-water mark that gates how much of
+                    // your altitude gets added to the PERMANENT HeightClimbed Steam stat,
+                    // which Steam keeps counting on its own and which this mod has no
+                    // business rewriting. The mark is instead seeded from the player's live
+                    // altitude once the load finishes, which is both simpler and impossible
+                    // to abuse - see HeightAchievementGuard, and note that WITHOUT that
+                    // seeding this exclusion would reintroduce the double-credit it exists
+                    // to prevent
                     var ints = new Dictionary<RUNBASEDVALUETYPE, int>();
                     if (saved.runBasedInts != null)
-                        foreach (var kv in saved.runBasedInts) ints[(RUNBASEDVALUETYPE)kv.Key] = kv.Value;
+                        foreach (var kv in saved.runBasedInts)
+                        {
+                            if ((RUNBASEDVALUETYPE)kv.Key == RUNBASEDVALUETYPE.MaxHeightReached) continue;
+                            ints[(RUNBASEDVALUETYPE)kv.Key] = kv.Value;
+                        }
                     FRunBasedInts.SetValue(boxedNative, ints);
 
                     var floats = new Dictionary<RUNBASEDVALUETYPE, float>();

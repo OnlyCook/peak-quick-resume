@@ -103,7 +103,7 @@ namespace PEAKQuickResume
                 string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 
                 RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
-                float timePlayed = (float)Math.Round(runManager.timeSinceRunStarted, 3);
+                float timePlayed = (float)Math.Round(RunTimerCompat.Read(runManager), 3);
 
                 DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
                 float timeOfDay = (float)Math.Round(dayNight.timeOfDay, 3);
@@ -124,6 +124,12 @@ namespace PEAKQuickResume
                     if (biome == Biome.BiomeType.Roots && currentSegment == Segment.Tropics) campfireName = biome.ToString();
                     else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                 }
+
+                // The hand-written variant cases above only ever knew about Roots and
+                // Mesa, so 2.0.a's two new areas saved as plain "Caldera"/"TheKiln". Ask
+                // the game for the real area name and keep the above purely as a
+                // fallback - see AreaNameCompat
+                campfireName = AreaNameCompat.ResolveAreaName(currentSegment, campfireName, log);
 
                 foreach (Player player in allPlayers)
                 {
@@ -180,9 +186,11 @@ namespace PEAKQuickResume
                     // Per-player half - written into every file, including the host's
                     var data = new OwnSaveData
                     {
-                        settingsVersion = SaveArchive.ArchiveNativeSettingsVersion,
+                        settingsVersion = SaveArchive.CurrentSettingsVersion,
                         saveDate = DateTime.Now.ToString("dd.MM.yyyy | HH:mm:ss"),
-                        hasBackpack = player.backpackSlot != null && player.backpackSlot.hasBackpack,
+                        hasBackpack = BackpackTypeCompat.HasAny(player),
+                        backpackType = BackpackTypeCompat.Capture(player),
+                        backpackOwnValues = CaptureBackpackOwnValues(player, log),
                         isSkeleton = character.data.isSkeleton,
                         // Own addition (see OwnSaveData.isDead / DeathStateRestore): who was
                         // a spectating ghost at save time, so a load can put them back that
@@ -366,7 +374,7 @@ namespace PEAKQuickResume
                 extraStamina = (float)Math.Round(extraStamina, 2);
 
                 RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
-                float timePlayed = (float)Math.Round(runManager.timeSinceRunStarted, 3);
+                float timePlayed = (float)Math.Round(RunTimerCompat.Read(runManager), 3);
 
                 DayNightManager dayNight = UnityEngine.Object.FindFirstObjectByType<DayNightManager>();
                 float timeOfDay = (float)Math.Round(dayNight.timeOfDay, 3);
@@ -388,13 +396,19 @@ namespace PEAKQuickResume
                     else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                 }
 
+                // The hand-written variant cases above only ever knew about Roots and
+                // Mesa, so 2.0.a's two new areas saved as plain "Caldera"/"TheKiln". Ask
+                // the game for the real area name and keep the above purely as a
+                // fallback - see AreaNameCompat
+                campfireName = AreaNameCompat.ResolveAreaName(currentSegment, campfireName, log);
+
                 OwnSavedAchievementProgress achievementProgress = AchievementProgressIO.CaptureLocal(log);
 
                 var data = new OwnSaveData
                 {
                     // Offline has exactly one player, so this single file is both the host
                     // file and that player's own file - no split to make here
-                    settingsVersion = SaveArchive.ArchiveNativeSettingsVersion,
+                    settingsVersion = SaveArchive.CurrentSettingsVersion,
                     posX = pos.x,
                     posY = pos.y,
                     posZ = pos.z,
@@ -408,7 +422,9 @@ namespace PEAKQuickResume
                     biomes = mapHandler.biomes,
                     biome_names = biomeNames,
                     segment = currentSegment,
-                    hasBackpack = localPlayer.backpackSlot != null && localPlayer.backpackSlot.hasBackpack,
+                    hasBackpack = BackpackTypeCompat.HasAny(localPlayer),
+                    backpackType = BackpackTypeCompat.Capture(localPlayer),
+                    backpackOwnValues = CaptureBackpackOwnValues(localPlayer, log),
                     isSkeleton = Character.localCharacter.data.isSkeleton,
                     // Captured for save-shape consistency only - solo can never actually
                     // reach a saved-while-dead state (the one player being dead IS the
@@ -470,6 +486,43 @@ namespace PEAKQuickResume
                 slotIndex++;
             }
             return result;
+        }
+
+        /// <summary>
+        /// The worn backpack's OWN stats, as opposed to <see cref="CaptureBackpack"/>'s
+        /// walk of what's inside it. This is where a Jetpack's/Rocketpack's fuel lives
+        /// (<c>DataEntryKey.Fuel</c> on the backpack slot's own ItemInstanceData), which
+        /// nothing captured before - so a worn jetpack always came back at default fuel,
+        /// while the very same jetpack dropped on the ground restored correctly, because
+        /// world items are captured whole. Null when there's no backpack to describe
+        /// </summary>
+        private static Dictionary<string, OwnSavedEntry> CaptureBackpackOwnValues(Player localPlayer, ManualLogSource log)
+        {
+            try
+            {
+                if (!BackpackTypeCompat.HasAny(localPlayer)) return null;
+
+                ItemInstanceData instanceData = localPlayer.backpackSlot?.data;
+                if (instanceData == null) return null;
+
+                var values = new Dictionary<string, OwnSavedEntry>();
+                // itemID only drives the ExcludedItemIds consumable carve-out, which can't
+                // apply to a backpack - 0 simply means "not an excluded consumable"
+                CaptureItemStateValues(instanceData, 0, values, log);
+
+                // Only the PREFAB carries the JetpackItem component (the worn backpack is a
+                // slot, not a live item), while the values live on the slot's instance
+                // data - hence the two separate arguments. Without an explicit Fuel here a
+                // worn jetpack restores as a full tank, same as a loose one
+                BackpackTypeCompat.EnsureFuelCaptured(localPlayer.backpackSlot?.prefab, instanceData, values, log);
+
+                return values.Count > 0 ? values : null;
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"OwnSaveCapture: worn-backpack state capture failed (non-fatal): {e.Message}");
+                return null;
+            }
         }
 
         // Mirrors decompile 3934-4069 (backpack item-state capture). slotIndex here IS

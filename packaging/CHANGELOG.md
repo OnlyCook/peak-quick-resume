@@ -1,7 +1,26 @@
-## 2.X.X
+## 2.2.0
 
-- By default now only **Enter** loads a save when in the picker, **F7** closes the menu. This is to prevent accidentally loading an unwanted save. By enabling `resume-key-loads-instead-of-closing` you can return to the old behavior. Thanks to **Cat-As$-Trophy** for the final nudge to change this!
+- **PEAK 2.0.a compatibility update.** The update changed so many things the mod relies on, but it's all fixed and the new stuff also works now.
+  - Fixed saving being broken entirely: the game made its run timer private, which made the whole save routine fail before it wrote anything.
+  - Fixed loading hanging forever: backpacks became typed, which made the whole restore routine fail before it did anything at all.
+  - **Backpack variants are now saved and restored properly.** A Fannypack, Jetpack or Rocketpack comes back as itself rather than turning into an ordinary backpack. Older saves keep restoring a normal backpack, as that's the only kind that existed when they were written.
+  - Fixed nobody actually being revived on load, as the game renamed its revive call.
+  - Fixed the wrong thorns being restored (random ones instead of the saved ones), caused by a changed parameter order on the game's own thorn call.
+  - Fixed status effects not being restored **at all** from any save made before 2.0.a, since the update added three new ones (Arrow, Petrify, Fly Trap) and the saved list no longer lined up.
+  - The local revive fallback now matches the game's current behavior again (ragdoll collision and the new Petrify reduction).
+  - **The two new biomes are now saved under their own names:** *Gloom* and *The Citadel*.
+  - **A worn/dropped Jetpack's fuel is saved and restored**.
+  - Made it that restored arrows dont replay the arrow-hit sound.
+  - Thorns and arrows being put back also no longer re-trigger the "hurt" status effects once per thorn.
+  - Loading a save while you have thorns or arrows stuck in you no longer counts as *you* pulling each one out, which was charging you real Injury damage (harmless in solo, where it got overwritten a moment later, but not necessarily elsewhere).
+  - Two of the ten new badges (**Jester** and **Archery**) are saved and restored (other badges don't need to be saved/restored).
+- By default now only **Enter** loads a save when in the picker, **F7** closes the menu. This is to prevent accidentally loading an unwanted save. By enabling `resume-key-loads-instead-of-closing` you can return to the old behavior (which will be automatically enabled if *resume-key-also-confirms-load* was enabled before). Thanks to **Cat-As$-Trophy** for the final push to change this!
 - Removed `resume-key-also-confirms-load` setting since its been deprecated and replaced (see above).
+- Save files are now written as format version 8 (they carry the backpack type, a worn backpack's own stats and the three new status effects). Older saves still load exactly as before.
+- Fixed a co-op client being restored dead and stranded when the host loaded a save that client had no file in.
+- The "High Altitude" badge no longer counts your restored altitude as a fresh climb.
+- Added translations for Traditional Chinese.
+- If you had the old `resume-key-also-confirms-load` setting, its value is **carried over automatically** to the new `resume-key-loads-instead-of-closing`, so the resume key keeps behaving exactly the way you had it instead of silently switching to the new default. The dead setting is then removed from your config file.
 - Renamed *Cancel* to *Close* in the footer of the save picker.
 
 ## 2.1.1

@@ -154,6 +154,72 @@ namespace PEAKQuickResume
             }
         }
 
+        /// <summary>
+        /// Host-side, co-op only. The counterpart to <see cref="ApplySavedDeaths"/>: makes
+        /// sure everyone the checkpoint did NOT record as dead is actually alive, run right
+        /// before the deaths that ARE wanted get applied.
+        ///
+        /// <c>OwnTeleportSequence.ReviveDeadPlayers</c> runs near the TOP of the sequence so
+        /// that everything after it operates on living characters, and
+        /// <c>TeleportClientsToHost</c> revives again immediately before warping (a dead
+        /// character cannot be warped at all - see there). This is the last of the three:
+        /// it catches anyone who died in the window AFTER their warp landed but before the
+        /// screen comes back - a fall during the restore, a late joined-late arrival kill -
+        /// so nobody is revealed as a corpse the checkpoint never recorded as dead.
+        ///
+        /// Cheap when there is nothing to do, which is the normal case: it only acts on a
+        /// character that is actually dead or passed out
+        /// </summary>
+        public static void EnsureUnsavedPlayersAlive(HashSet<string> deadUserIds, ManualLogSource log)
+        {
+            if (!PhotonNetwork.IsMasterClient || PhotonNetwork.OfflineMode) return;
+
+            try
+            {
+                foreach (Player player in UnityEngine.Object.FindObjectsByType<Player>(FindObjectsSortMode.None))
+                {
+                    Character ch = player != null ? player.character : null;
+                    if (ch == null || ch.photonView == null) continue;
+
+                    // Whoever the checkpoint says should be dead is ApplySavedDeaths' job
+                    if (deadUserIds != null && deadUserIds.Contains(NetworkingUtilities.GetUserId(ch.player))) continue;
+
+                    // ONLY data.dead. By this point in the sequence the wake-up effect has
+                    // deliberately collapsed everyone into the passed-out pose
+                    // (OwnWakeUpEffect.Collapse, just above the call site), so treating
+                    // passedOut as "needs reviving" here would revive every single player -
+                    // cancelling the wake-up animation and, because ReviveCharacter clears
+                    // afflictions and thorns, wiping the state we just finished restoring
+                    if (!ch.data.dead) continue;
+
+                    try
+                    {
+                        // Same RPC (and same reasoning) as ReviveDeadPlayers: the owning
+                        // client is the only machine where being dead means anything, and a
+                        // local write on the host would never reach them
+                        ch.photonView.RPC(ReviveRpcName, RpcTarget.All, false);
+                        log?.LogInfo($"DeathStateRestore: {ch.characterName} died during the load and this "
+                            + "checkpoint records no death for them - revived so they come back alive.");
+                    }
+                    catch (Exception e)
+                    {
+                        log?.LogWarning($"DeathStateRestore: could not revive {ch.characterName} (non-fatal): {e.Message}");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"DeathStateRestore.EnsureUnsavedPlayersAlive failed (non-fatal): {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Character's revive <c>[PunRPC]</c>. PEAK 2.0.a renamed this from
+        /// <c>RPCA_Revive</c> to <c>ReviveCharacter</c> - see
+        /// <c>OwnTeleportSequence.ReviveRpcName</c>, which documents the rename in full
+        /// </summary>
+        private const string ReviveRpcName = "ReviveCharacter";
+
         // Lifts the teleport watchdog on whichever machine owns this character - locally when
         // that's us (the host restoring its own saved death), otherwise via our own targeted
         // RPC. See the call site for why

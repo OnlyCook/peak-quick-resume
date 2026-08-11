@@ -38,7 +38,26 @@ namespace PEAKQuickResume
         public List<Biome.BiomeType> biomes;
         public List<string> biome_names;
         public Segment segment;
+        // Kept for backward/forward compatibility: still written, and it's the only
+        // backpack field a pre-2.0.a save carries. See backpackType below
         public bool hasBackpack;
+
+        // PEAK 2.0.a turned the single "has a backpack" boolean into a typed slot
+        // (BackpackSlot.BackpackType: None/Backpack/Fannypack/Jetpack/Rocketpack), so the
+        // variant has to be persisted or every restored backpack would come back as a
+        // plain one. 0/None on any save predating this field, which BackpackTypeCompat
+        // .FromSave resolves against hasBackpack instead
+        public int backpackType;
+
+        // The WORN backpack's own instance data (not its contents - those are
+        // backpackItemStates below). Same key/value shape as any other item's stats, and
+        // in practice this is where a Jetpack's/Rocketpack's DataEntryKey.Fuel lives.
+        // Without it a worn jetpack came back with default (full) fuel, even though a
+        // jetpack lying on the GROUND restored its fuel fine - ground items are captured
+        // as whole world items, instance data and all, whereas the worn backpack slot only
+        // ever had its contents walked. Null on saves predating this field
+        public Dictionary<string, OwnSavedEntry> backpackOwnValues;
+
         public bool isSkeleton;
         public List<OwnSavedItemState> inventoryItemStates;
         public List<OwnSavedBackpackItemState> backpackItemStates;
