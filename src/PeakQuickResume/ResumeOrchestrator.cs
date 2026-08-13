@@ -264,6 +264,10 @@ namespace PEAKQuickResume
                         + "starting the run anyway. A client still loading may not follow into the new level.");
             }
 
+            // Drop any buffered RPCs from the run we are replacing - see
+            // RunLauncher.ClearBufferedRpcs (stale ghost inits are the known case)
+            RunLauncher.ClearBufferedRpcs(_log);
+
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
             _log.Trace("[stage] StartRun invoked; waiting for the level to load.");
 

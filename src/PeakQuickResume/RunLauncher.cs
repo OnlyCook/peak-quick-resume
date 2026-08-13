@@ -128,6 +128,49 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Drops the room's buffered-RPC cache, the way vanilla itself does on an Airport
+        /// transition (<c>GameOverHandler.LoadAirportMaster</c> calls
+        /// <c>PhotonNetwork.OpRemoveCompleteCache()</c> immediately before broadcasting the load).
+        ///
+        /// WHY WE NEED OUR OWN CALL
+        /// Buffered RPCs replay for anyone who joins later, so one left pointing at a Character
+        /// that no longer exists throws on every future arrival. The clearest example is the
+        /// spectator ghost: <c>MainCameraMovement</c> sends
+        /// <c>RPCA_InitGhost(RpcTarget.AllBuffered, ...)</c>, and that method's FIRST statement
+        /// dereferences the character view it was handed. Our load destroys and recreates every
+        /// Character, so a ghost that existed beforehand leaves a buffered call aimed at a dead
+        /// view - it throws before reaching <c>m_owner.Ghost = this</c>, and since
+        /// <c>StopSpectating</c> only destroys the ghost <c>if (Character.localCharacter.Ghost
+        /// != null)</c>, nothing ever cleans it up. The result is a player who stays a ghost with
+        /// an orphaned model parked at the world origin, matching a user report of friends "still
+        /// being ghost" after a resume
+        ///
+        /// Vanilla's own clear normally covers us, but there are two paths where it does not: a
+        /// resume started while ALREADY at the Airport never calls ReturnToAirport at all, and
+        /// <c>LoadAirportMaster</c> early-returns before the clear when a
+        /// <c>SceneSwitchingStatus</c> is already set. Calling it ourselves right before starting
+        /// the run closes both, and only ever discards buffered calls belonging to the run that is
+        /// about to be replaced
+        ///
+        /// Master-only (it is a master-client operation) and a no-op offline
+        /// </summary>
+        public static void ClearBufferedRpcs(ManualLogSource log)
+        {
+            try
+            {
+                if (PhotonNetwork.OfflineMode || !PhotonNetwork.IsMasterClient) return;
+                PhotonNetwork.OpRemoveCompleteCache();
+                log.Trace("Cleared the room's buffered-RPC cache before starting the run (stops a stale buffered "
+                    + "RPCA_InitGhost from throwing on every later joiner and stranding an orphan ghost).");
+            }
+            catch (Exception e)
+            {
+                log?.LogWarning($"Could not clear the buffered-RPC cache ({e.Message}); a player who was a ghost "
+                    + "before this load may stay one.");
+            }
+        }
+
+        /// <summary>
         /// Send EVERYONE back to the Airport.
         ///
         /// Uses <c>GameOverHandler.LoadAirport()</c>, the game's canonical synchronized

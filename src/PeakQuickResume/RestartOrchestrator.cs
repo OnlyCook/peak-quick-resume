@@ -174,6 +174,10 @@ namespace PEAKQuickResume
             // OwnLoadEntryPoints.ForceSelectedLevel's remarks
             OwnLoadEntryPoints.ForceSelectedLevel(currentScene);
 
+            // Drop any buffered RPCs from the run we are replacing - see
+            // RunLauncher.ClearBufferedRpcs (stale ghost inits are the known case)
+            RunLauncher.ClearBufferedRpcs(_log);
+
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
 
             _log.LogInfo("=== Restart: sequence COMPLETE (fresh run started) ===");
