@@ -58,7 +58,14 @@ namespace PEAKQuickResume
 
         private static readonly Dictionary<Character, State> _state = new Dictionary<Character, State>();
 
-        internal static void Init(ManualLogSource log) => _log = log;
+        internal static void Init(ManualLogSource log)
+        {
+            _log = log;
+            // Logged so a session log confirms the watch is actually present - it is otherwise
+            // silent until it fires, which makes "no warning" ambiguous between "no bug" and
+            // "old build without the watch"
+            log.LogInfo("RemoteRagdollWatch: watching for the co-op ragdoll-thrash bug on this machine.");
+        }
 
         /// <summary>Pumped from <see cref="RemoteRagdollWatchPump"/> on the physics clock</summary>
         internal static void FixedTick()
