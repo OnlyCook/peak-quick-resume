@@ -82,6 +82,52 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Clear vanilla's "this scene load is resuming the quicksave" latch
+        /// (<c>Peak.Quicksave.ShouldUseSaveData</c>) before we drive a scene transition of
+        /// our own.
+        ///
+        /// PEAK 2.0.a's main-menu "Continue Run" button sets that latch to true and NOTHING
+        /// clears it for the rest of the session short of the run ending
+        /// (<c>Character.RPCEndGame</c> -> <c>Quicksave.DestroySaveData</c>). It is read by
+        /// <c>CharacterSpawner.SpawnHostCharacter</c> on EVERY subsequent scene load, and
+        /// when it is set that method takes the resume branch:
+        /// <c>Quicksave.PopulateMapAndPlayerStates()</c> (-> <c>MapHandler.JumpToSegment</c>)
+        /// followed by <c>MapHandler.PreviousCampfire</c>. In the Airport there is no
+        /// MapHandler at all, so that branch throws, the host's character is never spawned,
+        /// and <c>LoadSceneProcess</c>'s <c>WaitForCharacterSpawn</c> sits there for its full
+        /// 200s timeout - i.e. <c>LoadingScreenHandler.loading</c> never clears and the
+        /// player is stuck on vanilla's "LOADING..." screen. That is exactly the reported
+        /// hang: continue a run, press the resume key, and our Airport step times out on
+        /// "airport loading to finish" while the game itself is wedged (see the session log).
+        /// (The Airport dodges the earlier <c>IsInGameplayScene</c> guard because
+        /// <c>GameHandler.IsGameplayScene</c> only matches scene names containing "Island"
+        /// or "Level_".)
+        ///
+        /// Clearing the latch is both necessary and sufficient: our own load path never uses
+        /// vanilla's quicksave (we restore from our own files - see OwnSaveCapture /
+        /// OwnLoadEntryPoints), so a run resumed through us must spawn the ordinary way. This
+        /// deliberately does NOT call <c>Quicksave.DestroySaveData()</c>, which would also
+        /// delete quicksave.peak and take the player's own "Continue Run" button away; the
+        /// file is left untouched and gets rewritten by vanilla at the next campfire anyway
+        /// </summary>
+        public static void ClearVanillaQuicksaveResume(ManualLogSource log)
+        {
+            try
+            {
+                if (!Peak.Quicksave.ShouldUseSaveData) return;
+                Peak.Quicksave.ShouldUseSaveData = false;
+                log.LogInfo("Cleared vanilla's Quicksave.ShouldUseSaveData latch (left over from a "
+                    + "main-menu \"Continue Run\"); without this the Airport load never spawns the "
+                    + "host and hangs on the vanilla loading screen.");
+            }
+            catch (Exception e)
+            {
+                log.LogWarning($"Could not clear Quicksave.ShouldUseSaveData ({e.Message}); "
+                    + "an Airport load right after a \"Continue Run\" may hang.");
+            }
+        }
+
+        /// <summary>
         /// Send EVERYONE back to the Airport.
         ///
         /// Uses <c>GameOverHandler.LoadAirport()</c>, the game's canonical synchronized

@@ -110,6 +110,10 @@ namespace PEAKQuickResume
             // prior load
             _watchdog?.LiftWatch();
 
+            // Same reason as ResumeOrchestrator's equivalent call - a restart drives the
+            // very same Airport return, and hangs the same way without this
+            RunLauncher.ClearVanillaQuicksaveResume(_log);
+
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo($"=== Restart: sequence START (ascent={ascent}, custom={custom}) ===");
             Msg(MessagesLocalization.Get(MsgKey.RestartingRun), MsgInfo);

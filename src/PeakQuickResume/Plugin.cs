@@ -411,6 +411,12 @@ namespace PEAKQuickResume
             // Us intentionally moving the player away, not a checkpoint-mod teleport -
             // see TeleportWatchdog.LiftWatch
             _watchdog?.LiftWatch();
+
+            // The pause menu's "Return to Airport" drives the same Airport load the
+            // orchestrators do, so it needs the same guard - see
+            // RunLauncher.ClearVanillaQuicksaveResume
+            RunLauncher.ClearVanillaQuicksaveResume(Logger);
+
             RunLauncher.ReturnToAirport(Logger);
 
             // Arm the post-orchestration cooldown (coop only) - see

@@ -122,6 +122,12 @@ namespace PEAKQuickResume
             // TeleportWatchdog.LiftWatch)
             _watchdog?.LiftWatch();
 
+            // Before ANY scene transition below (Airport return, then the fresh run): a
+            // session that started from the main menu's "Continue Run" still has vanilla's
+            // quicksave-resume latch set, which wedges the Airport load on a loading screen
+            // that never clears - see RunLauncher.ClearVanillaQuicksaveResume
+            RunLauncher.ClearVanillaQuicksaveResume(_log);
+
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo("=== Quick Resume: sequence START ===");
             // No HeightClimbed credit for the altitude swings a resume goes through
