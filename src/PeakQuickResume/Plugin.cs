@@ -207,6 +207,11 @@ namespace PEAKQuickResume
             // HeightClimbed Steam stat all over again
             HeightAchievementGuard.Apply(harmony, Logger);
 
+            // Reports the known co-op bug where another player's ragdoll convulses on this
+            // machine only - observational, see RemoteRagdollWatch
+            RemoteRagdollWatch.Init(Logger);
+            go.AddComponent<RemoteRagdollWatchPump>();
+
             Logger.LogInfo($"{PluginInfo.Name} {PluginInfo.Version} loaded. "
                 + $"Resume key: {_cfg.ResumeKey.Value}.");
         }

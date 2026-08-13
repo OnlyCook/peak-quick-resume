@@ -5,6 +5,7 @@ using BepInEx.Logging;
 using HarmonyLib;
 using Photon.Pun;
 using UnityEngine;
+using Zorro.Core;
 
 namespace PEAKQuickResume
 {
@@ -54,6 +55,16 @@ namespace PEAKQuickResume
         /// revived) - see <see cref="ReviveDeadPlayers"/> for the full rationale
         /// </summary>
         private const string ReviveRpcName = "ReviveCharacter";
+
+        /// <summary>
+        /// Vanilla's atomic "revive this dead character AND place it here" <c>[PunRPC]</c>,
+        /// <c>RPCA_ReviveAtPosition(Vector3 position, bool applyStatus, int statueSegment)</c>.
+        /// This is the call the GAME itself makes for exactly our situation - see
+        /// <c>CharacterSpawner.SpawnDeadAtBaseCamp</c>, which kills a late-joining player with
+        /// <c>DeathOnArrival()</c> and then, one frame later, revives them with this when it is
+        /// allowed to. See <see cref="ReviveDeadClientAtPosition"/> for why we now use it too
+        /// </summary>
+        private const string ReviveAtPositionRpcName = "RPCA_ReviveAtPosition";
 
         // Coop client-warp settle tracking (see TeleportClientsToHost's class remarks and
         // the wait block near the end of RunSequence): TeleportClientsToHost used to be
@@ -124,15 +135,53 @@ namespace PEAKQuickResume
             // resume, and the try/finally guarantees the pause is lifted even on a throw.
             // Nested windows are reference counted, see HeightAchievementGuard
             HeightAchievementGuard.Suppress("teleport sequence");
-            try
+
+            // Driven by hand rather than `yield return RunSequence(...)`, because that form is
+            // NOT crash-safe: when the inner enumerator throws, Unity's coroutine runner catches
+            // it, logs it and stops THAT coroutine - the outer one is never resumed, so the
+            // finally below never runs. Session-confirmed: a vanilla NullReferenceException
+            // during the segment jump left IsRunning stuck true, RestoreComplete stuck false and
+            // the "LOADING SAVE..." overlay on screen forever, with the orchestrator timing out
+            // 30s and 40s later against flags that could no longer change.
+            //
+            // Pumping MoveNext ourselves puts the try/catch on OUR side of the call, so a throw
+            // anywhere in RunSequence's own code lands here, gets logged with its stack, and
+            // still runs the cleanup below. (A nested `yield return StartCoroutine(...)` inside
+            // RunSequence is still Unity's to schedule and can't be caught from here - the fix
+            // for those is to not let them throw, see the guard around the segment jump.)
+            IEnumerator sequence = RunSequence(data, selection);
+            while (true)
             {
-                yield return RunSequence(data, selection);
+                object current = null;
+                bool moved;
+                try
+                {
+                    moved = sequence.MoveNext();
+                    if (moved) current = sequence.Current;
+                }
+                catch (Exception e)
+                {
+                    _log?.LogError("OwnTeleportSequence: the restore sequence threw and was aborted. The loading "
+                        + $"screen is being torn down so the game is not left on \"LOADING SAVE...\" forever: {e}");
+                    break;
+                }
+
+                if (!moved) break;
+                yield return current;
             }
-            finally
+
+            // Always reached now, on the happy path AND on a throw
+            IsRunning = false;
+            RestoreComplete = true;
+            HeightAchievementGuard.Release("teleport sequence");
+
+            // The overlay is normally torn down at the tail of RunSequence; if that never ran,
+            // do it here. Leaving it up is the single most player-visible way this can fail
+            if (_loadingScreen != null)
             {
-                IsRunning = false;
-                RestoreComplete = true;
-                HeightAchievementGuard.Release("teleport sequence");
+                bool wasFadedIn = false;
+                try { wasFadedIn = _loadingScreen.isActiveAndEnabled; } catch { }
+                if (wasFadedIn) yield return _loadingScreen.FadeOut(0.5f);
             }
         }
 
@@ -182,6 +231,28 @@ namespace PEAKQuickResume
             // activation + warps are RPC'd to every client and the spacing gives slower clients
             // time to catch up before the host's precise teleport (see PluginConfig.OwnFastSoloTeleport)
             float stepWait = (offline && _cfg.OwnFastSoloTeleport.Value) ? 0f : waitTime;
+
+            // Do NOT advance the segment while a client is still spawning into the level.
+            //
+            // This is the measured trigger for the co-op ragdoll-thrash bug. Advancing the
+            // segment is what makes the run look "already in progress", and CharacterSpawner
+            // kills any player who finishes spawning after that point (SpawnDeadAtBaseCamp ->
+            // DeathOnArrival -> KillImmediately -> RPCA_Die), parking their body 7km away at
+            // DeathPos - which is the state we then have to revive and warp back from. Across
+            // 11 logged resumes the bug appeared in exactly the one attempt where the client
+            // registered AFTER this jump and got killed, and in none of the ten where it
+            // registered before. That is also why pressing the resume key earlier or later
+            // never changed anything: the race is between the CLIENT's spawn and this line,
+            // not between the player's keypress and anything
+            //
+            // Vanilla never creates this situation - a run reaches Tropics because players
+            // walked there, minutes after everyone spawned. We manufacture it about a second
+            // after the level loads, which is exactly when a client is most likely to still be
+            // registering. Waiting for every connected player to actually have a Character
+            // closes the window, and deliberately does so by observing PlayerHandler on the
+            // HOST rather than via our own ready RPC - that RPC only exists on machines running
+            // this mod, and the bug reproduces with a completely unmodded client
+            if (!offline) yield return WaitForEveryPlayerToRegister();
 
             _log?.LogInfo($"OwnTeleportSequence: executing custom jump to: {finalSegment}"
                 + (stepWait < waitTime ? " (fast solo cadence)" : ""));
@@ -256,8 +327,29 @@ namespace PEAKQuickResume
             // biome activation to every client (docs/RESEARCH.md), so that's the one
             // coop needs. Solo keeps using the simpler SetSegmentOnSpawn path since it's
             // already proven solid across M3-M6 and has no client to leave behind
-            if (offline) MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment);
-            else MapHandler.JumpToSegment(finalSegment);
+            // Guarded: JumpToSegment warps every player, so a single stale Character in
+            // PlayerHandler (one whose GameObject has been destroyed - e.g. a client
+            // reconnecting at that exact moment) makes it throw on Character.Center, which used
+            // to kill the whole restore and strand the loading screen. Session log shows exactly
+            // that: "Reconnect data found for ..." immediately followed by a storm of
+            // NullReferenceExceptions from Character.get_Center, and no further progress
+            try
+            {
+                if (offline) MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment);
+                else MapHandler.JumpToSegment(finalSegment);
+            }
+            catch (Exception e)
+            {
+                _log?.LogError($"OwnTeleportSequence: the segment jump to {finalSegment} threw ({e.Message}) - most "
+                    + "likely a player was mid-respawn and left a destroyed Character in PlayerHandler. Continuing "
+                    + "with the restore; the warps below place everyone regardless.");
+            }
+
+            // Coop only: bring MapHandler.LastRevivedSegment in line with the segment we just
+            // jumped to. The solo branch above already does this - it is the second argument to
+            // SetSegmentOnSpawn - but JumpToSegment has no equivalent parameter, so coop was
+            // left with whatever value a brand-new run initialised it to
+            if (!offline) SyncLastRevivedSegment(finalSegment);
 
             // Solo-only relight fix, folded in here - see class remarks
             if (offline)
@@ -719,18 +811,27 @@ namespace PEAKQuickResume
         {
             if (Character.localCharacter == null) yield break;
 
-            // Same precondition as the client warps below: a DEAD character cannot be
-            // warped at all, because Character.Update routes it into HandleDeath, which
-            // re-parks the body at Character.DeathPos() - (0, 5000, -5000) - every frame.
-            // The loop below would then burn its full 30-second budget re-warping into a
-            // position that is undone each frame, and because RunSequence yields on this
-            // coroutine, the ENTIRE restore never even starts: no items, no afflictions,
-            // and the "LOADING SAVE..." overlay stays up on every machine.
+            // Same precondition as the client warps below: a DEAD character cannot be warped
+            // at all, because Character.FixedUpdate re-parks the body at Character.DeathPos() -
+            // (0, 5000, -5000) - EVERY PHYSICS STEP:
+            //     if (data.dead) { ragdoll.MoveAllRigsInDirection(DeathPos() - Center);
+            //                      ragdoll.HaltBodyVelocity(); }
+            // (2.0.a moved that from Update/HandleDeath into FixedUpdate; it is emphatically
+            // still per-step, and it also zeroes velocity, so it does not merely undo a warp,
+            // it fights it.) The loop below would then burn its full 30-second budget warping
+            // into a position undone each step, and because RunSequence yields on this
+            // coroutine, the ENTIRE restore never even starts: no items, no afflictions, and
+            // the "LOADING SAVE..." overlay stays up on every machine.
             //
             // ReviveDeadPlayers runs much earlier in the sequence, so a host that died
             // after that point (or whose revive did not take) reaches here still dead with
             // nothing left to catch it. Cheap to re-check, and a no-op in the normal case
-            ReviveBeforeWarp(Character.localCharacter);
+            if (ReviveBeforeWarp(Character.localCharacter))
+            {
+                // Same settle as the client warps below - see ReviveSettleSteps
+                for (int i = 0; i < ReviveSettleSteps; i++) yield return new WaitForFixedUpdate();
+                if (Character.localCharacter == null) yield break;
+            }
 
             Vector3 warpPos = pos + new Vector3(0f, 0.5f, 0f);
 
@@ -740,30 +841,104 @@ namespace PEAKQuickResume
             // This is the same warpPos every client is sent below via TeleportClientsToHost
             _entryPoints.Network?.Watchdog?.SetKnownTarget(warpPos);
 
-            Character.localCharacter.photonView.RPC("WarpPlayerRPC", RpcTarget.MasterClient, warpPos, false);
+            // RpcTarget.All, NOT MasterClient. This method only ever runs on the host, and the
+            // host IS the master client, so RpcTarget.MasterClient meant "run this on me and
+            // nobody else" - the host's own body was the ONLY character in the whole run whose
+            // warp never reached the other machines. Every client warp below already uses All,
+            // and so does every warp vanilla itself sends (MapHandler's segment teleport,
+            // RPCA_Die, RPCA_ReviveAtPosition)
+            //
+            // On every other machine the host's body was therefore never warped at all: it just
+            // saw the streamed hip position jump, and CharacterSyncer.InterpolateRigPositions
+            // had to drag the ragdoll across the gap itself, with collision enabled the whole
+            // way. Character.WarpPlayer exists precisely to avoid that - it disables the
+            // ragdoll's colliders for the move, halts body velocity, and re-enables them on
+            // arrival - so routing around it means dragging a live ragdoll through the world and
+            // potentially leaving it embedded in terrain, where depenetration impulses and the
+            // syncer's own correction fight each other indefinitely
+            //
+            // That matches every measurement taken of the reported bug: it is always the HOST's
+            // character that convulses, only ever on OTHER machines, while the host's own body
+            // is fine and its streamed position sits perfectly still; the syncer is the only
+            // thing moving the rigs (moveRigs == interp exactly); and the hip carries 100-289
+            // m/s of velocity going INTO each of those corrections, i.e. energy arriving from
+            // contacts rather than from the syncer
+            Character.localCharacter.photonView.RPC("WarpPlayerRPC", RpcTarget.All, warpPos, false);
+            // Logged so a session log identifies WHICH build produced it: this used to be
+            // RpcTarget.MasterClient (i.e. host-local only), and without a marker there is no way
+            // to tell from the host's log alone whether a given run had the broadcast or not
+            _log?.LogInfo($"OwnTeleportSequence: warping the host to {warpPos} (broadcast to ALL machines, "
+                + "so every client warps its own copy of the host rather than having the position sync "
+                + "drag that ragdoll across the map).");
 
             float startTime = Time.time;
+            float lastSend = Time.time;
             int tried = 0;
             int framesToWait = Mathf.Max(1, _cfg.OwnTeleportFramesToWait.Value);
+            int maxResends = Mathf.Max(0, _cfg.OwnMaxClientWarpResends.Value);
+            float resendGrace = Mathf.Max(0f, _cfg.OwnClientWarpResendGraceSeconds.Value);
             bool arrived = false;
+
+            // Let the warp we just sent ACTUALLY START before judging whether it worked.
+            // Without this the loop's first iteration ran in the very same frame as the send:
+            // Character.WarpPlayer only starts its IMove coroutine (which does not displace a
+            // single rigidbody until after its first `yield return null`), so Head is still the
+            // pre-warp position, the y-check below still reads as "not there yet", and we fired
+            // an immediate second warp for the identical target. That second warp hit
+            // Character.WarpPlayer while the first was mid-flight, taking its
+            //   "WHOA! We started a new warp before the old one wrapped up[...] this is very
+            //    likely to break something"
+            // branch, which StopCoroutine()s the in-flight warp partway through. This was
+            // structural, not a timing fluke - the resend is unconditional because the loop
+            // never yielded first - and a session log caught it exactly: two identical
+            // "Starting move N1K0 to (-12.78, 292.01, 98.49)" lines with the WHOA error between
+            // them, and our own "warped [...] after 1 attempts" right after.
+            // Aborting a warp mid-move leaves the ragdoll half-displaced for
+            // a frame, and CharacterSyncer on the OTHER machines latches whatever hip position it
+            // samples at that moment into its `lastPosition` interpolation anchor - from then on
+            // InterpolateRigPositions lerps that character between a stale anchor and its real
+            // streamed position every FixedUpdate, which is the reported "another player's
+            // character jitters and spins for the entire run, only on their screen" bug (it
+            // clears only when the Character object is rebuilt: load, airport, or restart).
+            // TeleportClientsToHost below already paced its resends for the same class of
+            // problem; this path never got the same treatment
+            for (int i = 0; i < framesToWait; i++) yield return null;
 
             while (Time.time - startTime < 30f && Character.localCharacter != null)
             {
                 if (Mathf.Abs(Character.localCharacter.Head.y - warpPos.y) > 3f)
                 {
+                    // Hold off until the grace interval has passed since our last send, so a
+                    // warp still in flight is never overwritten by a redundant one (see above).
+                    // Same bound + pacing TeleportClientsToHost uses, for the same reason
+                    if (Time.time - lastSend < resendGrace)
+                    {
+                        for (int i = 0; i < framesToWait; i++) yield return null;
+                        continue;
+                    }
+
+                    if (tried >= maxResends)
+                    {
+                        _log?.LogWarning($"OwnTeleportSequence: {Character.localCharacter.player.name} still isn't at "
+                            + $"{warpPos} after {tried} re-warp(s); giving up on re-sending (the watchdog/position "
+                            + "recovery takes it from here) rather than spamming warps that abort each other.");
+                        break;
+                    }
+
                     try
                     {
-                        Character.localCharacter.photonView?.RPC("WarpPlayerRPC", RpcTarget.MasterClient, warpPos, false);
+                        // All, for the same reason as the initial send above
+                        Character.localCharacter.photonView?.RPC("WarpPlayerRPC", RpcTarget.All, warpPos, false);
                         _log.Trace($"OwnTeleportSequence: warped {Character.localCharacter.player.name} to {warpPos} "
-                            + $"(previous position: {Character.localCharacter.Head}).");
+                            + $"(previous position: {Character.localCharacter.Head}, resend {tried + 1}/{maxResends}).");
                     }
                     catch (Exception e)
                     {
                         _log?.LogWarning($"OwnTeleportSequence: TeleportToPosition warp failed: {e}");
                     }
 
+                    lastSend = Time.time;
                     tried++;
-                    if (tried > 150) break;
                 }
                 else if (Mathf.Abs(Character.localCharacter.Head.x - warpPos.x) < 6f
                     && Mathf.Abs(Character.localCharacter.Head.z - warpPos.z) < 6f)
@@ -847,28 +1022,274 @@ namespace PEAKQuickResume
         /// <see cref="DeathStateRestore.ApplySavedDeaths"/>, so reviving unconditionally
         /// here costs nothing and keeps this free of save-file knowledge
         /// </summary>
-        private void ReviveBeforeWarp(Character ch)
-        {
-            if (ch == null || ch.photonView == null) return;
+        /// <summary>
+        /// Number of physics steps to let a just-revived body settle before warping it.
+        ///
+        /// NOT a confirmed fix for the "another player's ragdoll convulses, and I get catapulted
+        /// 30-40m, for the rest of the run" bug - that one is still OPEN. This settle was tried
+        /// against it and the bug reproduced anyway with the guard demonstrably engaged, so treat
+        /// it as hardening of a genuinely racy sequence rather than as the cure. What IS solid is
+        /// the correlation that motivated it: every reproduction carried
+        /// "<c>was dead before being warped [...] body was at (0, 5000, -5000)</c>" and warped
+        /// the client from DeathPos; every clean run had no such line and warped the client
+        /// from an ordinary beach position. It never once appeared without a dead-on-arrival
+        /// client
+        ///
+        /// A body parked at DeathPos is 7,071m from the campfire. Warping it there asks
+        /// <c>Character.WarpPlayer</c>'s IMove to close that gap with
+        /// <c>MoveAllRigsInDirection</c> -&gt; <c>Rigidbody.MovePosition</c>, and MovePosition
+        /// on a non-kinematic body IMPLIES a velocity of delta/fixedDeltaTime to reach its
+        /// target - here on the order of hundreds of thousands of m/s. Measured directly: a
+        /// mere 557m warp left the hip at 254 m/s (telemetry <c>velIn=254</c>), and during the
+        /// bug individual bodyparts were seen at 766 m/s with the ragdoll racking up ~90m of
+        /// path per second while going nowhere
+        ///
+        /// The window that makes it catastrophic is <c>data.dead</c> still being true while
+        /// that is happening, because <c>Character.FixedUpdate</c> then runs its own
+        /// <c>MoveAllRigsInDirection(DeathPos() - Center)</c> EVERY physics step in the
+        /// opposite direction - a 7km tug-of-war. Our revive and our warp used to be sent in
+        /// the same frame with nothing in between, so any late-arriving <c>RPCA_Die</c> from
+        /// the client's own DeathOnArrival kill (the host log shows that kill firing four
+        /// times in a burst, with three of vanilla's "WHOA! We started a new warp before the
+        /// old one wrapped up" errors between them) landed inside the warp
+        ///
+        /// Waiting here closes that window: the revive is given real physics steps to take
+        /// effect on every machine, and <see cref="TeleportClientsToHost"/> re-checks
+        /// <c>data.dead</c> afterwards, so we never hand IMove a body that something else is
+        /// still dragging to DeathPos
+        /// </summary>
+        private const int ReviveSettleSteps = 10;
 
-            // ONLY data.dead, deliberately. Character.Update routes just that state into
-            // HandleDeath (the one that parks the body at DeathPos and eats the warp);
-            // passedOut/fullyPassedOut go to HandlePassedOut, which warps perfectly well.
-            // Reviving a merely passed-out character here would be both unnecessary and
-            // destructive - ReviveCharacter clears afflictions and thorns
-            if (!ch.data.dead) return;
+        /// <summary>
+        /// Sets <c>MapHandler.LastRevivedSegment</c> to the segment a restored run has just been
+        /// placed in, so the run's map state is internally consistent.
+        ///
+        /// WHY THIS MATTERS
+        /// That value normally tracks where a scout statue last revived somebody, and the ONLY
+        /// logic that reads it is <c>MapHandler.BaseCampHasRevived</c>, which is in turn one of
+        /// the three terms deciding whether a joining player gets auto-revived:
+        /// <code>
+        /// canRevive = GameHandler.IsOnIsland &amp;&amp; MapHandler.BaseCampHasRevived
+        ///                                     &amp;&amp; MapHandler.LastSeenCampfireIsSafe;
+        /// </code>
+        /// <c>CharacterSpawner.SpawnDeadAtBaseCamp</c> ALWAYS kills a late joiner
+        /// (<c>DeathOnArrival()</c>) and then, one frame later, revives and places them with
+        /// <c>RPCA_ReviveAtPosition</c> if and only if <c>canRevive</c> holds. Walking to a biome
+        /// normally leaves the value consistent, so that auto-revive fires and the joining player
+        /// never even notices they died
+        ///
+        /// A checkpoint load jumps a BRAND NEW run straight to a mid-run segment, so the value
+        /// still held whatever a fresh run started with - never equal to the current segment or
+        /// one below it. <c>BaseCampHasRevived</c> was therefore false, the auto-revive never
+        /// ran, and the client was left dead at DeathPos (0, 5000, -5000) for our own code to
+        /// revive and drag 7km back. Session logs tie the reported ragdoll-thrash bug to exactly
+        /// that state: across 11 logged resumes it appeared in the one attempt that went through
+        /// it and in none of the ten that did not
+        ///
+        /// Deliberately narrow: the field has only one logic consumer (above), plus the two
+        /// CharacterSpawner RPCs that forward it to a joining client, which applies it through
+        /// <c>SetSegmentOnSpawn</c>. It does NOT feed <c>BaseCampScoutStatue</c> or
+        /// <c>PreviousSegmentIsStillBaseCamp</c> - those are computed independently - so this
+        /// cannot change which statue counts as base camp
+        ///
+        /// The setter is private, hence the reflection; the backing field is the fallback
+        /// </summary>
+        private void SyncLastRevivedSegment(Segment segment)
+        {
+            try
+            {
+                var handler = Singleton<MapHandler>.Instance;
+                if (handler == null) return;
+
+                var setter = HarmonyLib.AccessTools.PropertySetter(typeof(MapHandler), "LastRevivedSegment");
+                if (setter != null) setter.Invoke(handler, new object[] { (int)segment });
+                else
+                {
+                    var backing = HarmonyLib.AccessTools.Field(typeof(MapHandler), "_lastRevivedSegment");
+                    if (backing == null)
+                    {
+                        _log?.LogWarning("OwnTeleportSequence: could not find MapHandler.LastRevivedSegment; a "
+                            + "late-joining client may be left dead at DeathPos for us to revive by hand.");
+                        return;
+                    }
+                    backing.SetValue(handler, (int)segment);
+                }
+
+                _log.Trace($"OwnTeleportSequence: LastRevivedSegment set to {(int)segment} ({segment}), matching the "
+                    + "segment this load jumped to, so the game auto-revives a late-joining client itself instead of "
+                    + "leaving them dead at DeathPos.");
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnTeleportSequence: could not sync LastRevivedSegment ({e.Message}); "
+                    + "a late-joining client may be left dead at DeathPos for us to revive by hand.");
+            }
+        }
+
+        /// <summary>
+        /// Revives a DEAD client and places it at <paramref name="target"/> in a single atomic
+        /// call, using vanilla's own <c>RPCA_ReviveAtPosition</c>. Returns false if the
+        /// character was not dead (nothing to do) or the RPC could not be sent
+        ///
+        /// WHY THIS REPLACES OUR OWN REVIVE-THEN-WARP FOR THE DEAD CASE
+        /// A dead body has been parked at <c>Character.DeathPos()</c> - (0, 5000, -5000) - which
+        /// is 7,071m from the campfire, and <c>Character.FixedUpdate</c> drags it back there
+        /// EVERY physics step for as long as <c>data.dead</c> holds. Our old sequence was two
+        /// separate RPCs (<c>ReviveCharacter</c>, then <c>WarpPlayerRPC</c>) with a settle
+        /// between them, which meant a 7km <c>WarpPlayer</c> on every machine and a window in
+        /// which a late-arriving <c>RPCA_Die</c> could put the body back into the death state
+        /// mid-warp. Session logs correlate the reported ragdoll-thrash bug EXACTLY with this
+        /// path: across 11 logged resumes it appeared in the one attempt where the client was
+        /// killed on arrival and warped from DeathPos, and in none of the other ten
+        ///
+        /// <c>RPCA_ReviveAtPosition</c> is what the game itself uses here (see
+        /// <c>CharacterSpawner.SpawnDeadAtBaseCamp</c>, which calls <c>DeathOnArrival()</c> and
+        /// then revives with this a frame later whenever it is permitted to). It clears the
+        /// death state and places the body inside ONE RPC body, so the two can never interleave
+        /// or be separated by a settle, and there is no separate 7km warp to fight
+        ///
+        /// Arguments chosen to match what our old path did, not to add behaviour:
+        ///  - <c>applyStatus: false</c> - no post-revive Curse/Hunger, same as our
+        ///    <c>ReviveCharacter(false)</c>
+        ///  - <c>statueSegment: -1</c> - leaves <c>data.lastRevivedSegment</c> untouched, since
+        ///    this is not an Ancient Statue revive
+        /// Its <c>DropAllItems(includeBackpack: true)</c> is a no-op in this scenario:
+        /// <c>RPCA_Die</c> already dropped everything when the game killed them
+        /// </summary>
+        private bool ReviveDeadClientAtPosition(Character ch, Vector3 target)
+        {
+            if (ch == null || ch.photonView == null || ch.data == null || !ch.data.dead) return false;
 
             try
             {
+                ch.photonView.RPC(ReviveAtPositionRpcName, RpcTarget.All, target, false, -1);
+                _log?.LogInfo($"OwnTeleportSequence: {ch.characterName} was dead before being warped "
+                    + $"(joined-late arrival kill, most likely) - body was at {ch.Head}. Revived AND placed at "
+                    + $"{target} in one atomic {ReviveAtPositionRpcName}, so there is no 7km warp to fight.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnTeleportSequence: atomic revive-at-position for {ch.characterName} failed "
+                    + $"({e.Message}); falling back to the separate revive + warp path.");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// True if <paramref name="ch"/> was dead and a revive was sent - i.e. the caller must
+        /// let <see cref="ReviveSettleSteps"/> physics steps pass before warping it
+        /// </summary>
+        private bool ReviveBeforeWarp(Character ch)
+        {
+            if (ch == null || ch.photonView == null) return false;
+
+            // ONLY data.dead, deliberately. Character.FixedUpdate routes just that state into
+            // the per-step DeathPos re-park (the one that eats the warp and zeroes velocity);
+            // passedOut/fullyPassedOut go to HandlePassedOut, which warps perfectly well.
+            // Reviving a merely passed-out character here would be both unnecessary and
+            // destructive - ReviveCharacter clears afflictions and thorns
+            if (!ch.data.dead) return false;
+
+            try
+            {
+                // Where the body actually sits is worth recording: a dead character has been
+                // parked at DeathPos() by RPCA_Die, so a revive that fails to take shows up
+                // here as a body still ~7km out rather than as a silent bad warp later
                 ch.photonView.RPC(ReviveRpcName, RpcTarget.All, false);
                 _log?.LogInfo($"OwnTeleportSequence: {ch.characterName} was dead before being warped "
-                    + "(joined-late arrival kill, most likely) - revived so the warp can land.");
+                    + $"(joined-late arrival kill, most likely) - revived so the warp can land (body was at {ch.Head}). "
+                    + $"Letting it settle {ReviveSettleSteps} physics steps before warping.");
+                return true;
             }
             catch (Exception e)
             {
                 _log?.LogWarning($"OwnTeleportSequence: could not revive {ch.characterName} before warping "
                     + $"({e.Message}); the warp will probably not stick.");
+                return false;
             }
+        }
+
+        /// <summary>
+        /// Where a given client should actually land, given the host's own arrival point.
+        ///
+        /// Every client used to be warped to the EXACT coordinate the host warped itself to, so
+        /// all bodies arrived occupying the same space and had their colliders re-enabled at the
+        /// same instant (see <c>Character.WarpPlayer</c>'s IMove, which disables them for the
+        /// move and switches them back on at the end). Asking PhysX to resolve two fully
+        /// interpenetrating ragdolls is asking for a very large separating impulse, and that
+        /// matches the session reports of a player being flung 16m, 29m and 40m in different
+        /// directions on different runs. Vanilla never does this to itself - CharacterSpawner
+        /// scatters its arrivals with <c>RandomBaseCampOffset</c> for the same reason
+        ///
+        /// The offset is derived from the player's Photon ActorNumber via a golden-angle step
+        /// (137.5 degrees), which spreads any small number of players evenly around the circle
+        /// and, crucially, is STABLE: <see cref="TeleportClientsToHost"/> re-sends a safety warp
+        /// to the same client several times, and a target that moved between re-sends would
+        /// never satisfy the arrival check. Height is left alone - everyone still arrives at the
+        /// host's own y, slightly above ground, and falls the same short distance
+        ///
+        /// NOTE (measured, so the scope of this is not overstated): this is NOT the trigger for
+        /// the ragdoll-thrash bug. Per-step telemetry caught the host's body already thrashing
+        /// on the client's machine while that client was still 6,943m away at DeathPos, so the
+        /// two bodies were nowhere near each other when it started. This removes a genuine
+        /// physics hazard we were creating - and is the most likely explanation for the CATAPULT
+        /// specifically - but the thrash itself has a separate, still-unidentified cause
+        /// </summary>
+        private Vector3 SpreadTargetFor(Character ch, Vector3 hostPos)
+        {
+            float radius = _cfg != null ? Mathf.Max(0f, _cfg.OwnClientWarpSpreadRadius.Value) : 0f;
+            if (radius <= 0f) return hostPos;
+
+            int actor;
+            try { actor = ch.photonView?.Owner?.ActorNumber ?? 0; }
+            catch { actor = 0; }
+
+            float angle = (actor * 137.5f) * Mathf.Deg2Rad;
+            return hostPos + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+        }
+
+        /// <summary>
+        /// Blocks until every player in the room has a registered <c>Character</c>, so the
+        /// segment advance that follows cannot catch one of them mid-spawn - see the call site
+        /// for why that matters. Times out rather than stalling the load: a player who never
+        /// registers would otherwise hold the whole restore hostage, and being killed on arrival
+        /// is recoverable (we revive and warp them) whereas a hung load is not
+        /// </summary>
+        private const int RequiredStableFrames = 5;
+
+        private IEnumerator WaitForEveryPlayerToRegister()
+        {
+            float timeout = Mathf.Max(1f, _cfg != null ? _cfg.CoopReadyTimeout.Value : 30f);
+            float started = Time.time;
+            int expected = 0;
+            int stableFrames = 0;
+
+            while (Time.time - started < timeout)
+            {
+                // Shared with the Restart/Resume StartRun gate - see PlayerRegistration
+                bool all = PlayerRegistration.AllRegistered(out int registered, out expected);
+
+                // Require the full count to HOLD for a few consecutive frames. A single good
+                // frame proves nothing when a respawn is in flight: the old body can still be
+                // alive on the frame we look and destroyed on the next
+                if (all) stableFrames++;
+                else stableFrames = 0;
+
+                if (stableFrames >= RequiredStableFrames)
+                {
+                    _log.Trace($"OwnTeleportSequence: all {registered}/{expected} player character(s) registered and "
+                        + $"stable for {RequiredStableFrames} frames after {Time.time - started:F1}s; safe to advance "
+                        + "the segment.");
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            _log?.LogWarning($"OwnTeleportSequence: not every player had registered a character after "
+                + $"{timeout:F0}s (expected {expected}); advancing the segment anyway. Anyone still spawning may "
+                + "be killed on arrival by the game and warped back from DeathPos.");
         }
 
         private IEnumerator TeleportClientsToHost(Vector3 hostPos)
@@ -893,11 +1314,12 @@ namespace PEAKQuickResume
                 Character ch = player.character;
                 if (ch == null || ch == Character.localCharacter) continue;
 
-                // A dead client CANNOT be warped: Character.Update routes a dead character
-                // into HandleDeath, which parks the body at Character.DeathPos() -
-                // (0, 5000, -5000) - EVERY FRAME. The warp below lands and is immediately
-                // dragged back, so all the re-sends below burn out against it and the client
-                // is left 7km away, watching their own camera get yanked back and forth.
+                // A dead client CANNOT be warped: Character.FixedUpdate re-parks the body at
+                // Character.DeathPos() - (0, 5000, -5000) - EVERY PHYSICS STEP, velocity zeroed
+                // along with it. Confirmed in a session log ("was dead before being warped [...]
+                // body was at (0.01, 5000.23, -5000.02)"). The warp below lands and is
+                // immediately dragged back, so all the re-sends burn out against it and the
+                // client is left 7km away, watching their own camera get yanked back and forth.
                 //
                 // This happens on a perfectly ordinary load: a client who joined the run
                 // late is killed on arrival by the game itself (DeathOnArrival ->
@@ -908,9 +1330,51 @@ namespace PEAKQuickResume
                 // Whoever the checkpoint genuinely recorded as dead is put back that way
                 // afterwards by DeathStateRestore.ApplySavedDeaths, still behind the
                 // opaque loading screen
-                ReviveBeforeWarp(ch);
+                // Each client lands on its own point around the host rather than inside it -
+                // see SpreadTargetFor. Computed ONCE per client and reused for every re-send
+                // below, so the arrival check always tests against the point we actually aimed at
+                Vector3 clientTarget = SpreadTargetFor(ch, hostPos);
+                if (clientTarget != hostPos)
+                    _log.Trace($"OwnTeleportSequence.TeleportClientsToHost: {ch.characterName} lands at "
+                        + $"{clientTarget} ({(clientTarget - hostPos).magnitude:F1}m off the host's own arrival "
+                        + "point, so the bodies do not arrive inside each other).");
 
-                ch.photonView.RPC("WarpPlayerRPC", RpcTarget.All, hostPos, false);
+                // A dead client is revived AND placed in one atomic call rather than being
+                // revived and then warped 7km - see ReviveDeadClientAtPosition
+                bool revivedAtPosition = ReviveDeadClientAtPosition(ch, clientTarget);
+                if (revivedAtPosition)
+                {
+                    // Let it land, then re-check: the client's own DeathOnArrival kill fires in a
+                    // burst and a late RPCA_Die can still arrive after ours, putting the body
+                    // straight back at DeathPos with Character.FixedUpdate dragging it there every
+                    // step. One more atomic revive-and-place is the right answer to that, never a
+                    // plain warp into a body something else still owns
+                    for (int i = 0; i < ReviveSettleSteps; i++) yield return new WaitForFixedUpdate();
+
+                    if (ch != null && ch.data != null && ch.data.dead)
+                    {
+                        _log?.LogWarning($"OwnTeleportSequence: {ch.characterName} died AGAIN right after being "
+                            + "revived (a late DeathOnArrival kill, most likely); re-placing them once more.");
+                        ReviveDeadClientAtPosition(ch, clientTarget);
+                        for (int i = 0; i < ReviveSettleSteps; i++) yield return new WaitForFixedUpdate();
+                    }
+                }
+                else if (ReviveBeforeWarp(ch))
+                {
+                    // Fallback only: the atomic RPC could not be sent (see the catch there), so
+                    // fall back to the old revive-then-warp with its settle
+                    for (int i = 0; i < ReviveSettleSteps; i++) yield return new WaitForFixedUpdate();
+                }
+
+                if (ch == null || ch.photonView == null) continue;
+
+                // RPCA_ReviveAtPosition already placed them; sending a second warp on top would
+                // be exactly the redundant back-to-back warp that makes Character.WarpPlayer abort
+                // its own in-flight move ("WHOA! We started a new warp before the old one wrapped
+                // up"). The arrival loop below still re-sends plain warps if the placement did not
+                // actually stick
+                if (!revivedAtPosition)
+                    ch.photonView.RPC("WarpPlayerRPC", RpcTarget.All, clientTarget, false);
                 float startTime = Time.time;
                 float lastSend = Time.time;
                 int tried = 0;
@@ -930,7 +1394,7 @@ namespace PEAKQuickResume
                     // co-op on a slow client (see class remarks). Horizontal distance is the
                     // reliable "did the warp land" signal; depth (a real fall-through) is left to
                     // the client's own teleport watchdog / position recovery, not fought from here
-                    if (Mathf.Abs(ch.Head.x - hostPos.x) < 6f && Mathf.Abs(ch.Head.z - hostPos.z) < 6f)
+                    if (Mathf.Abs(ch.Head.x - clientTarget.x) < 6f && Mathf.Abs(ch.Head.z - clientTarget.z) < 6f)
                     {
                         _log.Trace($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} after {tried} attempts.");
                         arrived = true;
@@ -947,15 +1411,15 @@ namespace PEAKQuickResume
                         if (tried >= maxResends)
                         {
                             _log?.LogWarning($"OwnTeleportSequence.TeleportClientsToHost: still don't see {ch.player.name} "
-                                + $"near {hostPos} after {tried} re-warp(s); giving up (client's own watchdog/position "
+                                + $"near {clientTarget} after {tried} re-warp(s); giving up (client's own watchdog/position "
                                 + "recovery will handle it) rather than spamming further warps.");
                             break;
                         }
 
                         try
                         {
-                            ch.photonView?.RPC("WarpPlayerRPC", RpcTarget.All, hostPos, false);
-                            _log.Trace($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} to {hostPos} "
+                            ch.photonView?.RPC("WarpPlayerRPC", RpcTarget.All, clientTarget, false);
+                            _log.Trace($"OwnTeleportSequence.TeleportClientsToHost: warped {ch.player.name} to {clientTarget} "
                                 + $"(previous position: {ch.Head}, resend {tried + 1}/{maxResends}).");
                         }
                         catch (Exception e)
@@ -978,7 +1442,7 @@ namespace PEAKQuickResume
                     _clientWarpAllArrived = false;
                     if (Time.time - startTime >= 30f)
                         _log?.LogWarning($"OwnTeleportSequence.TeleportClientsToHost: gave up waiting for {ch.player.name} "
-                            + $"near {hostPos} after a 30s timeout.");
+                            + $"near {clientTarget} after a 30s timeout.");
                 }
             }
         }

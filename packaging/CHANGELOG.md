@@ -1,3 +1,14 @@
+## 2.2.1
+
+- Fixed the host never saving when a client without the mod lit the campfire.
+- Fixed not being able to load a save after using the vanilla "Continue Run" button.
+- Fixed status effects not being restored for co-op players who don't have the mod installed.
+- Fixed a restart leaving a client behind in the old level while the host started the new run.
+- Fixed loading a save sometimes hanging on "LOADING SAVE..." forever when someone was still spawning in. A failure part-way through the restore also can't leave that screen up anymore.
+- Everyone no longer lands on the exact same spot when a save is loaded, which could catapult players across the map. Adjustable with `client-warp-spread-radius`, or set it to 0 for the old behavior.
+- A player who joined late and was killed by the game on arrival is now revived and put in place in one go, instead of being teleported back from the death zone.
+- The host's own teleport on load now happens in every player's game, not just the host's.
+
 ## 2.2.0
 
 > **Note:** all your old saves (v1.65.a or older) can be deleted since they simply aren't compatible with v2.0.a and won't load.

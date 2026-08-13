@@ -533,6 +533,51 @@ namespace PEAKQuickResume
         }
 
         /// <summary>Mirrors decompile line 2909: targeted at the specific player's owner</summary>
+        /// <summary>
+        /// Pushes a client's saved status effects using VANILLA's own
+        /// <c>CharacterAfflictions.RPC_ApplyStatusesFromFloatArray</c>, so it works on a client
+        /// that does not have this mod installed.
+        ///
+        /// Statuses are owner-authoritative: <c>SetStatus</c>, <c>AddStatus</c> and
+        /// <c>SubtractStatus</c> all return early when <c>!character.photonView.IsMine</c> (unless
+        /// <c>fromRPC</c>), and <c>ActuallyPushStatuses</c> only runs on the owner. So the host
+        /// cannot write another player's statuses locally in any way that reaches them - the only
+        /// route is an RPC that executes on their machine
+        ///
+        /// <see cref="ApplyAfflictionsTo"/> does that, but over OUR channel, which simply does not
+        /// exist on an unmodded client - so their afflictions silently went unrestored. Vanilla's
+        /// RPC is guarded by <c>if (info.Sender.IsMasterClient)</c>, i.e. it is purpose-built for a
+        /// host pushing statuses to a client, and applies the array through AddStatus/SubtractStatus
+        /// with <c>fromRPC: true</c>. It skips Weight/Thorns/Arrow, which is what we want - thorns
+        /// are restored separately by <see cref="ThornsAndTicksRestore"/>
+        ///
+        /// Sent on the view PUN itself associates with the afflictions component, and BEFORE our
+        /// own RPC: on a modded client ours lands second and writes the absolute saved values over
+        /// the top, so the two cannot compound
+        /// </summary>
+        public bool ApplyStatusesViaVanilla(Character character, float[] statuses)
+        {
+            if (character == null || statuses == null || statuses.Length == 0) return false;
+
+            try
+            {
+                CharacterAfflictions afflictions = character.refs?.afflictions;
+                if (afflictions == null) return false;
+
+                PhotonView view = PhotonView.Get(afflictions);
+                if (view == null) return false;
+
+                view.RPC("RPC_ApplyStatusesFromFloatArray", character.photonView.Owner, statuses);
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log?.LogWarning($"OwnNetwork.ApplyStatusesViaVanilla failed ({e.Message}); falling back to our own "
+                    + "channel, which only reaches clients running this mod.");
+                return false;
+            }
+        }
+
         public void ApplyAfflictionsTo(PhotonView playerView, string userId, float[] statuses, float extraStamina)
         {
             try

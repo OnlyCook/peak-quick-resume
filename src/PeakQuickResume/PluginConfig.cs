@@ -51,6 +51,7 @@ namespace PEAKQuickResume
         // client's teleport ever round-trips back. These bound and pace those re-sends
         public readonly ConfigEntry<int> OwnMaxClientWarpResends;
         public readonly ConfigEntry<float> OwnClientWarpResendGraceSeconds;
+        public readonly ConfigEntry<float> OwnClientWarpSpreadRadius;
 
         // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
         // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
@@ -276,6 +277,19 @@ namespace PEAKQuickResume
                     + "rest to the client's own teleport watchdog / position recovery. Set to 0 to send only the "
                     + "initial warp and never re-send (advanced).",
                     new AcceptableValueRange<int>(0, 50)));
+
+            OwnClientWarpSpreadRadius = cfg.Bind("Teleport", "client-warp-spread-radius", 2f,
+                new ConfigDescription(
+                    "COOP ONLY: how far apart (metres) players are placed when the host teleports everyone to the "
+                    + "checkpoint. Previously every client was warped to the EXACT coordinate the host warped itself "
+                    + "to, so all bodies arrived inside one another and had their colliders re-enabled at the same "
+                    + "instant - which asks the physics engine to resolve fully interpenetrating ragdolls, and it does "
+                    + "that by applying very large separating impulses. Vanilla never does this to itself: "
+                    + "CharacterSpawner scatters arrivals with RandomBaseCampOffset. Each client now gets its own "
+                    + "point on a small circle around the host, spread by a golden-angle step off its Photon actor "
+                    + "number so the placement is stable across re-sends and unique per player. Set to 0 to restore "
+                    + "the old stack-everyone-on-one-point behaviour.",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             OwnClientWarpResendGraceSeconds = cfg.Bind("Teleport", "client-warp-resend-grace-seconds", 1.5f,
                 new ConfigDescription(
