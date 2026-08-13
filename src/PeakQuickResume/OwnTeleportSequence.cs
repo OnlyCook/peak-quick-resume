@@ -135,15 +135,53 @@ namespace PEAKQuickResume
             // resume, and the try/finally guarantees the pause is lifted even on a throw.
             // Nested windows are reference counted, see HeightAchievementGuard
             HeightAchievementGuard.Suppress("teleport sequence");
-            try
+
+            // Driven by hand rather than `yield return RunSequence(...)`, because that form is
+            // NOT crash-safe: when the inner enumerator throws, Unity's coroutine runner catches
+            // it, logs it and stops THAT coroutine - the outer one is never resumed, so the
+            // finally below never runs. Session-confirmed: a vanilla NullReferenceException
+            // during the segment jump left IsRunning stuck true, RestoreComplete stuck false and
+            // the "LOADING SAVE..." overlay on screen forever, with the orchestrator timing out
+            // 30s and 40s later against flags that could no longer change.
+            //
+            // Pumping MoveNext ourselves puts the try/catch on OUR side of the call, so a throw
+            // anywhere in RunSequence's own code lands here, gets logged with its stack, and
+            // still runs the cleanup below. (A nested `yield return StartCoroutine(...)` inside
+            // RunSequence is still Unity's to schedule and can't be caught from here - the fix
+            // for those is to not let them throw, see the guard around the segment jump.)
+            IEnumerator sequence = RunSequence(data, selection);
+            while (true)
             {
-                yield return RunSequence(data, selection);
+                object current = null;
+                bool moved;
+                try
+                {
+                    moved = sequence.MoveNext();
+                    if (moved) current = sequence.Current;
+                }
+                catch (Exception e)
+                {
+                    _log?.LogError("OwnTeleportSequence: the restore sequence threw and was aborted. The loading "
+                        + $"screen is being torn down so the game is not left on \"LOADING SAVE...\" forever: {e}");
+                    break;
+                }
+
+                if (!moved) break;
+                yield return current;
             }
-            finally
+
+            // Always reached now, on the happy path AND on a throw
+            IsRunning = false;
+            RestoreComplete = true;
+            HeightAchievementGuard.Release("teleport sequence");
+
+            // The overlay is normally torn down at the tail of RunSequence; if that never ran,
+            // do it here. Leaving it up is the single most player-visible way this can fail
+            if (_loadingScreen != null)
             {
-                IsRunning = false;
-                RestoreComplete = true;
-                HeightAchievementGuard.Release("teleport sequence");
+                bool wasFadedIn = false;
+                try { wasFadedIn = _loadingScreen.isActiveAndEnabled; } catch { }
+                if (wasFadedIn) yield return _loadingScreen.FadeOut(0.5f);
             }
         }
 
@@ -289,8 +327,23 @@ namespace PEAKQuickResume
             // biome activation to every client (docs/RESEARCH.md), so that's the one
             // coop needs. Solo keeps using the simpler SetSegmentOnSpawn path since it's
             // already proven solid across M3-M6 and has no client to leave behind
-            if (offline) MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment);
-            else MapHandler.JumpToSegment(finalSegment);
+            // Guarded: JumpToSegment warps every player, so a single stale Character in
+            // PlayerHandler (one whose GameObject has been destroyed - e.g. a client
+            // reconnecting at that exact moment) makes it throw on Character.Center, which used
+            // to kill the whole restore and strand the loading screen. Session log shows exactly
+            // that: "Reconnect data found for ..." immediately followed by a storm of
+            // NullReferenceExceptions from Character.get_Center, and no further progress
+            try
+            {
+                if (offline) MapHandler.SetSegmentOnSpawn(finalSegment, (int)finalSegment);
+                else MapHandler.JumpToSegment(finalSegment);
+            }
+            catch (Exception e)
+            {
+                _log?.LogError($"OwnTeleportSequence: the segment jump to {finalSegment} threw ({e.Message}) - most "
+                    + "likely a player was mid-respawn and left a destroyed Character in PlayerHandler. Continuing "
+                    + "with the restore; the warps below place everyone regardless.");
+            }
 
             // Coop only: bring MapHandler.LastRevivedSegment in line with the segment we just
             // jumped to. The solo branch above already does this - it is the second argument to
@@ -1201,28 +1254,31 @@ namespace PEAKQuickResume
         /// registers would otherwise hold the whole restore hostage, and being killed on arrival
         /// is recoverable (we revive and warp them) whereas a hung load is not
         /// </summary>
+        private const int RequiredStableFrames = 5;
+
         private IEnumerator WaitForEveryPlayerToRegister()
         {
             float timeout = Mathf.Max(1f, _cfg != null ? _cfg.CoopReadyTimeout.Value : 30f);
             float started = Time.time;
             int expected = 0;
+            int stableFrames = 0;
 
             while (Time.time - started < timeout)
             {
-                int registered = 0;
-                expected = 0;
-                try
-                {
-                    expected = PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.PlayerCount : 0;
-                    foreach (var p in UnityEngine.Object.FindObjectsByType<Player>(FindObjectsSortMode.None))
-                        if (p != null && p.character != null) registered++;
-                }
-                catch { /* mid-scene-load churn; just try again next frame */ }
+                // Shared with the Restart/Resume StartRun gate - see PlayerRegistration
+                bool all = PlayerRegistration.AllRegistered(out int registered, out expected);
 
-                if (expected > 0 && registered >= expected)
+                // Require the full count to HOLD for a few consecutive frames. A single good
+                // frame proves nothing when a respawn is in flight: the old body can still be
+                // alive on the frame we look and destroyed on the next
+                if (all) stableFrames++;
+                else stableFrames = 0;
+
+                if (stableFrames >= RequiredStableFrames)
                 {
-                    _log.Trace($"OwnTeleportSequence: all {registered}/{expected} player character(s) registered "
-                        + $"after {Time.time - started:F1}s; safe to advance the segment.");
+                    _log.Trace($"OwnTeleportSequence: all {registered}/{expected} player character(s) registered and "
+                        + $"stable for {RequiredStableFrames} frames after {Time.time - started:F1}s; safe to advance "
+                        + "the segment.");
                     yield break;
                 }
 

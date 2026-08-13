@@ -151,6 +151,24 @@ namespace PEAKQuickResume
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "loading to finish before StartRun");
             if (!_lastWaitOk) { Fail("Timed out waiting for loading to clear before StartRun"); yield break; }
 
+
+            // Every client must have finished spawning into the Airport before we start the run.
+            // RunLauncher.IsLoading above only reports the HOST's loading screen; a client still
+            // spawning in has its own LoadingScreenHandler busy, and LoadingScreenHandler.Load
+            // REFUSES while that is true ("Tried to load while already loading!"), so the island
+            // load RPC we are about to send is silently dropped on their end and they are left
+            // standing in the previous level - session-reported as "the client stayed where they
+            // were, in another biome which wasn't loaded in". The host log showed the client's
+            // spawn requests still repeating on both sides of StartRun. See PlayerRegistration
+            if (!PhotonNetwork.OfflineMode)
+            {
+                yield return WaitFor(PlayerRegistration.AllRegistered,
+                    Mathf.Max(1f, _cfg.CoopReadyTimeout.Value), "all players to finish spawning at the Airport");
+                if (!_lastWaitOk)
+                    _log?.LogWarning($"[stage] Not every player had finished spawning ({PlayerRegistration.Describe()}); "
+                        + "starting the run anyway. A client still loading may not follow into the new level.");
+            }
+
             // Force the fresh run onto the SAME island we just left, not whatever
             // vanilla/today's daily rotation would otherwise pick - see
             // OwnLoadEntryPoints.ForceSelectedLevel's remarks
