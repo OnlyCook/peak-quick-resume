@@ -320,18 +320,38 @@ namespace PEAKQuickResume
         /// cost a bit of this-run progress tracking, never revert or fabricate an actual
         /// unlock
         /// </summary>
-        public static void RestoreAllPlayers(SaveSelection selection, OwnLoadEntryPoints entryPoints, ManualLogSource log)
+        /// <param name="alreadyRestored">
+        /// Optional set of userIds already handled by an earlier pass, added to as this
+        /// one succeeds. On a load the host runs this the moment its own restore starts,
+        /// when a co-op client's <c>Player</c> object usually does not exist yet (it is
+        /// being respawned), so <see cref="OwnTeleportSequence"/> keeps re-running this
+        /// until everyone in the room has been handled - see its retry routine. Passing
+        /// the same set through is what stops a later pass re-applying (and so rolling
+        /// back) the progress of a player who was already restored
+        /// </param>
+        public static void RestoreAllPlayers(SaveSelection selection, OwnLoadEntryPoints entryPoints, ManualLogSource log,
+            HashSet<string> alreadyRestored = null)
         {
             try
             {
                 bool offline = selection.Offline;
 
-                foreach (Player player in UnityEngine.Object.FindObjectsByType<Player>(UnityEngine.FindObjectsSortMode.None))
-                {
-                    Character ch = player?.character;
-                    if (ch == null) continue;
+                Player[] players = UnityEngine.Object.FindObjectsByType<Player>(UnityEngine.FindObjectsSortMode.None);
+                log.Trace($"[achievement-debug] RestoreAllPlayers: {players.Length} player object(s) found.");
 
-                    string userId = offline ? "" : NetworkingUtilities.GetUserId(ch.player);
+                foreach (Player player in players)
+                {
+                    if (player == null) continue;
+
+                    // Deliberately NOT gated on player.character (session-diagnosed
+                    // 2026-08-13): this used to `continue` whenever a player had no
+                    // character yet, and on a load every remote player is mid-respawn at
+                    // exactly this moment, so a co-op client was skipped outright and
+                    // never got their achievement progress back. Nothing below needs the
+                    // character - the userId comes from the Player and the RPC is
+                    // addressed by its PhotonView owner
+                    string userId = offline ? "" : NetworkingUtilities.GetUserId(player);
+                    if (alreadyRestored != null && alreadyRestored.Contains(userId)) continue;
                     PhotonView playerView = player.GetComponent<PhotonView>();
 
                     OwnSavedAchievementProgress saved = null;
@@ -355,11 +375,19 @@ namespace PEAKQuickResume
 
                     if (offline || (playerView != null && playerView.IsMine))
                     {
+                        log.Trace($"[achievement-debug] RestoreAllPlayers: '{userId}' is this machine - applying locally.");
                         ApplyLocal(saved, log);
+                        alreadyRestored?.Add(userId);
                     }
                     else if (PhotonNetwork.IsMasterClient && playerView != null)
                     {
                         entryPoints?.Network?.RestoreAchievementProgressFor(playerView, userId, ToJson(saved));
+                        alreadyRestored?.Add(userId);
+                    }
+                    else
+                    {
+                        log.Trace($"[achievement-debug] RestoreAllPlayers: '{userId}' NOT restored - "
+                            + $"isMasterClient={PhotonNetwork.IsMasterClient}, playerView={(playerView == null ? "null" : "present")}.");
                     }
                 }
             }

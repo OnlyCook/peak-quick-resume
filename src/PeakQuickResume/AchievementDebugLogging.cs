@@ -25,6 +25,15 @@ namespace PEAKQuickResume
     {
         private static ManualLogSource _log;
 
+        // NOTE for anyone adding a patch here: NEVER call
+        // AchievementManager.GetRunBasedInt from a patch that sits on SetRunBasedInt.
+        // Vanilla's getter WRITES on a miss (GetRunBasedInt -> if (!ContainsKey)
+        // SetRunBasedInt(type, 0)), so a SetRunBasedInt prefix that calls the getter
+        // re-enters itself, and the key is still absent every time round because the outer
+        // setter's body hasn't run yet - unbounded recursion, no log output, game wedged on
+        // the loading screen. Hit for real on 2026-08-13 with ClownLuggageOpened, which is
+        // absent from every save written before that counter existed. Read the backing
+        // runBasedInts dictionary by reflection instead, which cannot create the entry
         public static void Apply(Harmony harmony, ManualLogSource log)
         {
             _log = log;
@@ -120,6 +129,8 @@ namespace PEAKQuickResume
         {
             if (type == RUNBASEDVALUETYPE.LuggageOpened)
                 _log?.LogInfo($"[achievement-debug] PlundererBadge: {value}/15 luggages opened this run.");
+            else if (type == RUNBASEDVALUETYPE.ClownLuggageOpened)
+                _log?.LogInfo($"[achievement-debug] JesterBadge: {value}/3 clown luggages opened this run.");
             else if (type == RUNBASEDVALUETYPE.ScoutsResurrected)
                 _log?.LogInfo($"[achievement-debug] ClutchBadge: {value}/3 scouts resurrected this run.");
             else

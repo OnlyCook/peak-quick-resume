@@ -182,6 +182,14 @@ namespace PEAKQuickResume
             // over-credit)
             RespawnChestDoubleCreditFix.Apply(harmony, Logger);
 
+            // Mod bug fix: our achievement restore calls InitRunBasedValues a second time,
+            // and its unconditional SubscribeToEvents left every GlobalEvents-driven
+            // achievement counter with two handlers (three after a further load, once a
+            // destroyed manager's leftover handler is counted) - so every luggage/statue/
+            // meal credited twice for the rest of a resumed run. See its own remarks for
+            // the logged diagnosis (a Jester Badge thrown after only two Clown Luggage)
+            AchievementSubscriptionFix.Apply(harmony, Logger);
+
             // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
             // target for the watchdog above (Character is a vanilla type). Our own
             // OwnTeleportSequence/OwnInventoryRestore arm the watchdog's load window

@@ -646,7 +646,14 @@ namespace PEAKQuickResume
         {
             try
             {
-                if (playerView == null || playerView.Owner == null) return;
+                if (playerView == null || playerView.Owner == null)
+                {
+                    _log.Trace($"[achievement-debug] RestoreAchievementProgressFor('{userId}'): no player view/owner, nothing sent.");
+                    return;
+                }
+                _log.Trace($"[achievement-debug] RestoreAchievementProgressFor('{userId}'): sending "
+                    + $"{(string.IsNullOrEmpty(achievementProgressJson) ? "EMPTY (no saved progress for them)" : achievementProgressJson.Length + " chars of saved progress")} "
+                    + $"to actor #{playerView.Owner.ActorNumber}.");
                 _pv?.RPC(nameof(OwnNetworkRpc.RPC_ApplyAchievementProgress), playerView.Owner, userId, achievementProgressJson ?? "");
             }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.RestoreAchievementProgressFor failed: {e.Message}"); }
@@ -1047,12 +1054,7 @@ namespace PEAKQuickResume
         {
             try
             {
-                Character localCharacter = Character.localCharacter;
-                if (localCharacter == null) return;
-                if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
-
-                OwnSavedAchievementProgress saved = AchievementProgressIO.FromJson(achievementProgressJson, null);
-                AchievementProgressIO.ApplyLocal(saved, null);
+                StartCoroutine(ApplyAchievementProgressWhenReady(userId, achievementProgressJson));
             }
             catch (Exception e)
             {
@@ -1060,5 +1062,70 @@ namespace PEAKQuickResume
             }
         }
 
+        /// <summary>
+        /// Session-diagnosed bug fix (2026-08-13): this used to apply inline and simply
+        /// <c>return</c> when <c>Character.localCharacter</c> was still null, silently
+        /// throwing away the only copy of that client's saved achievement progress the
+        /// host ever sends. The host fires this right after every client reports ready,
+        /// which on a load is exactly while the client is still respawning its character
+        /// (its log showed seven <c>InitRunBasedValues</c> calls, every one of them from
+        /// <c>CharacterSpawner</c> and not one from this restore), so in practice a
+        /// client's per-run counters were never restored at all: Clutch, Plunderer,
+        /// Jester and the food trackers all silently restarted from zero after a load,
+        /// while the host's own restored fine. Proven from the save files themselves -
+        /// the client's own save for the loaded event held ScoutsResurrected=1,
+        /// LuggageOpened=1, ClownLuggageOpened=1, yet the client counted from 0 after
+        /// loading it.
+        ///
+        /// Now it waits for the local character (and for the character to actually be
+        /// this player) instead of dropping, then applies. Waiting is also what keeps
+        /// the restore from being clobbered: vanilla's own spawn-time
+        /// <c>InitRunBasedValues</c> calls all happen while the character is being
+        /// created, so applying once it exists lands after them
+        /// </summary>
+        private IEnumerator ApplyAchievementProgressWhenReady(string userId, string achievementProgressJson)
+        {
+            ManualLogSource log = Owner?.Log;
+            float deadline = Time.realtimeSinceStartup + AchievementRestoreWaitSeconds;
+            string localUserId = null;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                Character local = Character.localCharacter;
+                if (local != null && local.player != null)
+                {
+                    localUserId = null;
+                    try { localUserId = NetworkingUtilities.GetUserId(local.player); }
+                    catch { /* not registered yet - keep waiting */ }
+                    if (!string.IsNullOrEmpty(localUserId)) break;
+                }
+                yield return null;
+            }
+
+            if (string.IsNullOrEmpty(localUserId))
+            {
+                log?.LogWarning($"[achievement-debug] RPC_ApplyAchievementProgress('{userId}'): DROPPED - no local "
+                    + $"character after {AchievementRestoreWaitSeconds:F0}s, so this run's saved achievement progress "
+                    + "was not restored on this machine.");
+                yield break;
+            }
+
+            if (localUserId != userId)
+            {
+                log.Trace($"[achievement-debug] RPC_ApplyAchievementProgress('{userId}'): ignored, this machine is '{localUserId}'.");
+                yield break;
+            }
+
+            log.Trace($"[achievement-debug] RPC_ApplyAchievementProgress('{userId}'): applying "
+                + $"{(string.IsNullOrEmpty(achievementProgressJson) ? "EMPTY (no saved progress for this player)" : achievementProgressJson.Length + " chars")}.");
+
+            OwnSavedAchievementProgress saved = AchievementProgressIO.FromJson(achievementProgressJson, log);
+            AchievementProgressIO.ApplyLocal(saved, log);
+        }
+
+        // Generous: the client is mid-respawn when this arrives, and a slow machine's
+        // spawn can take a while. Only ever spent waiting on a character that isn't
+        // there yet, and a timeout just falls back to the old "counters restart" behavior
+        private const float AchievementRestoreWaitSeconds = 30f;
     }
 }

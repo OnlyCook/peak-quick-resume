@@ -219,7 +219,19 @@ namespace PEAKQuickResume
             // prior progress before the character's altitude jumps, or the teleport
             // itself gets miscounted as climbed height towards the High Altitude Badge)
             if (_cfg.RestoreAchievements.Value)
-                AchievementProgressIO.RestoreAllPlayers(selection, _entryPoints, _log);
+            {
+                // Session-diagnosed 2026-08-13: one pass here is not enough in co-op. At
+                // this moment a client is still being respawned, so its Player object does
+                // not exist on the host yet ("RestoreAllPlayers: 1 player object(s) found"
+                // in a two-player room) and it was simply missed - the confirmed reason a
+                // client's per-run badge progress silently restarted from zero on every
+                // load. The immediate pass keeps the host's own restore exactly where it
+                // has to be (before any warp, see the remark above); the routine below
+                // catches everyone who shows up late
+                var restored = new HashSet<string>();
+                AchievementProgressIO.RestoreAllPlayers(selection, _entryPoints, _log, restored);
+                if (!offline) StartCoroutine(RestoreAchievementsForLateSpawners(selection, restored));
+            }
 
             // Inter-step wait between the map/campfire warp (JumpToSegment/SetSegmentOnSpawn,
             // below) and the final precise teleport. In solo there are no networked clients
@@ -687,6 +699,46 @@ namespace PEAKQuickResume
 
             _entryPoints.MarkLoadedThisRound();
         }
+
+        /// <summary>
+        /// Keeps re-running the achievement-progress restore until every player in the room
+        /// has actually been handled. See the call site for why one pass misses co-op
+        /// clients: their <c>Player</c> object is created some seconds AFTER the host starts
+        /// restoring, so the host's first sweep simply cannot see them. Passing the same
+        /// "already restored" set through means nobody is restored twice (which would roll
+        /// their progress back to the save), and the client side holds the payload until its
+        /// own character exists (see <c>OwnNetworkRpc.RPC_ApplyAchievementProgress</c>), so
+        /// arriving early is fine too. Purely additive: a timeout just leaves the missing
+        /// player on vanilla's fresh baseline, exactly what happened before this existed
+        /// </summary>
+        private IEnumerator RestoreAchievementsForLateSpawners(SaveSelection selection, HashSet<string> restored)
+        {
+            float deadline = Time.realtimeSinceStartup + LateAchievementRestoreSeconds;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                int expected = PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.PlayerCount : 0;
+                if (expected > 0 && restored.Count >= expected)
+                {
+                    _log.Trace($"[achievement-debug] RestoreAllPlayers: all {expected} player(s) in the room handled.");
+                    yield break;
+                }
+
+                yield return new WaitForSeconds(0.5f);
+                AchievementProgressIO.RestoreAllPlayers(selection, _entryPoints, _log, restored);
+            }
+
+            int stillExpected = PhotonNetwork.CurrentRoom != null ? PhotonNetwork.CurrentRoom.PlayerCount : 0;
+            if (stillExpected > restored.Count)
+                _log?.LogWarning($"[achievement-debug] RestoreAllPlayers: gave up after {LateAchievementRestoreSeconds:F0}s "
+                    + $"with {restored.Count}/{stillExpected} player(s) restored - whoever is missing never got a Player "
+                    + "object in time, so their per-run badge progress restarts from zero this run.");
+        }
+
+        // Long enough to cover a slow client's respawn after a load (its Player object
+        // showed up several seconds late in testing), short enough that a player who left
+        // mid-load doesn't keep the routine alive for the rest of the run
+        private const float LateAchievementRestoreSeconds = 45f;
 
         /// <summary>
         /// True for a position at (or right next to) <c>Character.DeathPos()</c> - the fixed
