@@ -25,6 +25,13 @@ namespace PEAKQuickResume
     /// the empty gap between them, and two consecutive windows are required so the brief
     /// settling flurry right after a teleport is never mistaken for it
     ///
+    /// STATUS: OPEN. Several fixes have been landed around this bug's trigger conditions (see
+    /// OwnTeleportSequence: the revive settle, the atomic RPCA_ReviveAtPosition placement, the
+    /// LastRevivedSegment sync and the wait for every player to finish spawning). None was ever
+    /// OBSERVED to prevent the thrash - the trigger proved too rare to test against directly -
+    /// so they remove the state it correlates with rather than being demonstrated cures. This
+    /// watch exists to say whether it ever comes back
+    ///
     /// WHAT IS ALREADY RULED OUT (so a future session does not re-tread it)
     /// Leaked hand FixedJoints; CharacterSyncer skipping its interpolation guard (it runs every
     /// single physics step); a second MoveAllRigsInDirection caller; the two bodies colliding on

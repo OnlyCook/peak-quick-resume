@@ -223,9 +223,17 @@ namespace PEAKQuickResume
 
                     try
                     {
+                        // Vanilla's own master-to-client status push FIRST, so a client without
+                        // this mod still gets their afflictions back - see
+                        // OwnNetwork.ApplyStatusesViaVanilla. Ours follows and writes the absolute
+                        // saved values over the top on clients that do have the mod (it also
+                        // carries extraStamina, which vanilla has no networked setter for), so the
+                        // two cannot compound
+                        bool viaVanilla = entryPoints?.Network?.ApplyStatusesViaVanilla(ch, data.afflictions_current) ?? false;
+
                         if (playerView != null)
                             entryPoints?.Network?.ApplyAfflictionsTo(playerView, userId, data.afflictions_current, data.extraStamina);
-                        else
+                        else if (!viaVanilla)
                             log?.LogWarning("OwnInventoryRestore: Player has no PhotonView, cannot send afflictions RPC.");
                     }
                     catch (Exception e)

@@ -1025,9 +1025,11 @@ namespace PEAKQuickResume
         /// <summary>
         /// Number of physics steps to let a just-revived body settle before warping it.
         ///
-        /// This is the fix for the "another player's ragdoll convulses, and I get catapulted
-        /// 30-40m, for the rest of the run" bug. Session logs correlate it EXACTLY with this
-        /// path: every reproduction carried
+        /// NOT a confirmed fix for the "another player's ragdoll convulses, and I get catapulted
+        /// 30-40m, for the rest of the run" bug - that one is still OPEN. This settle was tried
+        /// against it and the bug reproduced anyway with the guard demonstrably engaged, so treat
+        /// it as hardening of a genuinely racy sequence rather than as the cure. What IS solid is
+        /// the correlation that motivated it: every reproduction carried
         /// "<c>was dead before being warped [...] body was at (0, 5000, -5000)</c>" and warped
         /// the client from DeathPos; every clean run had no such line and warped the client
         /// from an ordinary beach position. It never once appeared without a dead-on-arrival
