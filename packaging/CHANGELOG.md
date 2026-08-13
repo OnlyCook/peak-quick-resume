@@ -8,6 +8,7 @@
 - Everyone no longer lands on the exact same spot when a save is loaded, which could catapult players across the map. Adjustable with `client-warp-spread-radius`, or set it to 0 for the old behavior.
 - A player who joined late and was killed by the game on arrival is now revived and put in place in one go, instead of being teleported back from the death zone.
 - The host's own teleport on load now happens in every player's game, not just the host's.
+- Fixed a player who was spectating as a ghost when a save got loaded staying a ghost afterwards.
 
 ## 2.2.0
 
