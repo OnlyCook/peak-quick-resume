@@ -1,3 +1,7 @@
+## 2.2.2
+
+- Fixed the Strange Gem disappearing from the scout statue behind the peak when loading a save taken in The Citadel.
+
 ## 2.2.1
 
 > **Note:** update v2.1.a (13.08.2026) rotated the map pool which will make your v2.0.a saves load incorrect islands. All saves should still work though just look different.

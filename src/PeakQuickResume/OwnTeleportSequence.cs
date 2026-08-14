@@ -533,6 +533,16 @@ namespace PEAKQuickResume
                 yield return StartCoroutine(TeleportToPosition(spawnPos));
                 if ((int)finalSegment == 4 && Ascents.currentAscent < 4)
                     StartCoroutine(OwnEnvironmentReset.SpawnFlaresAtPeak());
+
+                // Deliberately this late: the statue spawns its gem a frame after the segment
+                // jump activated it, and ResetWorldLoot/DestroyStaleWorldObjects/WorldItemRestore
+                // above then delete it again (see StrangeGemRestore's class remarks for exactly
+                // why the gem is caught by that pass while normal spawner loot isn't). Nothing
+                // below this point destroys world items, so putting the gem back here is the
+                // first point at which it survives. Load-path only by construction - lighting
+                // the campfire normally never runs this method - and self-guarded against
+                // spawning a second gem
+                if ((int)finalSegment == 4) StrangeGemRestore.Restore(_log);
             }
 
             // Deliberate DEVIATION from the original (decompile 2546-2553), not a port gap:

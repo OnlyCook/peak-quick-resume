@@ -231,3 +231,70 @@ restructures/renames/removes that entry from `MapBaker.ScenePaths` (a compatibil
 on the game's side, not a cleanup mechanism). Matches our own live testing: cross-loading
 between two different daily islands across full runs worked flawlessly on v1.1.0.
 ```
+
+## The Strange Gem on the scout statue (PEAK 2.1.a)
+
+Reported symptom: the gem the statue behind the peak holds is missing after loading a
+checkpoint taken in **THE CITADEL**, while loading a **GLOOM** checkpoint is fine.
+
+It is **not** a level `ISpawner`, which is why no spawner re-trigger ever brings it back.
+`Peak.ScoutStatue` (Assembly-CSharp, new in 2.x) spawns it itself, once, host only:
+
+```csharp
+private void Update() {                                   // only ticks while active
+    if (PhotonNetwork.InRoom && PhotonNetwork.IsMasterClient && !spawnedInitialGem) {
+        SpawnGem_Master();
+        spawnedInitialGem = true;                         // latches forever
+    }
+}
+private void SpawnGem_Master() {
+    if (PhotonNetwork.IsMasterClient && spawnedGem_master == null) {
+        spawnedGem_master = PhotonNetwork.Instantiate("0_Items/" + gemPrefab.name,
+                                                      gemSpot.position, gemSpot.rotation, 0);
+        spawnedGem_master.GetComponent<Item>().SetKinematicNetworked(true);
+        if (AllAmuletsFilled()) SpawnScoutsHonor();
+    }
+}
+```
+
+`RPC_InsertAmulet(99)` is the only other route in, and it just calls `SpawnGem_Master()`
+on the master client, so calling that method directly on the host is equivalent.
+
+Scene placement (both final-segment variants, `Segment.TheKiln` = 4):
+
+```
+Map / Biome_4 / Gloom   / Temple_Segment  / Peak               / AmuletScoutStatue   <- THE CITADEL
+Map / Biome_4 / Caldera / Volcano / Volcano_Segment / Peak_Kiln Variant / AmuletScoutStatue   <- THE KILN
+```
+
+Both sit **inside the segment parent**, so the statue only starts ticking when segment 4
+is activated. Hence: loading a Citadel save activates the segment during the jump, the
+statue spawns the gem a frame later, our cleanup then deletes it, and `spawnedInitialGem`
+is already true so vanilla never retries. Loading a Gloom save leaves the statue inactive
+throughout the load, so the later campfire transition spawns the gem normally.
+
+Why our cleanup catches it while ordinary loot survives: `ScoutStatue` uses
+`PhotonNetwork.Instantiate`, not `PhotonNetwork.InstantiateItemRoom`. PUN2 defines
+`IsRoomView => CreatorActorNr == 0`, so a normal spawner item is a room view and is
+skipped by `OwnWorldLootReset.ResetWorldLoot`'s dropped-item pass, while the gem is not
+and gets destroyed map-wide (no radius). `DestroyLeftoverHeldItems` would take it too on
+a repeat load (`IsMine` is true for the host's own instantiate).
+
+Fix: `StrangeGemRestore.Restore()`, called from `OwnTeleportSequence` for segment 4 after
+every destructive pass. See that class for the guards.
+
+Statue state needs no save/restore: it can only be interacted with past the last campfire,
+so no checkpoint can contain amulets already inserted.
+
+### Inspecting scenes (how the placement above was established)
+
+`level*` in `PEAK_Data` are plain Unity serialized scenes, readable with UnityPy:
+
+```bash
+python3 -m venv venv && ./venv/bin/pip install UnityPy
+# then walk env.objects: GameObject -> m_Component -> Transform.m_Father for hierarchy,
+# MonoBehaviour.m_Script -> MonoScript.m_ClassName for component names
+```
+
+In 2.1.a the gem statue lives in `level4`. Note `scratch/PEAK-game-backup` is 1.65.a and
+predates Gloom/The Citadel entirely, so always inspect the live install for this.

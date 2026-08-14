@@ -5,6 +5,6 @@ namespace PEAKQuickResume
     {
         public const string Guid = "OnlyCook.PEAKQuickResume";
         public const string Name = "PEAK Quick Resume";
-        public const string Version = "2.2.1";
+        public const string Version = "2.2.2";
     }
 }
