@@ -9,49 +9,30 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Native save/restore for ordinary Luggage boxes near the campfire (not the
-    /// Ancient Statue - see AncientStatueRestore, and RespawnChest is explicitly
-    /// excluded below so the two mechanics never double-handle the same object).
-    /// Second of the "item/object restore around the campfire" mechanics; same shape
-    /// as AncientStatueRestore, generalized to (a) any number of candidate boxes
-    /// within range and (b) a box holding more than one item at once
+    /// Save/restore for ordinary Luggage boxes near the campfire (RespawnChest/Ancient
+    /// Statue is handled separately, see AncientStatueRestore, and explicitly excluded
+    /// below). Generalizes that same approach to any number of candidate boxes and boxes
+    /// holding more than one item.
     ///
-    /// Unlike the statue, plain Luggage has no public no-spawn "just mark it open"
-    /// method (RespawnChest.Break() is RespawnChest-only). But Luggage's own
-    /// [PunRPC] OpenLuggageRPC(bool spawnItems) - the same one Break() calls under the
-    /// hood - lives on the shared Luggage base class, so we call it the exact same way
-    /// on any Luggage instance via PhotonView.RPC (Photon's own RPC dispatch finds
-    /// [PunRPC] methods by name regardless of C# accessibility, same technique already
-    /// used for SetKinematicRPC below): spawnItems=false marks it open with no auto
-    /// spawn, then we place the saved item(s) ourselves at their own CAPTURED position/
-    /// rotation (see OwnSavedPositionedItem's remarks for why not a configured spawn spot
-    /// or a slot index)
-    ///
-    /// Host-only throughout (world state, not per-player). Every step is wrapped and
-    /// non-fatal: this class never touches disk, so a failure here can only mean a
-    /// luggage box restores wrong (or not at all), never a corrupted save
+    /// Luggage has no public no-spawn "mark it open" method like RespawnChest.Break(),
+    /// but its [PunRPC] OpenLuggageRPC(spawnItems) is on the shared base class, so we
+    /// call it directly with spawnItems=false to mark it open without a random spawn,
+    /// then place the saved item(s) at their captured position/rotation ourselves.
+    /// Host-only; every step fails soft since this class never touches disk.
     /// </summary>
     public static class LuggageRestore
     {
-        // Generous hard cap, not a tight proximity check - matches AncientStatueRestore's
-        // own reasoning. No special-case skip for the Caldera/"Volcano" segment (which
-        // never has luggage this close to its campfire): reliably knowing which segment
-        // a just-lit campfire belongs to at CAPTURE time hits the exact same stale
-        // MapHandler.currentSegment timing bug CampfireAreaHelpers was written to avoid
-        // (see its own remarks) - an empty search there costs one harmless extra scan
         private const float LuggageSearchRadius = 30f;
 
-        // Search radius for a box's still-unclaimed item(s), centered on the box's own
-        // transform - loose enough to comfortably cover a "Big Luggage"'s 3 spread-out
-        // items, tight enough to stay clear of unrelated ground loot nearby
+        // Loose enough to cover a "Big Luggage"'s 3 spread-out items, tight enough to
+        // stay clear of unrelated ground loot.
         private const float ItemSearchRadius = 10f;
 
         /// <summary>
-        /// Called from OwnSaveCapture right before writing OwnSaveData, AFTER
-        /// AncientStatueRestore.Capture has added its own find to
-        /// <paramref name="claimed"/>. Adds every item found here to it too, so
-        /// WorldItemRestore's capture (called right after this) doesn't also save the
-        /// same physical items as generic loose loot - see its class remarks
+        /// Called from OwnSaveCapture before writing OwnSaveData, after
+        /// AncientStatueRestore.Capture has added its own find to claimed. Adds every
+        /// item found here to it too, so WorldItemRestore's capture doesn't also save
+        /// the same items as loose loot.
         /// </summary>
         public static void Capture(Vector3 fallbackPos, HashSet<Item> claimed, ManualLogSource log, out List<OwnSavedLuggageState> states)
         {
@@ -71,9 +52,7 @@ namespace PEAKQuickResume
                     var state = new OwnSavedLuggageState { opened = box.IsOpen };
                     if (box.IsOpen)
                     {
-                        // Items already claimed by an earlier (closer-to-the-campfire) box
-                        // in this same pass, or by the statue, aren't eligible for this one -
-                        // keeps two nearby containers from both grabbing the same physical item
+                        // Excludes items already claimed by an earlier box or the statue.
                         foreach (Item item in CampfireAreaHelpers.FindFreeItemsWithin(box.transform.position, ItemSearchRadius, exclude: claimed))
                         {
                             var positioned = new OwnSavedPositionedItem
@@ -107,12 +86,9 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Called once per load (host-only, world state), right after
-        /// AncientStatueRestore.Restore in OwnTeleportSequence - same placement
-        /// reasoning: OwnWorldLootReset.ResetWorldLoot just closed every Luggage in the
-        /// scene, so this has to run after that or it'd be undone immediately.
-        /// Candidates are matched to saved states by ascending distance from the
-        /// campfire, on both sides - reliable as long as the scene regenerates
-        /// identically (fixed map seed, already relied on elsewhere in this mod)
+        /// AncientStatueRestore.Restore since OwnWorldLootReset.ResetWorldLoot must run
+        /// first. Candidates are matched to saved states by ascending distance from the
+        /// campfire, reliable as long as the scene regenerates identically (fixed map seed).
         /// </summary>
         public static void Restore(OwnSaveData data, Vector3 fallbackPos, ManualLogSource log)
         {
@@ -149,8 +125,7 @@ namespace PEAKQuickResume
         {
             if (state == null || !state.opened) return;
 
-            // Defensive only - ResetWorldLoot should already have closed it (see
-            // AncientStatueRestore's own identical guard for why this can't be assumed away)
+            // Defensive: ResetWorldLoot should already have closed it.
             if (box.IsOpen) return;
 
             PhotonView pv = box.GetComponent<PhotonView>();
@@ -160,9 +135,7 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // spawnItems=false: marks it Open (plays the open animation) without the
-            // vanilla flow rolling a fresh random item - mirrors RespawnChest.Break()
-            // exactly, see class remarks
+            // spawnItems=false: marks it Open without the vanilla flow rolling a fresh random item.
             pv.RPC("OpenLuggageRPC", RpcTarget.AllBuffered, false);
             log.Trace($"LuggageRestore: restored luggage '{box.name}' to its open state.");
 
@@ -176,8 +149,6 @@ namespace PEAKQuickResume
                     continue;
                 }
 
-                // Spawn at the item's OWN captured position/rotation, not a configured
-                // spawn spot or a slot index - see OwnSavedPositionedItem's remarks
                 Vector3 spawnPos = new Vector3(saved.posX, saved.posY, saved.posZ);
                 Quaternion spawnRot = new Quaternion(saved.rotX, saved.rotY, saved.rotZ, saved.rotW);
 
@@ -197,9 +168,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Excludes RespawnChest (the Ancient Statue, handled separately) even though
-        // it's technically a Luggage subclass. Sorted by ascending distance from the
-        // campfire so capture/restore pair candidates up consistently (see Restore)
+        // Excludes RespawnChest (the Ancient Statue) even though it's a Luggage subclass.
         private static List<Luggage> FindLuggageNear(Vector3 center)
         {
             return UnityEngine.Object.FindObjectsByType<Luggage>(FindObjectsSortMode.None)

@@ -11,59 +11,29 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own port of <c>SavePlayerOffline</c>/<c>SavePlayerCoop</c> (decompile
-    /// 3715-4603, ported M6/M7). The save-file writer - writes each save event straight
-    /// into the store (<see cref="OwnSavePaths.For"/>, i.e. QuickResume/Archive) and
-    /// then triggers <see cref="BackpackSaveMitigation.ApplyPendingRestores"/> to patch
-    /// the just-written file(s) for dropped-backpack restores. Nothing is copied
-    /// anywhere afterwards: the archive IS the store, so there's no second
-    /// canonical file to keep in step and no sync pass at all
+    /// The save-file writer: writes each save event into the store
+    /// (<see cref="OwnSavePaths.For"/>) and triggers
+    /// <see cref="BackpackSaveMitigation.ApplyPendingRestores"/> to patch dropped-backpack
+    /// restores into the just-written file(s). The archive IS the store, so nothing is
+    /// copied anywhere afterward. Every file in one save event shares a single
+    /// <see cref="OwnSavePaths.NewEventStamp"/> baked into its filename, letting a load
+    /// find the co-op siblings belonging to that event (see <see cref="SaveSelection"/>).
     ///
-    /// Every file in one save event shares a single <see cref="OwnSavePaths.NewEventStamp"/>
-    /// baked into its filename, which is what lets a load find exactly the co-op siblings
-    /// belonging to that event (see <see cref="SaveSelection"/>)
-    ///
-    /// CO-OP FIELD SPLIT (see <see cref="SaveSelection"/> for the matching read side):
-    /// level/world state - which island and segment, the teleport position, time of day,
-    /// the day counter, ground items, luggage, the ancient statue, deployables, and the
-    /// run-level metadata the F7 picker shows - is written ONLY into the host's file.
-    /// A client's file carries only that client's OWN state: inventory, backpack, held
-    /// item, afflictions, extra stamina, skeleton flag, thorns, ticks, achievement
-    /// progress. Earlier versions stamped a full copy of the world state into every
-    /// player's file, which meant a client's save could be loaded (or hand-edited) as if
-    /// it were authoritative for the level and silently restore a different moment's
-    /// world than the host's file described
-    ///
-    /// The 13 repeated per-key blocks in the original (one `if (TryGetKey(...) &amp;&amp;
-    /// TryGetEntryObject(...) &amp;&amp; TryReadEntryNumeric(...))` per key, identical
-    /// shape every time except two keys additionally check <c>ExcludedItemIds</c>) are
-    /// collapsed into one loop over <see cref="OwnItemStateIO.ItemStateKeyNames"/> -
-    /// a mechanical simplification, not a behavior change: confirmed from the
-    /// decompile that every block is otherwise identical, and the exclusion check
-    /// only ever applies to "ItemUses"/"UseRemainingPercentage" (decompile 3825,
-    /// 3841, 3953, 3969)
+    /// CO-OP FIELD SPLIT: level/world state (island, segment, position, time, ground
+    /// items, statue, deployables, run metadata) is written only into the host's file.
+    /// A client's file carries only that client's own state (inventory, backpack, held
+    /// item, afflictions, thorns, ticks, achievement progress), so a client's save can
+    /// never be loaded as authoritative for the level.
     /// </summary>
     public static class OwnSaveCapture
     {
-        // Matches ItemStateKeyNames entries whose exclusion is checked against
-        // ExcludedItemIds when capturing (decompile: only these two)
         private static readonly HashSet<string> ExcludableKeys = new HashSet<string> { "ItemUses", "UseRemainingPercentage" };
 
         /// <summary>
-        /// Mirrors SavePlayerCoop exactly (decompile 4139-4603). Unlike
-        /// <see cref="SavePlayerOffline"/> (one local player), this saves EVERY
-        /// connected player's own file in one pass - only ever actually invoked on the
-        /// master client at its call sites (<see cref="CampfireAutoSavePatch"/>'s
-        /// master branch, <see cref="OwnNetworkRpc.RPC_RequestSave"/>'s master-only
-        /// guard), matching the original's own call-site-gated (not internally
-        /// guarded) shape exactly - no internal IsMasterClient check added here either
-        ///
-        /// The original's stale-coop-file cleanup (decompile 4201-4228, deleting the
-        /// existing files for this ascent bucket before rewriting them) is deliberately
-        /// NOT carried over: it only made sense when a single canonical file per player
-        /// had to be kept current. The store is append-only now - each event writes its
-        /// own set of files under its own stamp - so a player who left simply has no file
-        /// in later events, which is exactly the state a load needs to see anyway
+        /// Saves every connected player's own file in one pass. Only ever invoked on the
+        /// master client at its call sites; no internal IsMasterClient check here.
+        /// No stale-file cleanup: the store is append-only, so a player who left simply
+        /// has no file in later events.
         /// </summary>
         public static void SavePlayerCoop(PluginConfig cfg, ManualLogSource log, OwnNetwork network)
         {
@@ -71,8 +41,6 @@ namespace PEAKQuickResume
             {
                 SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
 
-                // One stamp for the whole event, shared by every player's filename - see
-                // the class remarks and SaveSelection
                 string stamp = OwnSavePaths.NewEventStamp();
                 string hostUserId = OwnSavePaths.LocalUserId();
 
@@ -83,12 +51,8 @@ namespace PEAKQuickResume
                     if (p != null) playerNames.Add(p.character.characterName);
                 }
 
-                // World state (not per-player) - captured once around the anchor resolved
-                // below and written ONLY into the host's own file, see the class remarks
-                // for the field split. One shared "claimed" set threads through all three
-                // captures so the same physical item never ends up saved twice under two
-                // different mechanics - see WorldItemRestore's class remarks for why that
-                // matters
+                // One shared "claimed" set threads through all three captures so the same
+                // physical item never ends up saved twice under two different mechanics.
                 Vector3 worldAnchor = ResolveWorldAnchor(allPlayers, log);
                 var claimedItems = new HashSet<Item>();
                 AncientStatueRestore.Capture(worldAnchor, claimedItems, log, out OwnSavedStatueState statueState);
@@ -97,9 +61,8 @@ namespace PEAKQuickResume
                 DeployableRestore.CaptureStoves(worldAnchor, log, out List<OwnSavedDeployableState> portableStoves);
                 DeployableRestore.CaptureCannons(worldAnchor, log, out List<OwnSavedDeployableState> scoutCannons);
 
-                // The rest of the level/world half. Read once here rather than re-read
-                // identically on every iteration below - these describe the run and the
-                // level, not any one player, and only ever land in the host's own file
+                // Read once here rather than re-read on every iteration below; these describe
+                // the run/level, not any one player, and only land in the host's own file.
                 string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
 
                 RunManager runManager = UnityEngine.Object.FindFirstObjectByType<RunManager>();
@@ -117,18 +80,13 @@ namespace PEAKQuickResume
                 foreach (Biome.BiomeType biome in mapHandler.biomes)
                 {
                     biomeNames.Add(biome.ToString());
-                    // Mirrors the original's own biome-variant campfire-naming quirk
-                    // exactly (decompile 4087-4094): Roots-variant Tropics and
-                    // Mesa-variant Alpine name their campfire after the biome instead
-                    // of the segment
+                    // Roots-variant Tropics and Mesa-variant Alpine name their campfire after the biome.
                     if (biome == Biome.BiomeType.Roots && currentSegment == Segment.Tropics) campfireName = biome.ToString();
                     else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                 }
 
-                // The hand-written variant cases above only ever knew about Roots and
-                // Mesa, so 2.0.a's two new areas saved as plain "Caldera"/"TheKiln". Ask
-                // the game for the real area name and keep the above purely as a
-                // fallback - see AreaNameCompat
+                // The hand-written variant cases above don't cover 2.0.a's new areas; ask the
+                // game for the real area name and keep the above purely as a fallback.
                 campfireName = AreaNameCompat.ResolveAreaName(currentSegment, campfireName, log);
 
                 foreach (Player player in allPlayers)
@@ -142,14 +100,10 @@ namespace PEAKQuickResume
                     string userId = NetworkingUtilities.GetUserId(player);
                     string path = OwnSavePaths.For(target, offline: false, userId: userId, stamp: stamp);
 
-                    // Only the host's own file carries the level/world half of the save.
-                    // This method only ever runs on the master client, so the one Player
-                    // whose view IsMine is the host's - a local, always-available signal,
-                    // unlike the userId string, which can come back empty. Falls back to
-                    // comparing userIds if there's no view at all, and to "everyone" if
-                    // that's unavailable too: writing an event with no world state in it
-                    // anywhere would leave it permanently unloadable, which is worse than
-                    // writing a redundant copy
+                    // Only the host's file carries the level/world half. playerPv.IsMine is a
+                    // local, always-available signal, unlike userId which can come back empty;
+                    // falls back to comparing userIds, then to "everyone" rather than risk an
+                    // event with no world state anywhere (permanently unloadable).
                     PhotonView playerPv = player.GetComponent<PhotonView>();
                     bool isHostFile = playerPv != null
                         ? playerPv.IsMine
@@ -171,19 +125,15 @@ namespace PEAKQuickResume
                     extraStamina = Mathf.Clamp(extraStamina, 0f, 1f);
                     extraStamina = (float)Math.Round(extraStamina, 2);
 
-                    // AchievementManager is a client-LOCAL singleton - we only ever see
-                    // our OWN achievement progress directly. For every other player,
-                    // ReconnectHandler.TryGetReconnectData gives us the game's own
-                    // native, already-kept-up-to-date host-side copy of that player's
-                    // progress (the same one the game uses for its own disconnect/
-                    // reconnect support) - see AchievementProgressIO's remarks
+                    // AchievementManager is a client-local singleton; for other players,
+                    // ReconnectHandler.TryGetReconnectData gives the game's host-side copy of
+                    // that player's progress instead.
                     OwnSavedAchievementProgress achievementProgress = (playerPv != null && playerPv.IsMine)
                         ? AchievementProgressIO.CaptureLocal(log)
                         : (ReconnectHandler.TryGetReconnectData(userId, out _, out SerializableRunBasedValues remoteProgress)
                             ? AchievementProgressIO.ToSaved(remoteProgress, log)
                             : null);
 
-                    // Per-player half - written into every file, including the host's
                     var data = new OwnSaveData
                     {
                         settingsVersion = SaveArchive.CurrentSettingsVersion,
@@ -192,11 +142,9 @@ namespace PEAKQuickResume
                         backpackType = BackpackTypeCompat.Capture(player),
                         backpackOwnValues = CaptureBackpackOwnValues(player, log),
                         isSkeleton = character.data.isSkeleton,
-                        // Own addition (see OwnSaveData.isDead / DeathStateRestore): who was
-                        // a spectating ghost at save time, so a load can put them back that
-                        // way instead of silently reviving everyone. Deliberately only
-                        // data.dead - a merely passed-out player is knocked out, not dead,
-                        // and the load's own revive step legitimately brings them back up
+                        // Who was a spectating ghost at save time, so a load can restore that
+                        // instead of reviving everyone. Only data.dead - a merely passed-out
+                        // player is knocked out, not dead, and gets legitimately revived on load.
                         isDead = character != null && character.data.dead,
                         inventoryItemStates = inventoryStates,
                         backpackItemStates = backpackStates,
@@ -209,11 +157,8 @@ namespace PEAKQuickResume
                         gameVersion = GameVersionCompat.Current,
                     };
 
-                    // Level/world half - host's file only, see the class remarks. The
-                    // saved position is the world anchor resolved once above (normally
-                    // the host's own): it's the teleport target every player is warped to
-                    // on load, not a per-player spawn point, so a client's own position is
-                    // never captured and never restored
+                    // The saved position is the teleport target every player is warped to on
+                    // load, not a per-player spawn point - a client's own position is never captured.
                     if (isHostFile)
                     {
                         data.posX = worldAnchor.x;
@@ -243,14 +188,10 @@ namespace PEAKQuickResume
                         + (isHostFile ? $", Pos: {worldAnchor}, Scene: {sceneName}." : "."));
                 }
 
-                // Mirrors decompile lines 4585-4586: local ShowMessage on the host, then
-                // RpcTarget.Others so every client sees it too
                 string savedMsg = MessagesLocalization.Get(MsgKey.SavedGameProgress);
                 network?.MessageOverlay?.Show(savedMsg, new Color(0.5f, 1f, 0.5f, 1f), 4f);
                 network?.SendMessageOthers(savedMsg, "success", 4f);
 
-                // Patch the just-written file(s) for any pending dropped-backpack restores.
-                // No archive step follows - the files above ARE the archive entries
                 BackpackSaveMitigation.ApplyPendingRestores(offline: false, stamp, log);
             }
             catch (Exception e)
@@ -260,24 +201,12 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Where the WORLD half of a co-op save is anchored: the position written into the
-        /// host's file (the teleport target every player is warped to on load) AND the search
-        /// centre for the ancient statue / luggage / ground item / deployable capture
-        ///
-        /// Normally simply the host's own head, exactly as before. The exception this method
-        /// exists for is a session-reported bug (2026-07-26): a dead character's ragdoll is
-        /// dragged every FixedUpdate towards <c>Character.DeathPos()</c>, a fixed spot at
-        /// <c>(0, 5000, -5000)</c> far outside the map, so a checkpoint written while the HOST
-        /// was dead (a client lighting the campfire is enough to trigger one - see
-        /// <c>RPC_RequestSave</c>) anchored the entire world half in that empty death zone.
-        /// The result was a save whose statue/luggage/ground-item capture found nothing at all
-        /// and whose teleport target was 5km off the map, so loading it warped everyone into
-        /// the void and no terrain ever loaded around them
-        ///
-        /// A dead host's own position is therefore never used: the anchor falls back to any
-        /// LIVING player (they're standing at the campfire that triggered the save - that's
-        /// what a checkpoint is), and only if there isn't one to the campfire this checkpoint
-        /// belongs to. The host-is-alive path is untouched, so nothing about a normal save changes
+        /// Where the world half of a co-op save is anchored: the teleport target every
+        /// player is warped to on load, and the search centre for statue/luggage/ground-item
+        /// capture. Normally the host's own head. A dead character's ragdoll is dragged
+        /// toward a fixed off-map death position, so a checkpoint written while the host was
+        /// dead would otherwise anchor the whole save 5km off the map. A dead host's position
+        /// is therefore never used: falls back to any living player, then the checkpoint's own campfire.
         /// </summary>
         private static Vector3 ResolveWorldAnchor(Player[] allPlayers, ManualLogSource log)
         {
@@ -299,9 +228,7 @@ namespace PEAKQuickResume
                 }
             }
 
-            // Nobody alive at all. Not reachable in a normal run (vanilla ends the run the
-            // moment every player is dead), so this is purely belt-and-braces: the campfire
-            // this checkpoint belongs to is still a far better anchor than the death zone
+            // Nobody alive at all - not reachable in a normal run, purely belt-and-braces.
             try
             {
                 Campfire campfire = MapHandler.PreviousCampfire;
@@ -324,12 +251,7 @@ namespace PEAKQuickResume
             return local != null ? local.Head : Vector3.zero;
         }
 
-        /// <summary>
-        /// Mirrors SavePlayerOffline (decompile 3715-4137), plus one deliberate deviation:
-        /// the original shows no on-screen confirmation for a solo autosave, but
-        /// SavePlayerCoop's host/client branches both do - an inconsistency players
-        /// noticed, so we show the same "Saved game progress" message here too
-        /// </summary>
+        /// <summary>Also shows the "Saved game progress" message here, matching SavePlayerCoop's confirmation.</summary>
         public static void SavePlayerOffline(PluginConfig cfg, ManualLogSource log, OwnMessageOverlay messageOverlay = null)
         {
             try
@@ -341,8 +263,6 @@ namespace PEAKQuickResume
                     return;
                 }
 
-                // Matches GetPlayerSaveFile exactly: custom runs save to their own file
-                // regardless of ascent, read live off RunSettings.IsCustomRun
                 SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
                 string stamp = OwnSavePaths.NewEventStamp();
                 string path = OwnSavePaths.For(target, offline: true, userId: "", stamp: stamp);
@@ -388,26 +308,19 @@ namespace PEAKQuickResume
                 foreach (Biome.BiomeType biome in mapHandler.biomes)
                 {
                     biomeNames.Add(biome.ToString());
-                    // Mirrors the original's own biome-variant campfire-naming quirk
-                    // exactly (decompile 4087-4094): Roots-variant Tropics and
-                    // Mesa-variant Alpine name their campfire after the biome instead
-                    // of the segment
+                    // Roots-variant Tropics and Mesa-variant Alpine name their campfire after the biome.
                     if (biome == Biome.BiomeType.Roots && currentSegment == Segment.Tropics) campfireName = biome.ToString();
                     else if (biome == Biome.BiomeType.Mesa && currentSegment == Segment.Alpine) campfireName = biome.ToString();
                 }
 
-                // The hand-written variant cases above only ever knew about Roots and
-                // Mesa, so 2.0.a's two new areas saved as plain "Caldera"/"TheKiln". Ask
-                // the game for the real area name and keep the above purely as a
-                // fallback - see AreaNameCompat
+                // The hand-written variant cases above don't cover 2.0.a's new areas; ask the
+                // game for the real area name and keep the above purely as a fallback.
                 campfireName = AreaNameCompat.ResolveAreaName(currentSegment, campfireName, log);
 
                 OwnSavedAchievementProgress achievementProgress = AchievementProgressIO.CaptureLocal(log);
 
                 var data = new OwnSaveData
                 {
-                    // Offline has exactly one player, so this single file is both the host
-                    // file and that player's own file - no split to make here
                     settingsVersion = SaveArchive.CurrentSettingsVersion,
                     posX = pos.x,
                     posY = pos.y,
@@ -426,10 +339,8 @@ namespace PEAKQuickResume
                     backpackType = BackpackTypeCompat.Capture(localPlayer),
                     backpackOwnValues = CaptureBackpackOwnValues(localPlayer, log),
                     isSkeleton = Character.localCharacter.data.isSkeleton,
-                    // Captured for save-shape consistency only - solo can never actually
-                    // reach a saved-while-dead state (the one player being dead IS the
-                    // whole team being dead, which ends the run), and the restore side
-                    // ignores this field entirely offline. See DeathStateRestore
+                    // For save-shape consistency only - solo can never reach a saved-while-dead
+                    // state, and the restore side ignores this field offline.
                     isDead = Character.localCharacter.data.dead,
                     inventoryItemStates = inventoryStates,
                     backpackItemStates = backpackStates,
@@ -454,8 +365,6 @@ namespace PEAKQuickResume
 
                 messageOverlay?.Show(MessagesLocalization.Get(MsgKey.SavedGameProgress), new Color(0.5f, 1f, 0.5f, 1f), 4f);
 
-                // Patch the just-written file for any pending dropped-backpack restores.
-                // No archive step follows - the file above IS the archive entry
                 BackpackSaveMitigation.ApplyPendingRestores(offline: true, stamp, log);
             }
             catch (Exception e)
@@ -464,10 +373,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Mirrors decompile 3806-3933 (inventory item-state capture). Note: slotIndex
-        // here is a COMPACTED count of non-empty slots seen so far, NOT the raw array
-        // index - matches the original exactly (its own `num` counter only increments
-        // inside the non-empty branch)
+        // slotIndex here is a compacted count of non-empty slots seen so far, not the raw array index.
         private static List<OwnSavedItemState> CaptureInventory(Player localPlayer, PluginConfig cfg, ManualLogSource log)
         {
             var result = new List<OwnSavedItemState>();
@@ -489,12 +395,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// The worn backpack's OWN stats, as opposed to <see cref="CaptureBackpack"/>'s
-        /// walk of what's inside it. This is where a Jetpack's/Rocketpack's fuel lives
-        /// (<c>DataEntryKey.Fuel</c> on the backpack slot's own ItemInstanceData), which
-        /// nothing captured before - so a worn jetpack always came back at default fuel,
-        /// while the very same jetpack dropped on the ground restored correctly, because
-        /// world items are captured whole. Null when there's no backpack to describe
+        /// The worn backpack's own stats (e.g. Jetpack/Rocketpack fuel), as opposed to
+        /// <see cref="CaptureBackpack"/>'s walk of what's inside it. Null when there's no backpack.
         /// </summary>
         private static Dictionary<string, OwnSavedEntry> CaptureBackpackOwnValues(Player localPlayer, ManualLogSource log)
         {
@@ -506,14 +408,11 @@ namespace PEAKQuickResume
                 if (instanceData == null) return null;
 
                 var values = new Dictionary<string, OwnSavedEntry>();
-                // itemID only drives the ExcludedItemIds consumable carve-out, which can't
-                // apply to a backpack - 0 simply means "not an excluded consumable"
+                // itemID 0 means "not an excluded consumable" - the exclusion carve-out can't apply to a backpack.
                 CaptureItemStateValues(instanceData, 0, values, log);
 
-                // Only the PREFAB carries the JetpackItem component (the worn backpack is a
-                // slot, not a live item), while the values live on the slot's instance
-                // data - hence the two separate arguments. Without an explicit Fuel here a
-                // worn jetpack restores as a full tank, same as a loose one
+                // Only the prefab carries the JetpackItem component, while values live on the
+                // slot's instance data - hence the two separate arguments.
                 BackpackTypeCompat.EnsureFuelCaptured(localPlayer.backpackSlot?.prefab, instanceData, values, log);
 
                 return values.Count > 0 ? values : null;
@@ -525,8 +424,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Mirrors decompile 3934-4069 (backpack item-state capture). slotIndex here IS
-        // the raw byte index into backpackData.itemSlots, matching the original exactly
+        // slotIndex here is the raw byte index into backpackData.itemSlots.
         private static List<OwnSavedBackpackItemState> CaptureBackpack(Player localPlayer, PluginConfig cfg, ManualLogSource log)
         {
             var result = new List<OwnSavedBackpackItemState>();
@@ -554,12 +452,8 @@ namespace PEAKQuickResume
             return result;
         }
 
-        // New capture, not a port (see OwnSaveData.heldItemState remarks): the item
-        // sitting in Player.tempFullSlot (slot ID 250), i.e. the 4th item held in
-        // hand when all 3 regular itemSlots are already full. Same shape as
-        // CaptureInventory's per-item state but for the single fixed temp slot instead
-        // of a loop - slotIndex is stamped as 250 purely for readability in the saved
-        // JSON, restore never reads it back
+        // Captures the item in Player.tempFullSlot (slot ID 250), the 4th item held when all
+        // 3 regular itemSlots are full. slotIndex is stamped as 250 for JSON readability only.
         private static OwnSavedItemState CaptureHeldItem(Player localPlayer, ManualLogSource log)
         {
             ItemSlot slot = localPlayer?.tempFullSlot;
@@ -572,7 +466,6 @@ namespace PEAKQuickResume
             return state;
         }
 
-        // Mirrors the 13 repeated per-key blocks exactly (see class remarks)
         private static void CaptureItemStateValues(ItemInstanceData instanceData, ushort itemId, Dictionary<string, OwnSavedEntry> values, ManualLogSource log)
         {
             bool excluded = OwnItemStateIO.ExcludedItemIds.Contains(itemId);
@@ -589,7 +482,6 @@ namespace PEAKQuickResume
 
         private static Player _cachedLocalPlayer;
 
-        // Mirrors GetLocalPlayer exactly (decompile 2151-2175)
         private static Player FindLocalPlayer(ManualLogSource log)
         {
             if (_cachedLocalPlayer != null) return _cachedLocalPlayer;

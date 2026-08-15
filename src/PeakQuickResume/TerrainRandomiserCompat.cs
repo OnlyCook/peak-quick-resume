@@ -7,37 +7,18 @@ using HarmonyLib;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Soft compat with Snosz's TerrainRandomiser (tested against 1.1.7). That mod
-    /// re-generates the level's biome layout from scratch on EVERY
-    /// <c>MapHandler.InitializeMap</c> call, gated only on its own
-    /// <c>Plugin.Instance.roomMapSettings.enableRandomiser</c> flag - it has no concept
-    /// of "this scene load is a Quick Resume of a saved level, not a fresh Boarding
-    /// Pass start". Left alone, that regenerates a different terrain layout than
-    /// whatever was actually saved, so an F7 load into a level ends up with props and
-    /// geometry that no longer match the restored save (session-reported: loading a
-    /// save via F7 visibly re-randomizes the terrain).
+    /// Soft compat with Snosz's TerrainRandomiser (tested against 1.1.7), which
+    /// re-generates the level's biome layout on every <c>MapHandler.InitializeMap</c> call
+    /// with no concept of "this is a Quick Resume, not a fresh Boarding Pass start" - so an
+    /// F7 load ends up with terrain that no longer matches the restored save.
+    /// <c>roomMapSettings.enableRandomiser</c> isn't reset between scene loads either, so a
+    /// leftover "true" from an earlier run is what actually triggers it.
     ///
-    /// <c>roomMapSettings.enableRandomiser</c> also isn't reset between scene loads -
-    /// it only gets set by TerrainRandomiser's own <c>BoardingPass.StartGame</c> patch
-    /// (which our own resume flow deliberately bypasses, see <c>RunLauncher.StartRun</c>
-    /// - it calls <c>kiosk.StartGame</c> directly) or by its Photon room-property sync,
-    /// so a leftover "true" from any earlier normal run in the same session is what
-    /// actually triggers the re-randomization on a later F7 load, not anything about
-    /// the load itself.
+    /// Fix: a prefix (Priority.First, ahead of TerrainRandomiser's own) temporarily forces
+    /// <c>enableRandomiser</c> false during our own resume loads; a postfix restores it after.
     ///
-    /// Fix: patch <c>MapHandler.InitializeMap</c> ourselves with a prefix that runs
-    /// BEFORE TerrainRandomiser's own (Priority.First vs its default Priority.Normal),
-    /// and when <see cref="OwnLoadEntryPoints"/> tells us THIS load is our own resume,
-    /// temporarily force <c>enableRandomiser</c> false so TerrainRandomiser's own prefix
-    /// no-ops for this one call. A postfix restores the original value right after, so
-    /// the player's actual TerrainRandomiser setting is untouched for their next real
-    /// Boarding Pass start (which resets it fresh anyway, this is just defense in depth).
-    ///
-    /// Reflection-only throughout: no compile-time or runtime dependency on
-    /// TerrainRandomiser being installed at all. The patch is only applied if its
-    /// assembly is actually loaded, and every field lookup is verified up front, so a
-    /// future TerrainRandomiser update that renames/removes these fields just disables
-    /// this compat patch (logged) instead of throwing at load-order-sensitive times
+    /// Reflection-only, no dependency on TerrainRandomiser being installed. A future
+    /// TerrainRandomiser update that renames these fields just disables this patch (logged).
     /// </summary>
     public static class TerrainRandomiserCompat
     {

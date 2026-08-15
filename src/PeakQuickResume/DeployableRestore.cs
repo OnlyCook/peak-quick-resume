@@ -7,55 +7,23 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Native save/restore for two player-placed deployables around the loaded
-    /// campfire: the Portable Stove ("PortableStovetop_Placed") and the Scout Cannon
-    /// ("ScoutCannon_Placed"). A third, the Checkpoint Flag, was tried (its own
-    /// per-player binding logic, since removed) and reverted - session-confirmed
-    /// broken in solo (a planted flag came back missing after save/load) - see
-    /// ROADMAP.md's "Deployable restore" section for the full writeup and why it
-    /// wasn't worth chasing further for what's a minor QoL mechanic
+    /// Save/restore for two player-placed deployables near the loaded campfire: the
+    /// Portable Stove and the Scout Cannon. A third, the Checkpoint Flag, was tried and
+    /// reverted (broken in solo) - see ROADMAP.md's "Deployable restore" section.
     ///
-    /// Genuinely new ground, not a port: <see cref="OwnWorldLootReset"/>'s class remarks
-    /// (ROADMAP.md Phase 8) already established that the checkpoint mod's own
-    /// "world object state" list (which includes these exact two prefab names, plus
-    /// the flag, plus several others this mod doesn't restore) is destroy-only - on a
-    /// repeat load it deletes any player-placed instance matching those names and
-    /// never puts anything back. Nothing in the game's own save systems tracks these
-    /// either. This class is the first thing that actually restores them
-    ///
-    /// Both are built via the game's own generic <c>Constructable</c> ItemComponent
-    /// (decompile: <c>Constructable.FinishConstruction</c>) - a plain placed prop with
-    /// a <c>PhotonView</c>, spawned with <c>PhotonNetwork.Instantiate(prefabName, pos,
-    /// rot, 0)</c> exactly like the vanilla construction flow itself does (confirmed:
-    /// <c>constructedPrefab.GetComponent&lt;PhotonView&gt;() != null</c> for the
-    /// PUN-instantiate branch, the only one either of these prefabs could plausibly
-    /// use given they're networked, interactible props). Restoring them is exactly
-    /// that same call with the saved position/rotation instead of a fresh preview hit
-    ///
-    /// Deliberately position/rotation only - no burn state, no fuel, no fired/lit
-    /// flag: the Portable Stove is a plain <c>Campfire</c> instance (confirmed via the
-    /// checkpoint mod's own <c>Campfire_AutoSave_Patch</c>, which excludes objects
-    /// named "PortableStovetop_Placed" from ever counting as an autosave trigger -
-    /// there is no dedicated "PortableStove" class at all) and the Scout Cannon
-    /// (decompile: <c>ScoutCannon</c>) only has a transient ~4s lit/firing window with
-    /// no persistent ammo/fuel/already-fired state - both are fully reusable exactly
-    /// as freshly placed, with nothing meaningful left to capture beyond "it exists,
-    /// here". Matches this mod's existing restore mechanics' own bias (see
-    /// WorldItemRestore's remarks): correctness/robustness over full-fidelity replay
-    ///
-    /// Host-only throughout (world state, not per-player). Every step is wrapped and
-    /// non-fatal: this class never touches disk, so a failure here can only mean a
-    /// deployable restores wrong (or not at all), never a corrupted save
+    /// The checkpoint mod's own stale-object cleanup destroys any player-placed
+    /// instance of these on a repeat load and never restores them; this class is the
+    /// first thing that actually does. Both are spawned via PhotonNetwork.Instantiate
+    /// at the saved position/rotation, same as the vanilla construction flow.
+    /// Position/rotation only - no burn/fuel/fired state, since neither prop has any
+    /// meaningful persistent state beyond existing. Host-only; every step fails soft
+    /// since this class never touches disk.
     /// </summary>
     public static class DeployableRestore
     {
-        // Matches LuggageRestore's own radius - the maintainer's explicit instruction
-        // for this feature ("restore all of those within 30m of the campfire")
         private const float SearchRadius = 30f;
 
-        // Hard cap, not a tuning knob - matches WorldItemRestore's own reasoning: a
-        // buggy or adversarial save file shouldn't be able to make a load spawn an
-        // unbounded number of networked props
+        // Hard cap: a buggy or adversarial save shouldn't spawn unbounded networked props.
         private const int MaxPerType = 20;
 
         public static void CaptureStoves(Vector3 fallbackPos, ManualLogSource log, out List<OwnSavedDeployableState> states)
@@ -71,13 +39,10 @@ namespace PEAKQuickResume
             => Restore("ScoutCannon_Placed", "Scout Cannon", data?.scoutCannons, fallbackPos, log);
 
         /// <summary>
-        /// Called from OwnSaveCapture right before writing OwnSaveData, same call site
-        /// as AncientStatueRestore/LuggageRestore/WorldItemRestore. Only ever considers
-        /// PLAYER-PLACED instances (<c>PhotonView.CreatorActorNr &gt; 0</c>, not a room
-        /// view) - mirrors <see cref="OwnWorldLootReset.DestroyStaleWorldObjects"/>'s own
-        /// filter exactly, so a scene-baked Scout Cannon (e.g. the ones
-        /// <c>ScoutCannonAchievementZone</c> implies exist as level dressing at some
-        /// points) is never touched, saved, or duplicated by this class
+        /// Called from OwnSaveCapture before writing OwnSaveData. Only considers
+        /// player-placed instances (CreatorActorNr > 0, not a room view), mirroring
+        /// OwnWorldLootReset.DestroyStaleWorldObjects's filter, so a scene-baked prop is
+        /// never touched.
         /// </summary>
         private static void Capture(string prefabNameNeedle, string label, Vector3 fallbackPos, ManualLogSource log, out List<OwnSavedDeployableState> states)
         {
@@ -112,14 +77,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Called once per load (host-only, world state), from OwnTeleportSequence -
-        /// unlike AncientStatueRestore/LuggageRestore this MUST run after
-        /// <see cref="OwnWorldLootReset.DestroyStaleWorldObjects"/>, not before: that
-        /// pass destroys any player-placed object whose name contains
-        /// "PortableStovetop_Placed"/"ScoutCannon_Placed" (it's in the checkpoint
-        /// mod's own original stale-object list, ported verbatim) on every REPEAT
-        /// load this session - running this restore earlier would have its own fresh
-        /// spawns immediately destroyed by that same pass moments later
+        /// Called once per load (host-only, world state) from OwnTeleportSequence.
+        /// Must run after OwnWorldLootReset.DestroyStaleWorldObjects, not before, or that
+        /// pass would immediately destroy this restore's fresh spawns.
         /// </summary>
         private static void Restore(string prefabName, string label, List<OwnSavedDeployableState> saved, Vector3 fallbackPos, ManualLogSource log)
         {

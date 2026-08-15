@@ -7,31 +7,19 @@ using Photon.Pun;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Builds every on-disk save path this mod uses. There is exactly ONE
-    /// save store - <c>BepInEx/plugins/QuickResume/Archive</c> - and no "canonical"
-    /// current-save file anywhere: <see cref="OwnSaveCapture"/> writes each save event
-    /// straight into the archive, and the load path reads straight back out of it
+    /// Builds every on-disk save path this mod uses. One save store -
+    /// <c>BepInEx/plugins/QuickResume/Archive</c> - with no separate "canonical"
+    /// current-save file: <see cref="OwnSaveCapture"/> writes each event straight into
+    /// the archive, and loading reads straight back out of it. The old shared
+    /// Checkpoint_Save folder is never read, written, or migrated from.
     ///
-    /// The old <c>BepInEx/plugins/Checkpoint_Save</c> folder (dominik0207's "PEAK
-    /// Checkpoint Save", whose layout we used to share) is NEVER read, written, or
-    /// migrated from anymore. That shared folder was the root of two real problems:
-    /// files written by that mod were indistinguishable from ours by name or path, so
-    /// the old archive sync copied them in as if they were ours; and every load went
-    /// through a copy-archive-over-canonical round trip that re-stamped file
-    /// modification times, which is what made hand-editing a save produce duplicated
-    /// picker rows and mismatched client state
-    ///
-    /// Layout (unchanged from the archive format earlier versions already wrote, so
-    /// existing archived saves keep working):
+    /// Layout:
     ///   offline: Archive\Offline\peak_save_{ascent|CustomRun}_offline__{stamp}.json
     ///   coop:    Archive\Coop\peak_save_{ascent|CustomRun}_{userId}__{stamp}.json
     ///
-    /// <c>{stamp}</c> is <see cref="StampFormat"/> and is the SAVE EVENT's identity: one
-    /// value generated per autosave (see <see cref="NewEventStamp"/>) and written into
-    /// every participating player's filename, so the host's file and its co-op siblings
-    /// are matched by exact string equality rather than by guessing from file
-    /// modification times. Editing a file's contents can therefore never break the
-    /// matching, and re-saving can never collide with an existing event
+    /// <c>{stamp}</c> is the save event's identity: one value generated per autosave
+    /// (see <see cref="NewEventStamp"/>) and written into every participating player's
+    /// filename, so co-op siblings are matched by exact string equality, not file mtimes.
     /// </summary>
     public static class OwnSavePaths
     {

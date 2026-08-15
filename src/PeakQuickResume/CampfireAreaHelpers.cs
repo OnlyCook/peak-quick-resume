@@ -9,23 +9,14 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// Shared lookups for the family of "restore an object near the campfire that was
-    /// just saved-at/loaded-at" mechanics (see AncientStatueRestore, LuggageRestore,
-    /// more to come). Factored out once a second consumer needed the exact same two
-    /// pieces of logic - keep this file free of anything mechanic-specific
+    /// just saved-at/loaded-at" mechanics (see AncientStatueRestore, LuggageRestore).
     /// </summary>
     internal static class CampfireAreaHelpers
     {
-        // Deliberately NOT MapHandler.CurrentCampfire (tried first for the statue,
-        // reverted - session-confirmed broken): that resolves off
-        // Singleton<MapHandler>.Instance.currentSegment, which only advances inside
-        // JumpToSegmentLogic - i.e. during an actual teleport. At CAPTURE time
-        // (Campfire.Interact_CastFinished just fired) no teleport has happened yet, so
-        // currentSegment is still the PREVIOUS segment and CurrentCampfire silently
-        // resolves to the wrong, already-passed campfire instead of the one that was
-        // just lit. Finding the nearest real Campfire object to the given position
-        // sidesteps that bookkeeping entirely and is reliable both at capture time (the
-        // player is standing right at the campfire they just lit) and at restore time
-        // (the player's saved position was captured right next to that same campfire)
+        // Deliberately not MapHandler.CurrentCampfire: it resolves off currentSegment,
+        // which hasn't advanced yet at capture time and resolves to the wrong,
+        // already-passed campfire. Finding the nearest real Campfire object sidesteps
+        // that bookkeeping.
         private const float CampfireSearchRadius = 30f;
 
         public static Vector3 ResolveNearestCampfirePos(Vector3 fallbackPos)
@@ -48,23 +39,11 @@ namespace PEAKQuickResume
 
         /// <summary>
         /// Is this actually free-floating world loot, as opposed to a player's own
-        /// equipped gear that merely happens to still read <c>ItemState.Ground</c>?
-        /// Session-confirmed: a worn Backpack's own itemState never flips away from
-        /// Ground while equipped (its Update() only ever toggles ground/held MESH
-        /// visuals off that field, decompile ~176 - it isn't "was this picked up",
-        /// just "which mesh to show"), so a player merely standing near a statue or
-        /// luggage box got their own backpack (and whatever's visually nested inside
-        /// it) swept up as "the item it's holding". Mirrors the exact same check
-        /// <see cref="OwnWorldLootReset.ResetWorldLoot"/> already uses to tell real
-        /// dropped items apart from player-attached ones (decompile-adjacent, not
-        /// itself ported from anywhere - a mitigation for this specific false positive)
-        ///
-        /// <paramref name="includeBackpacks"/> defaults to false (AncientStatueRestore/
-        /// LuggageRestore's own container-item searches never expect a Backpack as
-        /// loot) - WorldItemRestore passes true, since a dropped/naturally-spawned
-        /// backpack IS exactly the kind of ground item it's meant to restore (with its
-        /// own separate exclusion for backpacks BackpackSaveMitigation already owns,
-        /// see that class)
+        /// equipped gear that merely still reads ItemState.Ground (a worn Backpack's
+        /// itemState never flips away from Ground while equipped)? Mirrors the check
+        /// OwnWorldLootReset.ResetWorldLoot uses for the same false positive.
+        /// includeBackpacks defaults to false since AncientStatueRestore/LuggageRestore
+        /// never expect a Backpack as container loot; WorldItemRestore passes true.
         /// </summary>
         public static bool IsFreeWorldItem(Item item, bool includeBackpacks = false)
         {
@@ -75,12 +54,7 @@ namespace PEAKQuickResume
             return true;
         }
 
-        /// <summary>
-        /// The nearest <see cref="IsFreeWorldItem"/> to <paramref name="pos"/> within
-        /// <paramref name="radius"/>, optionally skipping anything already in
-        /// <paramref name="exclude"/> (so a caller matching several spawn spots against
-        /// several nearby items doesn't hand the same physical item to two of them)
-        /// </summary>
+        /// <summary>Nearest free world item to pos within radius, optionally skipping items already in exclude.</summary>
         public static Item FindNearestFreeItem(Vector3 pos, float radius, HashSet<Item> exclude = null)
         {
             Item nearest = null;
@@ -95,11 +69,7 @@ namespace PEAKQuickResume
             return nearest;
         }
 
-        /// <summary>
-        /// Every <see cref="IsFreeWorldItem"/> within <paramref name="radius"/> of
-        /// <paramref name="pos"/>, nearest first, optionally skipping anything already
-        /// in <paramref name="exclude"/> (see <see cref="FindNearestFreeItem"/>)
-        /// </summary>
+        /// <summary>Every free world item within radius of pos, nearest first.</summary>
         public static List<Item> FindFreeItemsWithin(Vector3 pos, float radius, bool includeBackpacks = false, HashSet<Item> exclude = null)
         {
             return UnityEngine.Object.FindObjectsByType<Item>(FindObjectsSortMode.None)
@@ -111,12 +81,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Builds a fresh, populated <c>ItemInstanceData</c> from saved per-item "extra
-        /// stats" (CookedAmount, Fuel, ItemUses, ...) - same OwnItemStateIO mechanism
-        /// OwnInventoryRestore already uses for player inventory/backpack items. Doesn't
-        /// touch any live Item - see <see cref="PushItemInstanceData"/> for why building
-        /// this off to the side and pushing it via RPC, rather than writing values
-        /// directly onto a freshly spawned item's own <c>.data</c>, is required
+        /// Builds a fresh ItemInstanceData from saved per-item "extra stats" (CookedAmount,
+        /// Fuel, ItemUses, ...), same mechanism OwnInventoryRestore uses for player items.
+        /// Doesn't touch any live Item - see PushItemInstanceData for why.
         /// </summary>
         public static ItemInstanceData BuildItemInstanceData(Dictionary<string, OwnSavedEntry> values, ManualLogSource log)
         {
@@ -135,15 +102,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Assigns <paramref name="instanceData"/> onto a freshly spawned item via the
-        /// same RPC the vanilla drop-item flow itself uses (decompile ~6295-6313,
-        /// <c>Item.SetItemInstanceDataRPC</c>) - NOT by writing to the spawned item's
-        /// own <c>.data</c> field directly. Session-confirmed: that field is only ever
-        /// assigned via this same RPC, never synchronously right after
-        /// <c>PhotonNetwork.InstantiateItemRoom</c> returns (its own <c>Start()</c>
-        /// lazily creates an empty one instead, decompile ~9707-9718/10480-10496, before
-        /// this RPC has a chance to land) - writing directly onto <c>.data</c> in the
-        /// same frame as spawning silently no-ops (a cooked item came back raw)
+        /// Assigns instanceData onto a freshly spawned item via the same RPC the vanilla
+        /// drop-item flow uses, not by writing .data directly - that field is only ever
+        /// assigned via this RPC; writing it in the same frame as spawning silently no-ops.
         /// </summary>
         public static void PushItemInstanceData(GameObject spawned, ItemInstanceData instanceData, ManualLogSource log)
         {

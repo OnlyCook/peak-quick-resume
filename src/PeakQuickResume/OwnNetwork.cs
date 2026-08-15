@@ -9,29 +9,14 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own PhotonView/RPC channel (Phase 8 M1), replacing the checkpoint mod's own
-    /// <c>CheckpointNetwork</c> (decompile 461-695) + <c>CreatePhotonView</c> (961-1003)
-    /// + <c>CheckReadyStatusForPlayers</c>/<c>SendReadyStatusToMaster</c> (1005-1054)
+    /// Our PhotonView/RPC channel for coop: save requests, campfire cooldown sync,
+    /// fall-damage protection, messages, loading-screen/watchdog signaling, endscreen
+    /// close, afflictions. <c>RPC_Loadingscreen</c> is repurposed - no caption, its
+    /// load-begin/load-done moments drive <see cref="TeleportWatchdog"/>'s load window
+    /// on every machine instead.
     ///
-    /// M7 adds the rest of the RPC surface needed for coop:
-    /// <c>RPC_RequestSave</c>, <c>RPC_RecentlyLitCampfire</c>,
-    /// <c>RPC_RequestFalldamageProtection</c>, <c>RPC_SendMessage</c>,
-    /// <c>RPC_Loadingscreen</c>, <c>RPC_CloseEndscreen</c>, <c>RPC_ApplyAfflictions</c>
-    /// (decompile 507-682). <c>RPC_SendModVersionToMaster</c>/<c>RPC_SetHeroTitle</c>/
-    /// <c>RPC_SyncMapVisuals</c> are deliberately NOT ported (see ROADMAP.md Phase 8:
-    /// mod-version check unused, hero-title banner is cosmetic, PEAKapalooza-only)
-    ///
-    /// <c>RPC_Loadingscreen</c> is named after the original's "Loading savegame..." UI
-    /// caption (which we don't port - purely cosmetic), but is repurposed: the load-begin
-    /// and load-done moments are the signal that arms/disarms
-    /// <see cref="TeleportWatchdog"/>'s load window on every machine, so this RPC's
-    /// receiver drives the watchdog directly instead of showing a caption, keeping that
-    /// mitigation alive for our own path in coop (see ROADMAP.md Phase 6)
-    ///
-    /// Uses a fixed <c>ViewID</c> (69420) well clear of Photon's auto-allocated range:
-    /// PEAK caps rooms at 4 players (<c>NetworkingUtilities.MAX_PLAYERS</c>, decompile
-    /// line 89482), so with PUN's default 1000 auto-IDs per actor, nothing auto-assigned
-    /// ever gets remotely close to 69420
+    /// Uses a fixed <c>ViewID</c> (69420) well clear of Photon's auto-allocated range
+    /// (PEAK caps rooms at 4 players, so nothing auto-assigned gets remotely close).
     /// </summary>
     public class OwnNetwork : MonoBehaviour
     {
@@ -48,33 +33,20 @@ namespace PEAKQuickResume
         private GameObject _networkGo;
         private PhotonView _pv;
 
-        // Mirrors the checkpoint mod's own playerReceivedReadyStatus (decompile line
-        // 843): userId -> userName, populated only on the master client, reset on
-        // scene transitions exactly like the original (decompile 1345-1413)
+        // userId -> userName, populated only on the master client, reset on scene transitions.
         private readonly Dictionary<string, string> _playerReceivedReadyStatus = new Dictionary<string, string>();
         private bool _clientSentReadyStatus;
 
-        // Own addition: userId -> reported PluginInfo.Version. Diagnostic only (see
-        // ClientPresentationOthers' remarks for why it doesn't gate anything) - logged on
-        // receipt so a session log shows exactly who's running what. Never populated in
-        // solo/offline (no other players to hear from)
+        // userId -> reported PluginInfo.Version. Diagnostic only (see ClientPresentationOthers
+        // for why it doesn't gate anything); never populated in solo/offline.
         private readonly Dictionary<string, string> _playerModVersions = new Dictionary<string, string>();
         private bool _clientSentVersionReport;
 
-        // Own addition: userIds that have confirmed their own local
-        // RunClientPresentationExit (wake-up/fade-out) has actually finished for the
-        // CURRENT presentation cycle. Master-client side only, mirrors
-        // _playerReceivedReadyStatus's own shape. Cleared every time a new cycle starts
-        // (ClientPresentationOthers(true)) so a stale confirmation from a PRIOR load can
-        // never satisfy the wait for a new one. Closes a real gap found via a session
-        // report (2026-07-25): RPC_ClientPresentation(false) was fire-and-forget with no
-        // acknowledgment at all, so the host had zero visibility into whether a client's
-        // own independently-timed wake-up animation had actually finished before a
-        // Restart's GameOverHandler.LoadAirport() tore the scene down underneath it -
-        // confirmed as the cause of a client-side infinite-loading-screen even though the
-        // HOST's own OwnTeleportSequence had already fully completed by then (the
-        // OrchestrationLock fix from the same session only closes the HOST-side half of
-        // this race, not the client's own local presentation timeline)
+        // userIds that have confirmed their own RunClientPresentationExit (wake-up/fade-out)
+        // has finished for the current cycle. Master-client side only. Cleared every time a
+        // new cycle starts so a stale confirmation from a prior load can't satisfy a new wait -
+        // without this a Restart's scene teardown could race a client's still-running wake-up
+        // animation and leave it on an infinite loading screen.
         private readonly Dictionary<string, bool> _playerPresentationDone = new Dictionary<string, bool>();
 
         public void Init(ManualLogSource log, PluginConfig cfg)
@@ -84,12 +56,7 @@ namespace PEAKQuickResume
             CreatePhotonView();
         }
 
-        /// <summary>
-        /// M7: wires the dependencies the rest of the RPC surface needs, set after
-        /// construction since <see cref="OwnLoadEntryPoints"/> is created after this
-        /// object in <c>Plugin.Awake</c> (mirrors <see cref="Init"/>'s own late-binding
-        /// shape rather than restructuring construction order)
-        /// </summary>
+        /// <summary>Wires dependencies set after construction, since <see cref="OwnLoadEntryPoints"/> is created after this object in <c>Plugin.Awake</c>.</summary>
         internal void AttachDependencies(OwnMessageOverlay messageOverlay, TeleportWatchdog watchdog, OwnLoadEntryPoints entryPoints,
             OwnWakeUpEffect wakeUpEffect = null, OwnLoadingScreen loadingScreen = null)
         {
@@ -119,25 +86,16 @@ namespace PEAKQuickResume
             }
         }
 
-        // Handle to the currently-running SendReadyStatusToMaster retry loop (see its
-        // own remarks) so it can be explicitly cancelled on a scene transition instead
-        // of being left to free-run: this component lives DontDestroyOnLoad, so a
-        // coroutine started for one resume attempt otherwise keeps retrying straight
-        // through subsequent Airport returns and fresh level loads, stacking a NEW
-        // retry loop on top of the still-alive old one every time. Confirmed in a real
-        // session log (2026-07-25): RPC_SendReadyStatusToMaster arriving in bursts of
-        // 2-3 at once instead of the coded 3s cadence, continuing well past a resume
-        // that had already completed - multiple overlapping loops on the same channel
+        // Handle to the running SendReadyStatusToMaster retry loop, so it can be explicitly
+        // cancelled on a scene transition - this component lives DontDestroyOnLoad, so an
+        // uncancelled coroutine would keep retrying through subsequent loads, stacking a
+        // new retry loop on top of the still-alive old one every time.
         private Coroutine _readyStatusCoroutine;
 
-        // Unscaled time the current Level scene was entered, or < 0 if not currently in
-        // one - see CheckReadyStatusForPlayers' own remarks (mod-detection grace window)
+        // Unscaled time the current Level scene was entered, or < 0 if not in one - see
+        // CheckReadyStatusForPlayers' mod-detection grace window.
         private float _levelEnteredAt = -1f;
 
-        // Mirrors the checkpoint mod's own Update() scene-based state machine
-        // (decompile 1345-1413) for JUST the ready-status bookkeeping - the rest of
-        // that state machine (mod-version check, campfire cooldowns, etc.) is ported
-        // alongside the pieces that actually need it in later milestones
         private void Update()
         {
             if (_cfg == null) return;
@@ -190,16 +148,10 @@ namespace PEAKQuickResume
             _readyStatusCoroutine = null;
         }
 
-        // Mirrors SendReadyStatusToMaster (decompile 1020-1032): waits for the local
-        // character to exist, then a flat 5s settle, then RPCs the master client.
-        //
-        // Own addition: retries every few seconds instead of firing once. A single
-        // fire-and-forget RPC here raced the host's own hard-timeout WaitFor in real
-        // session logs (2026-07-25, coop across a slower client machine after 1.65.a's
-        // heavier level loads) - the host aborted the whole resume when the one RPC
-        // attempt simply hadn't landed yet. Retrying is safe: OnClientReportedReady is
-        // idempotent (only ever adds to the dict, never harmed by a duplicate), so
-        // resending costs nothing but bandwidth and closes the race
+        // Waits for the local character, a flat 5s settle, then RPCs the master client -
+        // retrying every few seconds rather than firing once, since a single fire-and-forget
+        // RPC raced the host's hard-timeout wait on a slower client machine. Retrying is
+        // safe: OnClientReportedReady is idempotent.
         private IEnumerator SendReadyStatusToMaster()
         {
             while (Character.localCharacter == null) yield return null;
@@ -224,10 +176,8 @@ namespace PEAKQuickResume
             }
         }
 
-        // Own addition: unlike ready-status (which deliberately waits 5s to settle), the version
-        // report has nothing to wait on - send it as soon as the local character exists, so it's
-        // guaranteed to reach the host well before the (5s-delayed) ready-status report does,
-        // which is what the host's own coop wait actually gates on before ever loading a save
+        // Unlike ready-status, has nothing to wait on - sent as soon as the local character
+        // exists, so it reaches the host well before the 5s-delayed ready-status report.
         private IEnumerator ReportVersionToMaster()
         {
             while (Character.localCharacter == null) yield return null;
@@ -243,7 +193,6 @@ namespace PEAKQuickResume
             }
         }
 
-        // Called (master-client side only) by OwnNetworkRpc.RPC_ReportModVersion
         internal void OnClientReportedVersion(string userId, string version)
         {
             try
@@ -258,21 +207,13 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// True once this userId has reported running Quick Resume at all (any version -
-        /// see OwnInventoryRestore's held-item restore for the one place this actually
-        /// gates something, not just a diagnostic). Master-client side only; always false
-        /// offline (nothing to report). No grace window here unlike
-        /// CheckReadyStatusForPlayers/AllClientsPresentationDone: this is only ever
-        /// consulted from OwnInventoryRestore.RestoreAll, which runs well after the coop
-        /// ready-status wait already succeeded - by then a real Quick Resume client's
-        /// version report (sent with no delay, unlike the 5s-delayed ready-status RPC) has
-        /// had ample time to arrive already
+        /// True once this userId has reported running Quick Resume at all (any version).
+        /// Master-client side only; always false offline. Gates the held-item restore in
+        /// <c>OwnInventoryRestore</c>.
         /// </summary>
         public bool PlayerReportedMod(string userId) => _playerModVersions.ContainsKey(userId);
 
-        // Called on the RECEIVING client's machine by OwnNetworkRpc.RPC_ClientPresentation
-        // (sent by the host, see ClientPresentationOthers) - mirrors the host's own local
-        // presentation using this machine's own WakeUpEffect/LoadingScreen instances
+        // Mirrors the host's local presentation using this machine's own WakeUpEffect/LoadingScreen.
         internal void HandleClientPresentation(bool show)
         {
             StartCoroutine(show ? RunClientPresentationEnter() : RunClientPresentationExit());
@@ -280,11 +221,8 @@ namespace PEAKQuickResume
 
         private IEnumerator RunClientPresentationEnter()
         {
-            // The host fires this RPC as soon as ITS OWN character/teleport sequence is ready,
-            // with no guarantee this client's own character has finished spawning into the fresh
-            // level scene yet (confirmed in a real session log: PlayWakeUp saw
-            // Character.localCharacter as null and silently skipped the whole beat). Wait for it
-            // here, with a timeout so a genuinely stuck spawn can't hang this coroutine forever
+            // No guarantee this client's character has finished spawning into the fresh level
+            // scene when the host fires this RPC, so wait for it, with a timeout.
             float waited = 0f;
             const float timeout = 15f;
             while (Character.localCharacter == null && waited < timeout)
@@ -296,9 +234,7 @@ namespace PEAKQuickResume
                 _log?.LogWarning("OwnNetwork.RunClientPresentationEnter: local character still null after "
                     + $"{timeout:F0}s; proceeding anyway (wake-up beat will no-op).");
 
-            // Mirrors the host's own ordering exactly (see OwnTeleportSequence.cs remarks): just
-            // hide the screen here, the collapse/reveal/stand-up happens on RunClientPresentationExit.
-            // DebugDisableLoadingScreen skips just the overlay, same as on the host
+            // Just hides the screen here; collapse/reveal/stand-up happens on RunClientPresentationExit.
             bool showLoadingScreen = _cfg != null && !_cfg.DebugDisableLoadingScreen.Value;
             if (showLoadingScreen && LoadingScreen != null)
                 yield return LoadingScreen.FadeIn(_cfg.OwnLoadingScreenFadeTime.Value);
@@ -306,25 +242,17 @@ namespace PEAKQuickResume
 
         private IEnumerator RunClientPresentationExit()
         {
-            // Mirrors the host's own ordering exactly (see OwnTeleportSequence.cs remarks) -
-            // each client manages its own local timing. Fade-out runs fully before the stand-up
-            // recovery starts, so the recovery plays out entirely in full view
+            // Mirrors the host's ordering; each client manages its own local timing.
             bool showLoadingScreen = _cfg != null && !_cfg.DebugDisableLoadingScreen.Value;
             if (WakeUpEffect != null) WakeUpEffect.Collapse();
 
-            // Same Fairoots hold as the host's own sequence (see OwnTeleportSequence and
-            // FairootsCompat), and it genuinely has to be repeated per client rather than
-            // covered by the host's: every machine runs its own copy of Fairoots' per-level
-            // work, on its own timing, so the host being finished says nothing about whether
-            // this client is
+            // Repeated per client rather than covered by the host's: every machine runs its
+            // own copy of Fairoots' per-level work on its own timing.
             yield return FairootsCompat.WaitUntilReady(_log, () => WakeUpEffect?.RefreshHold());
 
-            // A short pause BEHIND the still-opaque screen before the fade-out itself starts -
-            // same cosmetic breathing room as the host (see OwnTeleportSequence.cs remarks).
-            // Per-frame loop (not a flat WaitForSeconds) so we can re-stamp data.lastPassedOut
-            // every frame - see OwnWakeUpEffect's class remarks: without this, the vanilla "not
-            // really hurt" auto-revive failsafe force-clears passedOut back to false within a
-            // couple of frames of Collapse()
+            // Per-frame loop (not a flat WaitForSeconds) to re-stamp data.lastPassedOut every
+            // frame - otherwise vanilla's "not really hurt" auto-revive failsafe force-clears
+            // passedOut back to false within a couple frames of Collapse().
             if (_cfg != null)
             {
                 float delayElapsed = 0f;
@@ -342,10 +270,7 @@ namespace PEAKQuickResume
             if (WakeUpEffect != null && _cfg != null)
                 yield return WakeUpEffect.Wake(_cfg.OwnWakeUpStandTime.Value);
 
-            // Tell the host this client's own presentation cycle has genuinely finished -
-            // see _playerPresentationDone's remarks for why this matters. Best-effort: if
-            // it's lost, the host's own wait just falls back to its timeout, same as the
-            // ready-status RPC
+            // Best-effort: if lost, the host's wait just falls back to its timeout.
             try
             {
                 _pv?.RPC(nameof(OwnNetworkRpc.RPC_ClientPresentationDone), RpcTarget.MasterClient,
@@ -357,8 +282,6 @@ namespace PEAKQuickResume
             }
         }
 
-        // Called (master-client side only) by OwnNetworkRpc.RPC_SendReadyStatusToMaster.
-        // Mirrors the RPC_SendReadyStatusToMaster guard exactly (decompile 490-505)
         internal void OnClientReportedReady(string userId, string userName)
         {
             try
@@ -379,34 +302,19 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Grace window (seconds since the level was entered) given to a connected
-        /// player to report SOMETHING - either their mod version or their ready status -
-        /// before we give up waiting specifically on their ready-RPC and assume they're
-        /// not running Quick Resume at all. The version report has no settle delay (see
-        /// ReportVersionToMaster) so any player who DOES have the mod reports well within
-        /// this window; well short of CoopReadyTimeout's default 60s, so a genuinely slow
-        /// modded client still gets its full window via the ready-status retry loop -
-        /// this only shortcuts players who were never going to report in the first place
+        /// Grace window (seconds since level entry) given to a player to report something
+        /// before we give up waiting on their ready-RPC and assume they're not running
+        /// Quick Resume. Short enough to only shortcut players who were never going to
+        /// report, well short of CoopReadyTimeout's default 60s.
         /// </summary>
         private const float ModDetectionGraceSeconds = 10f;
 
         /// <summary>
         /// True once every connected non-host player has reported ready (or the
-        /// ready-check setting is disabled). Mirrors <c>CheckReadyStatusForPlayers</c>
-        /// (decompile 1034-1054) field-for-field: every live <c>Player</c>'s owning
-        /// actor must either be the master client itself, or already be present in
-        /// the ready-status dictionary above
-        ///
-        /// Own addition: a player who has ALSO never reported a mod-version, past
-        /// <see cref="ModDetectionGraceSeconds"/> since the level loaded, is treated as
-        /// not running Quick Resume at all (only our own OwnNetwork ever sends either
-        /// RPC) and is exempted from this check entirely - otherwise host-only installs
-        /// (this mod on the host, vanilla or just the original checkpoint mod on
-        /// clients) would hang the full CoopReadyTimeout on every single coop resume,
-        /// not intermittently, since a client that can never send the RPC we're waiting
-        /// on will obviously never send it. Falls back to the existing settle-delay
-        /// timing (SettleAfterLevel/CoopAirportSettle) for that player instead, same as
-        /// if this whole feature didn't exist for them
+        /// ready-check setting is disabled). A player who has also never reported a mod
+        /// version, past <see cref="ModDetectionGraceSeconds"/>, is treated as not running
+        /// Quick Resume and exempted - otherwise a host-only install would hang the full
+        /// CoopReadyTimeout on every coop resume.
         /// </summary>
         public bool CheckReadyStatusForPlayers()
         {
@@ -439,24 +347,21 @@ namespace PEAKQuickResume
             }
         }
 
-        // --- M7: outbound RPC senders, host-called (mirrors each original call site's
-        // own RpcTarget exactly - see decompile line references on each) ---
+        // --- Outbound RPC senders, host-called ---
 
-        /// <summary>Mirrors decompile line 2280: RpcTarget.All (0), so the host arms its own window too</summary>
+        /// <summary>RpcTarget.All so the host arms its own window too.</summary>
         public void RequestFalldamageProtectionAll(int seconds)
         {
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_RequestFalldamageProtection), RpcTarget.All, seconds); }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.RequestFalldamageProtectionAll failed: {e.Message}"); }
         }
 
-        /// <summary>Mirrors decompile line 2292: RpcTarget.Others (1)</summary>
         public void CloseEndscreenOthers()
         {
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_CloseEndscreen), RpcTarget.Others); }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.CloseEndscreenOthers failed: {e.Message}"); }
         }
 
-        /// <summary>Mirrors decompile lines 2973/4586: RpcTarget.Others (1)</summary>
         public void SendMessageOthers(string message, string colorKey, float seconds)
         {
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_SendMessage), RpcTarget.Others, message, colorKey, seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
@@ -464,11 +369,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Mirrors decompile lines 2274/2964's RpcTarget.Others (1), repurposed to drive
-        /// TeleportWatchdog on each client instead of showing a caption - see class remarks.
-        /// The originally-unused second string param now carries the host's real teleport
-        /// <paramref name="target"/> (on the enable=false "load done" call) so a client that
-        /// never received a warp can still recover to it - see RPC_Loadingscreen
+        /// Repurposed to drive TeleportWatchdog on each client instead of showing a caption.
+        /// <paramref name="target"/> carries the host's real teleport target on the "load done"
+        /// call, so a client that never received a warp can still recover to it.
         /// </summary>
         public void LoadingScreenOthers(bool enable, Vector3? target = null)
         {
@@ -502,14 +405,10 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition, no decompile counterpart (no third-party terrain randomizer
-        /// existed when the checkpoint mod was written): arms
-        /// <see cref="OwnLoadEntryPoints.ArmSuppressExternalTerrainRandomizerOnce"/> on
-        /// EVERY peer right before an F7/quick-resume <c>RunLauncher.StartRun</c> call.
-        /// RpcTarget.All (not Others) so the host arms itself too, same reasoning as
-        /// <see cref="RequestFalldamageProtectionAll"/>: <c>MapHandler.InitializeMap</c>
-        /// (what <see cref="TerrainRandomiserCompat"/> patches) runs locally on every
-        /// peer's own machine as the level scene loads there, not just the host's
+        /// Arms <see cref="OwnLoadEntryPoints.ArmSuppressExternalTerrainRandomizerOnce"/> on
+        /// every peer right before a quick-resume <c>RunLauncher.StartRun</c> call.
+        /// RpcTarget.All so the host arms itself too, since <c>MapHandler.InitializeMap</c>
+        /// runs locally on every peer's own machine.
         /// </summary>
         public void ArmTerrainRandomizerSuppressionAll()
         {
@@ -518,13 +417,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition (no decompile counterpart - see OwnSaveData.dayCount remarks):
-        /// unlike timeOfDay, DayNightManager.dayCount has no vanilla RPC keeping it in
-        /// sync across clients, so restoring it needs an explicit broadcast of our own.
-        /// The host applies the value to its own DayNightManager.dayCount directly
-        /// (same instant-local-write pattern as timeOfDay's setTimeOfDay) BEFORE calling
-        /// this, so RpcTarget.Others (not All) is correct here - same shape as
-        /// LoadingScreenOthers/ClientPresentationOthers above
+        /// Unlike timeOfDay, DayNightManager.dayCount has no vanilla RPC keeping it in sync
+        /// across clients, so restoring it needs an explicit broadcast. The host applies the
+        /// value locally before calling this, so RpcTarget.Others (not All) is correct.
         /// </summary>
         public void SyncDayCountAll(int dayCount)
         {
@@ -532,28 +427,14 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.SyncDayCountAll failed: {e.Message}"); }
         }
 
-        /// <summary>Mirrors decompile line 2909: targeted at the specific player's owner</summary>
         /// <summary>
-        /// Pushes a client's saved status effects using VANILLA's own
+        /// Pushes a client's saved status effects using vanilla's own
         /// <c>CharacterAfflictions.RPC_ApplyStatusesFromFloatArray</c>, so it works on a client
-        /// that does not have this mod installed.
-        ///
-        /// Statuses are owner-authoritative: <c>SetStatus</c>, <c>AddStatus</c> and
-        /// <c>SubtractStatus</c> all return early when <c>!character.photonView.IsMine</c> (unless
-        /// <c>fromRPC</c>), and <c>ActuallyPushStatuses</c> only runs on the owner. So the host
-        /// cannot write another player's statuses locally in any way that reaches them - the only
-        /// route is an RPC that executes on their machine
-        ///
-        /// <see cref="ApplyAfflictionsTo"/> does that, but over OUR channel, which simply does not
-        /// exist on an unmodded client - so their afflictions silently went unrestored. Vanilla's
-        /// RPC is guarded by <c>if (info.Sender.IsMasterClient)</c>, i.e. it is purpose-built for a
-        /// host pushing statuses to a client, and applies the array through AddStatus/SubtractStatus
-        /// with <c>fromRPC: true</c>. It skips Weight/Thorns/Arrow, which is what we want - thorns
-        /// are restored separately by <see cref="ThornsAndTicksRestore"/>
-        ///
-        /// Sent on the view PUN itself associates with the afflictions component, and BEFORE our
-        /// own RPC: on a modded client ours lands second and writes the absolute saved values over
-        /// the top, so the two cannot compound
+        /// without this mod (statuses are owner-authoritative, so the host can't write them
+        /// directly - only an RPC on the owner's machine reaches them, and
+        /// <see cref="ApplyAfflictionsTo"/> uses our own channel, which doesn't exist there).
+        /// Vanilla's RPC skips Weight/Thorns/Arrow (thorns are restored separately). Sent
+        /// before our own RPC, so ours lands second and can't compound with it.
         /// </summary>
         public bool ApplyStatusesViaVanilla(Character character, float[] statuses)
         {
@@ -589,12 +470,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition (no decompile counterpart - see OwnSaveData.heldItemState
-        /// remarks): tells the SPECIFIC player who owns this Player/PhotonView to equip
-        /// their own restored tempFullSlot (slot 250) item locally - same targeted-RPC
-        /// shape as <see cref="ApplyAfflictionsTo"/>, for the same reason (host writing
-        /// another client's Character state directly never becomes visible on that
-        /// client's own machine)
+        /// Tells the specific player who owns this PhotonView to equip their restored
+        /// tempFullSlot (slot 250) item locally, since the host writing another client's
+        /// Character state directly never becomes visible on that client's machine.
         /// </summary>
         public void EquipHeldItemFor(PhotonView playerView, string userId)
         {
@@ -607,17 +485,10 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition (no decompile counterpart - see OwnSaveData.stuckThornIndices
-        /// remarks): tells the SPECIFIC player who owns this Player/PhotonView to
-        /// re-apply their own restored physical thorns locally - same targeted-RPC
-        /// shape/reason as <see cref="EquipHeldItemFor"/> (CharacterAfflictions.AddThorn
-        /// silently no-ops unless called on the owning client). Takes <c>int[]</c>, not
-        /// <c>ushort[]</c>: Photon's RPC parameter serializer has a dedicated path for
-        /// <c>int[]</c> but no case for <c>ushort[]</c> at all (confirmed against the
-        /// Photon3Unity3D.dll decompile - it's exactly why the game's own
-        /// <c>ThornSyncData</c> wraps its <c>List&lt;ushort&gt;</c> in a custom
-        /// IBinarySerializable blob instead of passing it directly) - sending ushort[]
-        /// here would silently fail to serialize at runtime
+        /// Tells the specific player to re-apply their restored physical thorns locally
+        /// (CharacterAfflictions.AddThorn no-ops unless called on the owning client). Takes
+        /// <c>int[]</c>, not <c>ushort[]</c>: Photon's RPC serializer has no case for
+        /// <c>ushort[]</c> and would silently fail to serialize it.
         /// </summary>
         public void RestoreThornsFor(PhotonView playerView, string userId, int[] thornIndices)
         {
@@ -630,17 +501,11 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition (no decompile counterpart - see AchievementProgressIO's
-        /// remarks): tells the SPECIFIC player who owns this Player/PhotonView to
-        /// restore their own achievement progress locally - same targeted-RPC shape/
-        /// reason as <see cref="EquipHeldItemFor"/>/<see cref="RestoreThornsFor"/>
-        /// (AchievementManager is a client-local singleton, so the host writing it
-        /// directly for another client's Character is never visible on that client's
-        /// own machine). Sent as a JSON string rather than the raw registered
-        /// <c>SerializableRunBasedValues</c> Photon type on purpose: that struct's own
-        /// <c>ConstructNew()</c> baseline has to be primed from the RECEIVING client's
-        /// own current Steam achievement state, not the sender's - see
-        /// AchievementProgressIO.ApplyLocal
+        /// Tells the specific player to restore their achievement progress locally
+        /// (AchievementManager is a client-local singleton). Sent as JSON rather than the
+        /// raw <c>SerializableRunBasedValues</c> Photon type, since its <c>ConstructNew()</c>
+        /// baseline must be primed from the receiving client's own Steam state - see
+        /// AchievementProgressIO.ApplyLocal.
         /// </summary>
         public void RestoreAchievementProgressFor(PhotonView playerView, string userId, string achievementProgressJson)
         {
@@ -660,13 +525,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition (no decompile counterpart - see <see cref="DeathStateRestore"/>):
-        /// tells the SPECIFIC player we are about to restore as dead that the death is
-        /// deliberate, so their own <see cref="TeleportWatchdog"/> stops watching instead
-        /// of reporting it as one of the known bad-teleport symptoms. Same targeted-RPC
-        /// shape as <see cref="EquipHeldItemFor"/>/<see cref="RestoreThornsFor"/> (the
-        /// watchdog is a client-local component - only that player's own machine can
-        /// silence theirs)
+        /// Tells the specific player being restored as dead that the death is deliberate,
+        /// so their <see cref="TeleportWatchdog"/> stops watching instead of reporting it
+        /// as a bad-teleport symptom.
         /// </summary>
         public void SuppressWatchdogForRestoredDeath(PhotonView playerView, string userId)
         {
@@ -678,7 +539,6 @@ namespace PEAKQuickResume
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.SuppressWatchdogForRestoredDeath failed: {e.Message}"); }
         }
 
-        /// <summary>Mirrors decompile line 162: RpcTarget.Others (1), sent by whichever machine actually saved</summary>
         public void RecentlyLitCampfireOthers()
         {
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_RecentlyLitCampfire), RpcTarget.Others); }
@@ -686,32 +546,21 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition: mirrors the host's own wake-up + loading-screen presentation (see
-        /// OwnTeleportSequence.cs) onto every OTHER connected player, unconditionally
-        /// (RpcTarget.Others, same shape as LoadingScreenOthers above) rather than gating on the
-        /// per-player version reported above: an earlier version tried to only target players
-        /// confirmed (via that dict) to be running Quick Resume v2.0.0+, but the version report is
-        /// sent on its own timeline (as soon as each client's local character exists) with no
-        /// synchronization to when the HOST happens to reach this call - confirmed in a real
-        /// session log where the host's broadcast fired and the client's version report arrived
-        /// only several log lines later, so the dict lookup missed a client that WAS actually
-        /// running this exact build. A genuinely older client (pre-2.0.0, before this RPC existed
-        /// at all) simply has no <c>RPC_ClientPresentation</c> method for Photon to find - it logs
-        /// a harmless "RPC method not found" on ITS end and nothing happens, the same graceful
-        /// degradation an explicit version gate would have provided, without the race. The version
-        /// report above is kept (logged on receipt) as a diagnostic breadcrumb, not a gate
+        /// Mirrors the host's wake-up + loading-screen presentation onto every other
+        /// connected player, unconditionally rather than gating on the reported mod
+        /// version: the version report arrives on its own timeline with no sync to this
+        /// call, so a dict-based gate could miss a client that IS running this build. An
+        /// older client without this RPC just logs a harmless "RPC method not found".
         /// </summary>
         public void ClientPresentationOthers(bool show)
         {
-            // A `show` call always starts a brand-new cycle - clear out any stale
-            // confirmation left over from the PREVIOUS cycle so AllClientsPresentationDone
-            // can't be satisfied by an old ack that has nothing to do with this one
+            // A `show` call starts a brand-new cycle - clear stale confirmations from the
+            // previous one so AllClientsPresentationDone can't be satisfied by an old ack.
             if (show) _playerPresentationDone.Clear();
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_ClientPresentation), RpcTarget.Others, show); }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.ClientPresentationOthers failed: {e.Message}"); }
         }
 
-        // Called (master-client side only) by OwnNetworkRpc.RPC_ClientPresentationDone
         internal void OnClientPresentationDone(string userId)
         {
             try
@@ -727,12 +576,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// True once every connected non-host player has confirmed their own local
-        /// presentation cycle (wake-up/fade-out) has actually finished - same shape and
-        /// same mod-detection-grace exemption as <see cref="CheckReadyStatusForPlayers"/>
-        /// (a player who never reports a mod version, past the grace window, is assumed
-        /// to not be running Quick Resume at all - including an older build that predates
-        /// this RPC entirely - and is exempted rather than blocking forever)
+        /// True once every connected non-host player has confirmed their presentation
+        /// cycle finished. Same mod-detection-grace exemption as <see cref="CheckReadyStatusForPlayers"/>.
         /// </summary>
         public bool AllClientsPresentationDone()
         {
@@ -763,23 +608,14 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>Mirrors decompile line 167: RpcTarget.MasterClient (2), client -> host</summary>
         public void RequestSaveToMaster()
         {
             try { _pv?.RPC(nameof(OwnNetworkRpc.RPC_RequestSave), RpcTarget.MasterClient); }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.RequestSaveToMaster failed: {e.Message}"); }
         }
 
-        /// <summary>Called by <see cref="OwnNetworkRpc.RPC_RequestSave"/> on the master client</summary>
         internal void SavePlayerCoopFromRpc() => OwnSaveCapture.SavePlayerCoop(_cfg, _log, this);
-
         internal void LogError(string message) => _log?.LogError(message);
-
-        /// <summary>
-        /// The log source itself, for the few helpers shared with the non-networked
-        /// restore path that take a <see cref="ManualLogSource"/> directly rather than
-        /// going through <see cref="LogError"/> (e.g. ThornsAndTicksRestore.ApplyThorns)
-        /// </summary>
         internal ManualLogSource Log => _log;
     }
 
@@ -798,31 +634,24 @@ namespace PEAKQuickResume
             Owner?.OnClientReportedReady(userId, userName);
         }
 
-        /// <summary>Own addition: client -> host, see OwnNetwork.ReportVersionToMaster</summary>
         [PunRPC]
         public void RPC_ReportModVersion(string userId, string version)
         {
             Owner?.OnClientReportedVersion(userId, version);
         }
 
-        /// <summary>
-        /// Own addition: host -> a specific qualifying client, see OwnNetwork.ClientPresentationOthers.
-        /// Mirrors the host's own wake-up + loading-screen presentation locally on this machine
-        /// </summary>
         [PunRPC]
         public void RPC_ClientPresentation(bool show)
         {
             Owner?.HandleClientPresentation(show);
         }
 
-        /// <summary>Own addition: client -> host, see OwnNetwork.RunClientPresentationExit</summary>
         [PunRPC]
         public void RPC_ClientPresentationDone(string userId)
         {
             Owner?.OnClientPresentationDone(userId);
         }
 
-        /// <summary>Mirrors RPC_RequestSave exactly (decompile 507-516): master-only</summary>
         [PunRPC]
         public void RPC_RequestSave()
         {
@@ -832,10 +661,9 @@ namespace PEAKQuickResume
                 Owner?.SavePlayerCoopFromRpc();
                 Owner?.EntryPoints?.ArmRecentlyLitCampfireCooldown(32f);
             }
-            catch { /* mirrors the original's own lack of a try/catch here being harmless - kept safe regardless */ }
+            catch { }
         }
 
-        /// <summary>Mirrors RPC_RecentlyLitCampfire exactly (decompile 518-525): non-master only</summary>
         [PunRPC]
         public void RPC_RecentlyLitCampfire()
         {
@@ -843,26 +671,19 @@ namespace PEAKQuickResume
             Owner?.EntryPoints?.ArmRecentlyLitCampfireCooldown(32f);
         }
 
-        /// <summary>Mirrors RPC_RequestFalldamageProtection exactly (decompile 527-536)</summary>
         [PunRPC]
         public void RPC_RequestFalldamageProtection(int seconds)
         {
             OwnFallDamageProtection.Activate(seconds);
         }
 
-        /// <summary>Own addition - see <see cref="OwnNetwork.ArmTerrainRandomizerSuppressionAll"/></summary>
         [PunRPC]
         public void RPC_ArmTerrainRandomizerSuppression()
         {
             OwnLoadEntryPoints.ArmSuppressExternalTerrainRandomizerOnce();
         }
 
-        /// <summary>
-        /// Mirrors RPC_SendMessage's dispatch shape (decompile 538-563), colors reduced to
-        /// our own known set (only ever sent by our own code, not an open text channel) -
-        /// shows through our own <see cref="OwnMessageOverlay"/> (Phase 8 M9), same as
-        /// every other message this mod shows
-        /// </summary>
+        /// <summary>Colors reduced to a known set, since this is only ever sent by our own code.</summary>
         [PunRPC]
         public void RPC_SendMessage(string message, string colorKey, string seconds)
         {
@@ -879,35 +700,23 @@ namespace PEAKQuickResume
             Owner?.MessageOverlay?.Show(message, color, duration);
         }
 
-        /// <summary>
-        /// Repurposed - see <see cref="OwnNetwork"/>'s class remarks: no caption, drives
-        /// <see cref="TeleportWatchdog"/>'s load window on this (client) machine instead
-        /// </summary>
+        /// <summary>Drives <see cref="TeleportWatchdog"/>'s load window on this client machine instead of showing a caption.</summary>
         [PunRPC]
         public void RPC_Loadingscreen(string enable, string targetPayload)
         {
             if (enable == "true")
             {
                 Owner?.Watchdog?.BeginLoadWindow();
-                // AchievementManager is client-local, so each machine has to pause its own
-                // height counting for its own load - see HeightAchievementGuard
                 HeightAchievementGuard.Suppress("client load window");
             }
             else
             {
                 HeightAchievementGuard.Release("client load window");
-                // End the window, passing the host-forwarded real target so a client that
-                // never got warped can still recover to it - see OwnNetwork.LoadingScreenOthers
                 Owner?.Watchdog?.ArmPendingWatch(OwnNetwork.ParseVector(targetPayload));
             }
         }
 
-        /// <summary>
-        /// Own addition (no decompile counterpart), see <see cref="OwnNetwork.SyncDayCountAll"/>.
-        /// Runs on the receiving client's own machine - DayNightManager.dayCount is a
-        /// plain instance field with no owner/IsMine gating (unlike thorns/held-item
-        /// equip above), so a direct write here is enough, no further RPC needed
-        /// </summary>
+        /// <summary>DayNightManager.dayCount has no owner/IsMine gating, so a direct write here is enough.</summary>
         [PunRPC]
         public void RPC_SyncDayCount(int dayCount)
         {
@@ -922,7 +731,6 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>Mirrors RPC_CloseEndscreen exactly (decompile 595-610)</summary>
         [PunRPC]
         public void RPC_CloseEndscreen()
         {
@@ -932,10 +740,9 @@ namespace PEAKQuickResume
                 if (endScreen != null && endScreen.isOpen)
                     HarmonyLib.AccessTools.Method(typeof(MenuWindow), "Close")?.Invoke(endScreen, null);
             }
-            catch { /* matches the original's own swallow */ }
+            catch { }
         }
 
-        /// <summary>Mirrors RPC_ApplyAfflictions exactly (decompile 612-682)</summary>
         [PunRPC]
         public void RPC_ApplyAfflictions(string userId, float[] statuses, float extraStamina)
         {
@@ -945,14 +752,12 @@ namespace PEAKQuickResume
                 if (localCharacter == null) return;
                 if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
 
-                // Length-tolerant: the STATUSTYPE count grew in 2.0.a, and this also has
-                // to survive a host and client briefly disagreeing on it. See
-                // AfflictionArrayCompat
+                // Length-tolerant, since this also has to survive a host/client mismatch mid-transition.
                 CharacterAfflictions afflictions = localCharacter.refs.afflictions;
                 AfflictionArrayCompat.CopyOverlap(statuses, afflictions.currentStatuses);
 
                 try { localCharacter.SetExtraStamina(extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f); }
-                catch { /* matches the original's own swallow */ }
+                catch { }
             }
             catch (Exception e)
             {
@@ -961,14 +766,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Own addition (no decompile counterpart), see <see cref="OwnNetwork.EquipHeldItemFor"/>.
-        /// Runs on the receiving client's own machine, where photonView.IsMine is
-        /// actually true for this character, so CharacterItems.EquipSlot's own network
-        /// spawn + EquipSlotRpc broadcast work correctly - unlike calling it from the
-        /// host for a Character it doesn't own. Requires the local tempFullSlot copy to
-        /// already hold the restored item (the sender times this after that player's own
-        /// SyncInventoryRPC), otherwise EquipSlot would just clear currentSelectedSlot
-        /// instead - checked defensively here too, not just trusted from the sender
+        /// Runs on the receiving client, where photonView.IsMine is true, so EquipSlot's
+        /// network spawn + RPC broadcast work correctly. Requires tempFullSlot to already
+        /// hold the restored item (checked defensively, not just trusted from the sender).
         /// </summary>
         [PunRPC]
         public void RPC_EquipHeldItem(string userId)
@@ -988,13 +788,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Own addition (no decompile counterpart), see
-        /// <see cref="OwnNetwork.RestoreThornsFor"/>. Runs on the receiving client's own
-        /// machine, where photonView.IsMine is actually true for this character, so
-        /// CharacterAfflictions.AddThorn's own IsMine guard passes and its RPC_EnableThorn
-        /// broadcast (RpcTarget.All) reaches everyone correctly
-        /// </summary>
+        /// <summary>Runs on the receiving client, where photonView.IsMine is true, so AddThorn's IsMine guard passes.</summary>
         [PunRPC]
         public void RPC_RestoreThorns(string userId, int[] thornIndices)
         {
@@ -1005,9 +799,7 @@ namespace PEAKQuickResume
                 if (NetworkingUtilities.GetUserId(localCharacter.player) != userId) return;
                 if (thornIndices == null) return;
 
-                // Shared with the solo path rather than looping over AddThorn here, so the
-                // co-op restore gets the same correct thorn indices AND the same
-                // suppression of the per-arrow hit sound - see ThornsAndTicksRestore
+                // Shared with the solo path, so co-op restore gets the same per-arrow hit-sound suppression.
                 var indices = new List<ushort>(thornIndices.Length);
                 foreach (int index in thornIndices) indices.Add((ushort)index);
                 ThornsAndTicksRestore.ApplyThorns(localCharacter, indices, Owner?.Log);
@@ -1018,12 +810,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Own addition (no decompile counterpart), see
-        /// <see cref="OwnNetwork.SuppressWatchdogForRestoredDeath"/>. Runs on the machine
-        /// whose own character is about to be restored as dead, right before that death
-        /// lands - see DeathStateRestore's call site for the full reasoning
-        /// </summary>
+        /// <summary>Runs on the machine whose character is about to be restored as dead, right before that death lands.</summary>
         [PunRPC]
         public void RPC_SuppressWatchdogForRestoredDeath(string userId)
         {
@@ -1041,14 +828,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Own addition (no decompile counterpart), see
-        /// <see cref="OwnNetwork.RestoreAchievementProgressFor"/>. Runs on the
-        /// receiving client's own machine, where AchievementManager.Instance IS that
-        /// client's own local achievement tracker - an empty string means "no saved
-        /// progress for this player" (matches AchievementProgressIO.ApplyLocal's own
-        /// null-safe fresh-baseline behavior)
-        /// </summary>
+        /// <summary>Runs on the receiving client's own machine; an empty string means "no saved progress for this player".</summary>
         [PunRPC]
         public void RPC_ApplyAchievementProgress(string userId, string achievementProgressJson)
         {
@@ -1063,25 +843,11 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Session-diagnosed bug fix (2026-08-13): this used to apply inline and simply
-        /// <c>return</c> when <c>Character.localCharacter</c> was still null, silently
-        /// throwing away the only copy of that client's saved achievement progress the
-        /// host ever sends. The host fires this right after every client reports ready,
-        /// which on a load is exactly while the client is still respawning its character
-        /// (its log showed seven <c>InitRunBasedValues</c> calls, every one of them from
-        /// <c>CharacterSpawner</c> and not one from this restore), so in practice a
-        /// client's per-run counters were never restored at all: Clutch, Plunderer,
-        /// Jester and the food trackers all silently restarted from zero after a load,
-        /// while the host's own restored fine. Proven from the save files themselves -
-        /// the client's own save for the loaded event held ScoutsResurrected=1,
-        /// LuggageOpened=1, ClownLuggageOpened=1, yet the client counted from 0 after
-        /// loading it.
-        ///
-        /// Now it waits for the local character (and for the character to actually be
-        /// this player) instead of dropping, then applies. Waiting is also what keeps
-        /// the restore from being clobbered: vanilla's own spawn-time
-        /// <c>InitRunBasedValues</c> calls all happen while the character is being
-        /// created, so applying once it exists lands after them
+        /// Waits for the local character to exist (and be this player) before applying,
+        /// rather than dropping the restore when <c>Character.localCharacter</c> is still
+        /// null - the host fires this right as the client is still respawning its
+        /// character, which previously silently discarded the achievement progress.
+        /// Waiting also avoids being clobbered by vanilla's spawn-time InitRunBasedValues calls.
         /// </summary>
         private IEnumerator ApplyAchievementProgressWhenReady(string userId, string achievementProgressJson)
         {
@@ -1123,9 +889,7 @@ namespace PEAKQuickResume
             AchievementProgressIO.ApplyLocal(saved, log);
         }
 
-        // Generous: the client is mid-respawn when this arrives, and a slow machine's
-        // spawn can take a while. Only ever spent waiting on a character that isn't
-        // there yet, and a timeout just falls back to the old "counters restart" behavior
+        // Generous: a slow machine's spawn can take a while; a timeout just falls back to counters restarting.
         private const float AchievementRestoreWaitSeconds = 30f;
     }
 }

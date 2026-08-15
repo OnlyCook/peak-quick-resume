@@ -3,46 +3,32 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Small helper around PEAK's own version string (<c>UnityEngine.Application.version</c>,
-    /// e.g. "1.65.a" - confirmed directly against the game's own build, same string the
-    /// vanilla top-left corner label shows). Used to detect a game update across mod
-    /// sessions (see Plugin's launch-time check) and to flag individual archived saves
-    /// as possibly stale after one (see SaveArchive/SavePicker)
+    /// Helper around PEAK's version string (Application.version, e.g. "1.65.a"). Used to
+    /// detect a game update across mod sessions (see Plugin's launch-time check) and to
+    /// flag archived saves as possibly stale after one (see SaveArchive/SavePicker).
     /// </summary>
     internal static class GameVersionCompat
     {
         /// <summary>The game version this session is actually running</summary>
         public static string Current => Application.version;
 
-        /// <summary>
-        /// Shown in place of a real "vX.Y.z" for a save with no stored <c>gameVersion</c>
-        /// at all (see SaveArchive.ArchivedSave.GameVersion / SavePicker's row display) -
-        /// its actual version simply isn't known, so this is a placeholder, not a guess
-        /// </summary>
+        /// <summary>Shown in place of a real version for a save with no stored gameVersion at all.</summary>
         public const string NoVersionDisplay = "v?.??.?";
 
         /// <summary>
-        /// The one safe guess for a missing <c>gameVersion</c>: saves written at
-        /// <c>SaveArchive.ArchiveNativeSettingsVersion - 1</c> ("settingsVersion 6") only
-        /// exist from a roughly 3-hour window during the 1.65.a update, for players who
-        /// hadn't updated the mod yet - see SaveArchive.ArchivedSave.DisplayGameVersion.
-        /// Any other missing version could genuinely be anything, so isn't guessed at all
-        /// (shown as <see cref="NoVersionDisplay"/> instead)
+        /// The one safe guess for a missing gameVersion: saves written at
+        /// ArchiveNativeSettingsVersion - 1 only exist from a ~3 hour window during the
+        /// 1.65.a update. Any other missing version could genuinely be anything, so
+        /// stays unguessed (NoVersionDisplay) instead.
         /// </summary>
         public const string LegacySettingsVersion6GameVersion = "1.64.a";
 
-        /// <summary>"1.64.a" -&gt; "v1.64.a", matching VersionString's own "v"-prefixed
-        /// top-left corner label as closely as possible (that's the whole point - see
-        /// SavePicker's use of this, the resemblance is what's supposed to ring a bell)</summary>
         public static string Display(string version) => "v" + version;
 
         /// <summary>
-        /// True if <paramref name="version"/> is older than <paramref name="current"/> in
-        /// the sense that matters here: the map pool was likely rotated since. Only
-        /// major/minor ("1.64" vs "1.65") count - the trailing letter is a small
-        /// hotfix/patch letter (e.g. "1.65.a" -&gt; "1.65.b") that, per experience, never
-        /// rotates the map pool, so it's deliberately ignored here even though it's
-        /// still parsed (kept available for anything that wants it later)
+        /// True if version is older than current in the sense that matters here: the map
+        /// pool was likely rotated since. Only major/minor counts; the trailing hotfix
+        /// letter never rotates the map pool, so it's ignored here (though still parsed).
         /// </summary>
         public static bool IsOlderThan(string version, string current)
         {
@@ -56,10 +42,7 @@ namespace PEAKQuickResume
                 return vMinor < cMinor;
             }
 
-            // Unparseable (future format change) - "different" is still meaningful,
-            // just without knowing direction. Treat as older/stale so a real change
-            // isn't silently ignored; a version that then never advances again would
-            // just keep showing the same (harmless) notice, not a growing problem
+            // Unparseable: treat as older/stale so a real change isn't silently ignored.
             return true;
         }
 

@@ -12,36 +12,11 @@ using Zorro.Core;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Native save/restore for this run's in-progress achievement tracking (own
-    /// addition, no decompile counterpart - the checkpoint mod never touched
-    /// achievements at all).
-    ///
-    /// The game tracks a handful of achievements (Plunderer, First Aid, Clutch, Knot
-    /// Tying, Foraging, Mycology, Advanced Mycology, Gourmand, and every "without ever
-    /// X" badge) purely per-run, in <c>AchievementManager.runBasedValueData</c>
-    /// (typed <c>SerializableRunBasedValues</c>, decompile ~43602) - reset to an empty
-    /// baseline every time <c>AchievementManager.InitRunBasedValues()</c> runs with no
-    /// argument, which is exactly what happens at the start of the fresh run our own
-    /// resume flow always starts before loading a checkpoint into it. Without this,
-    /// every one of those achievements silently loses all progress on every load.
-    ///
-    /// It ALSO fixes a subtler problem: <c>AchievementManager.RecordMaxHeight</c>
-    /// (decompile ~15214) only credits the permanent HeightClimbed Steam stat (High
-    /// Altitude Badge) for altitude above <c>RUNBASEDVALUETYPE.MaxHeightReached</c>'s
-    /// current run-based value. A teleport is an instant jump, not a climb - but if
-    /// that tracker is still sitting at its fresh-run default (0) the moment the jump
-    /// happens, the game can't tell the difference and credits the whole jump as
-    /// climbed. Restoring the real value BEFORE the teleport happens (see
-    /// <see cref="RestoreAllPlayers"/>'s call site in OwnTeleportSequence) closes that
-    /// gap entirely - no need to pause or block achievement tracking during the
-    /// teleport itself.
-    ///
-    /// <c>SerializableRunBasedValues</c>' own fields are all <c>internal</c>, so this
-    /// class reflects them in/out of our own JSON-friendly <see cref="OwnSavedAchievementProgress"/>.
-    /// Every public entry point here is wrapped so a reflection/Steam-stats failure
-    /// just skips restoring achievement progress (silently falls back to vanilla's own
-    /// "loses this run's counters" behavior) - it must never be able to corrupt a save
-    /// or leave AchievementManager in a broken state
+    /// Saves/restores this run's in-progress achievement tracking, which
+    /// InitRunBasedValues() otherwise resets to empty on every load. Also restores
+    /// MaxHeightReached before a teleport so it isn't miscredited as a climb (see
+    /// RestoreAllPlayers). Reflects into SerializableRunBasedValues' internal fields;
+    /// every entry point fails soft so a reflection error can never corrupt a save.
     /// </summary>
     public static class AchievementProgressIO
     {
@@ -61,12 +36,7 @@ namespace PEAKQuickResume
             FRunBasedInts == null || FRunBasedFloats == null || FFruits == null || FShroomBerries == null
             || FNonToxicMushrooms == null || FGourmand == null || FEarnedThisRun == null || FCompletedAscents == null;
 
-        /// <summary>
-        /// Read-only counts for the "eat N different X" trackers (Foraging/Advanced
-        /// Mycology/Mycology/Gourmand), for <see cref="AchievementDebugLogging"/> - lets
-        /// these be verified from the log after loading a save without needing Steam
-        /// Achievement Manager or actually reaching the threshold
-        /// </summary>
+        /// <summary>Read-only counts for the "eat N different X" trackers, used by <see cref="AchievementDebugLogging"/>.</summary>
         public static (int fruits, int shroomBerries, int nonToxicMushrooms, int gourmand) GetEatenCounts()
         {
             try
@@ -99,13 +69,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Converts a boxed native <c>SerializableRunBasedValues</c> into our own
-        /// JSON-friendly snapshot. Used both for <see cref="CaptureLocal"/>'s own read
-        /// and, in coop, for a REMOTE player's data fetched via
-        /// <c>ReconnectHandler.TryGetReconnectData</c> (see OwnSaveCapture.SavePlayerCoop) -
-        /// the game's own native mechanism for keeping a live host-side copy of every
-        /// connected player's achievement progress, already required for its own
-        /// disconnect/reconnect support
+        /// Converts a boxed native SerializableRunBasedValues into our JSON-friendly snapshot.
+        /// Used by <see cref="CaptureLocal"/> and, in coop, for remote players via
+        /// ReconnectHandler.TryGetReconnectData (see OwnSaveCapture.SavePlayerCoop).
         /// </summary>
         public static OwnSavedAchievementProgress ToSaved(object boxedNative, ManualLogSource log)
         {
@@ -140,14 +106,10 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Applies a saved snapshot to the LOCAL client's AchievementManager. Safe to
-        /// call with <paramref name="saved"/> == null (just re-primes a correct fresh
-        /// baseline - the same thing the native no-argument InitRunBasedValues() would
-        /// have done anyway). Deliberately does NOT restore
-        /// <c>steamAchievementsPreviouslyUnlocked</c> from the save - that list is
-        /// always rebuilt by <c>SerializableRunBasedValues.ConstructNew()</c> from this
-        /// client's actual CURRENT Steam achievement state, so an achievement earned by
-        /// other means between saving and loading is never miscounted as "not yet had it"
+        /// Applies a saved snapshot to the LOCAL client's AchievementManager. Safe with
+        /// saved == null (just re-primes a fresh baseline). Deliberately does not restore
+        /// steamAchievementsPreviouslyUnlocked - ConstructNew() always rebuilds that from
+        /// the client's actual current Steam state.
         /// </summary>
         public static void ApplyLocal(OwnSavedAchievementProgress saved, ManualLogSource log)
         {
@@ -158,15 +120,9 @@ namespace PEAKQuickResume
 
                 if (saved != null && !AnyFieldMissing())
                 {
-                    // MaxHeightReached is deliberately NOT restored from the save. It is not
-                    // really "progress" - it is the high-water mark that gates how much of
-                    // your altitude gets added to the PERMANENT HeightClimbed Steam stat,
-                    // which Steam keeps counting on its own and which this mod has no
-                    // business rewriting. The mark is instead seeded from the player's live
-                    // altitude once the load finishes, which is both simpler and impossible
-                    // to abuse - see HeightAchievementGuard, and note that WITHOUT that
-                    // seeding this exclusion would reintroduce the double-credit it exists
-                    // to prevent
+                    // MaxHeightReached is excluded here; it's instead seeded from the player's
+                    // live altitude after load (see HeightAchievementGuard) to avoid
+                    // double-crediting the permanent HeightClimbed Steam stat.
                     var ints = new Dictionary<RUNBASEDVALUETYPE, int>();
                     if (saved.runBasedInts != null)
                         foreach (var kv in saved.runBasedInts)
@@ -194,36 +150,12 @@ namespace PEAKQuickResume
 
                 Singleton<AchievementManager>.Instance.InitRunBasedValues((SerializableRunBasedValues)boxedNative);
 
-                // Session-diagnosed bug fix (2026-08-06): ReconnectHandler's host-side
-                // cache of each OTHER player's achievement progress (what
-                // ReconnectHandler.TryGetReconnectData returns, and what
-                // OwnSaveCapture.SavePlayerCoop reads for every non-host player - see
-                // that method's remarks) is only ever refreshed by the native
-                // Player.OnAchievementProgressChanged() -> RPC "UpdateAchievementProgress"
-                // path, which normally fires from AchievementManager.SetRunBasedInt/
-                // SetRunBasedFloat on every real in-game change (a revive, a knot tied,
-                // etc). InitRunBasedValues (just called above) writes runBasedValueData
-                // directly and never goes through those setters, so without this call the
-                // restoring client's rollback is invisible to the host's cache: the NEXT
-                // save captured for this player would silently re-bake in whatever
-                // progress existed right before this load, and each further load/act/save
-                // cycle compounds the drift. Confirmed root cause of a report where
-                // repeatedly loading a save and reviving the same player via the Ancient
-                // Statue granted the Clutch Badge (3 revives in one run) despite never
-                // actually holding 3 concurrent revives - same mechanism silently
-                // corrupts every OTHER run-based achievement counter (Plunderer/
-                // LuggageOpened, First Aid/FriendsHealedAmount, Knot Tying/RopePlaced,
-                // the eaten-food counters) for any non-host player. Mirrors exactly what
-                // a real achievement-progress change already does natively (see
-                // Player.OnAchievementProgressChanged/Update), just triggered manually
-                // since this restore bypasses the setters that normally trigger it
+                // InitRunBasedValues writes runBasedValueData directly, bypassing the setters
+                // that normally push updates into the host's reconnect cache. Without this
+                // manual trigger, the host's cached progress for this player goes stale and
+                // gets silently re-baked into the next save, compounding drift across loads.
                 Player.localPlayer?.OnAchievementProgressChanged();
 
-                // [achievement-debug]: dumps exactly what got restored, so this can be
-                // eyeballed straight from LogOutput.log after a load - no SAM, no risk
-                // of actually testing an achievement threshold for real. See
-                // AchievementDebugLogging for the matching live "did a stat/achievement
-                // just change" logging while playing
                 if (saved != null)
                 {
                     log.Trace("[achievement-debug] Restored this run's achievement progress from save:\n" + FormatDump(saved));
@@ -254,15 +186,7 @@ namespace PEAKQuickResume
                 + $"  completedAscentsThisRun=[{string.Join(",", saved.completedAscentsThisRun ?? new List<int>())}]";
         }
 
-        /// <summary>
-        /// Temporary testing aid (2026-08-06 session): logs a full snapshot of the LOCAL
-        /// client's current live achievement progress, tagged with who/where/when so a
-        /// session with multiple campfires and a final win can be reconstructed after the
-        /// fact straight from LogOutput.log without guessing which SetRunBasedInt_Postfix
-        /// line belongs to which real-world moment. Call at the two moments that matter for
-        /// verifying save/restore correctness: a campfire being lit (right before that
-        /// checkpoint's own capture runs) and the run being won. Remove once no longer needed
-        /// </summary>
+        /// <summary>Logs a tagged snapshot of the local client's current achievement progress, for verifying save/restore correctness.</summary>
         public static void LogSnapshot(string tag, ManualLogSource log)
         {
             try
@@ -299,35 +223,15 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Host-only orchestration - called once at the very START of
-        /// OwnTeleportSequence.RunSequence, BEFORE any segment/position warp (see the
-        /// High Altitude Badge timing note in this class' remarks for why that ordering
-        /// matters). Loops every connected player exactly like
-        /// OwnInventoryRestore.RestoreAll does for inventory/afflictions, for the same
-        /// reason: AchievementManager is a client-LOCAL singleton (each player only
-        /// ever sees their own), so the host can only apply this directly to itself -
-        /// every other player's restore has to be handed to that player's own machine
-        /// via a targeted RPC
-        ///
-        /// Achievement progress is per-player state, so it is only ever read from a
-        /// player's OWN file within the chosen save event (see
-        /// <see cref="SaveSelection.TryGetPlayerFile"/>), never from the host's file and
-        /// never from a near-miss file belonging to a different event. A player with no
-        /// file in this event gets `saved` left null, which is unconditionally safe per
-        /// ApplyLocal's own remarks: null just primes the same fresh baseline a normal
-        /// run start already would, and this class never touches permanent Steam
-        /// achievement unlocks either way (see class remarks) - so skipping can only ever
-        /// cost a bit of this-run progress tracking, never revert or fabricate an actual
-        /// unlock
+        /// Host-only: called at the start of OwnTeleportSequence.RunSequence, before any
+        /// warp. AchievementManager is a client-local singleton, so the host applies
+        /// itself directly and RPCs every other player's restore to their own machine,
+        /// same pattern as OwnInventoryRestore.RestoreAll. A player with no file in this
+        /// save event just gets a fresh baseline.
         /// </summary>
         /// <param name="alreadyRestored">
-        /// Optional set of userIds already handled by an earlier pass, added to as this
-        /// one succeeds. On a load the host runs this the moment its own restore starts,
-        /// when a co-op client's <c>Player</c> object usually does not exist yet (it is
-        /// being respawned), so <see cref="OwnTeleportSequence"/> keeps re-running this
-        /// until everyone in the room has been handled - see its retry routine. Passing
-        /// the same set through is what stops a later pass re-applying (and so rolling
-        /// back) the progress of a player who was already restored
+        /// Set of userIds already restored by an earlier pass; players in here are
+        /// skipped so a retry (see OwnTeleportSequence) doesn't roll back progress already applied.
         /// </param>
         public static void RestoreAllPlayers(SaveSelection selection, OwnLoadEntryPoints entryPoints, ManualLogSource log,
             HashSet<string> alreadyRestored = null)
@@ -343,13 +247,8 @@ namespace PEAKQuickResume
                 {
                     if (player == null) continue;
 
-                    // Deliberately NOT gated on player.character (session-diagnosed
-                    // 2026-08-13): this used to `continue` whenever a player had no
-                    // character yet, and on a load every remote player is mid-respawn at
-                    // exactly this moment, so a co-op client was skipped outright and
-                    // never got their achievement progress back. Nothing below needs the
-                    // character - the userId comes from the Player and the RPC is
-                    // addressed by its PhotonView owner
+                    // Deliberately not gated on player.character: remote players are mid-respawn
+                    // (character not yet assigned) during a load, and nothing below needs it.
                     string userId = offline ? "" : NetworkingUtilities.GetUserId(player);
                     if (alreadyRestored != null && alreadyRestored.Contains(userId)) continue;
                     PhotonView playerView = player.GetComponent<PhotonView>();

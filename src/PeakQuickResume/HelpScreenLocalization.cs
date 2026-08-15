@@ -3,13 +3,10 @@ using System.Collections.Generic;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Translations for the F1 help screen's body text (<see cref="HelpScreenContent"/>).
-    /// Same rules as <see cref="SavePickerLocalization"/>/<see cref="PauseMenuLocalization"/>:
-    /// indexed by <c>(int)LocalizedText.Language</c>, covering every language the game
-    /// itself ships, Traditional Chinese included; any entry left blank falls back to English
-    ///
-    /// Key names (F6/F7/Enter) are left untranslated everywhere, same as
-    /// "PEAK Checkpoint Save"/"Quick Resume" - they're literal identifiers, not prose
+    /// Translations for the F1 help screen's body text (see HelpScreenContent). Indexed
+    /// by (int)LocalizedText.Language, same rules as SavePickerLocalization/
+    /// PauseMenuLocalization; blank entries fall back to English. Key names (F6/F7/Enter)
+    /// are left untranslated everywhere, like literal identifiers.
     /// </summary>
     internal enum HelpText
     {
@@ -111,10 +108,7 @@ namespace PEAKQuickResume
                 "Czy po wczytaniu coś poszło nie tak? (pusta mapa, odbijanie się góra-dół, przepadanie przez podłogę, albo w ogóle nie dotarłeś do ogniska)\nNiech wszyscy opuszczą grę i dołączą ponownie (albo całkowicie ją zrestartują), a następnie wczytajcie ten sam zapis. Samo to rozwiązuje większość problemów.",
                 "Yükledikten sonra bir şeyler ters mi gitti? (boş harita, yukarı aşağı zıplama, zeminin içinden düşme, veya aslında hiç kamp ateşine ulaşmama)\nHerkesin oyundan çıkıp yeniden katılmasını (veya oyunu tamamen yeniden başlatmasını) sağlayın, ardından aynı kaydı tekrar yükleyin. Bu tek başına çoğu sorunu çözer.",
             },
-            // The bold clause in each of these is marked up as accent-colored text
-            // (matching Accent in HelpScreenContent, "#FFF2B8") rather than actual <b>
-            // tags - the game's font has no real bold face, see HelpScreenContent's own
-            // class remarks for why that was a deliberate earlier decision
+            // Bold clause is accent-colored text, not <b>, since the game's font has no real bold face.
             [HelpText.AchievementsNote] = new[]
             {
                 "Achievement progress is saved and restored correctly when you load a checkpoint, but <color=#FFF2B8>only for players who have PEAK Quick Resume installed themselves</color>.",
@@ -135,10 +129,8 @@ namespace PEAKQuickResume
             },
         };
 
-        /// <summary>Text for the current value of <see cref="LocalizedText.CURRENT_LANGUAGE"/></summary>
         public static string Get(HelpText key) => LocalizationHelper.Resolve(_table[key]);
 
-        /// <summary>Same as <see cref="Get(HelpText)"/>, then <see cref="string.Format(string, object[])"/>'d against <paramref name="args"/></summary>
         public static string Get(HelpText key, params object[] args) => string.Format(Get(key), args);
     }
 }

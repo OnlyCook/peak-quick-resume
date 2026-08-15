@@ -6,41 +6,19 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Detects, and reports once, the still-open co-op bug where ANOTHER player's ragdoll
-    /// convulses and spins for the rest of the run on this machine only. Purely observational -
-    /// it never touches the characters it watches
+    /// Detects and reports (once per episode) the still-open co-op bug where another player's
+    /// ragdoll convulses/spins for the rest of the run, visible only on the observing machine.
+    /// Observational only, never touches the characters it watches. Always-on rather than
+    /// debug-gated because the bug is intermittent and leaves no trace elsewhere.
     ///
-    /// WHY THIS IS PERMANENT AND NOT GATED ON DEBUG LOGGING
-    /// The bug is intermittent, only visible to the observer, and leaves no trace in the host's
-    /// log - so it can only be caught on the machine that sees it, at the moment it happens.
-    /// Two lines a session is a fair price for that, and it follows the same rule as the rest of
-    /// the mod: verbose tracing is opt-in, fundamentals are always logged
+    /// Detection: per remote character, compares accumulated path length (sum of per-step hip
+    /// displacement) against net displacement over a 1s window. Thresholds (<see cref="MinPath"/>,
+    /// <see cref="MaxNet"/>) were tuned from measured healthy (0-4m path) vs affected (65-138m
+    /// path, 1.5-7m net) sessions; two consecutive bad windows required to avoid false positives
+    /// right after a teleport.
     ///
-    /// HOW IT DECIDES
-    /// Per remote character it accumulates PATH LENGTH (the sum of per-step hip displacements)
-    /// against NET displacement over a one-second window. Normal movement has path ~ net; a body
-    /// being thrown back and forth racks up a huge path while going nowhere. Thresholds come
-    /// from measured sessions rather than guesswork - healthy windows ran 0-4m of path, affected
-    /// ones 65-138m with a net of 1.5-7m - so <see cref="MinPath"/>/<see cref="MaxNet"/> sit in
-    /// the empty gap between them, and two consecutive windows are required so the brief
-    /// settling flurry right after a teleport is never mistaken for it
-    ///
-    /// STATUS: OPEN. Several fixes have been landed around this bug's trigger conditions (see
-    /// OwnTeleportSequence: the revive settle, the atomic RPCA_ReviveAtPosition placement, the
-    /// LastRevivedSegment sync and the wait for every player to finish spawning). None was ever
-    /// OBSERVED to prevent the thrash - the trigger proved too rare to test against directly -
-    /// so they remove the state it correlates with rather than being demonstrated cures. This
-    /// watch exists to say whether it ever comes back
-    ///
-    /// WHAT IS ALREADY RULED OUT (so a future session does not re-tread it)
-    /// Leaked hand FixedJoints; CharacterSyncer skipping its interpolation guard (it runs every
-    /// single physics step); a second MoveAllRigsInDirection caller; the two bodies colliding on
-    /// arrival (the thrash was measured starting while the other player was still 6,943m away at
-    /// DeathPos); and the dead-flag tug-of-war during the warp. What IS established is the shape
-    /// of the runaway once started: InterpolateRigPositions repeatedly takes its &gt;10f
-    /// hard-snap branch, each a 12-15m MoveAllRigsInDirection, and MovePosition with a delta that
-    /// size implies hundreds of m/s - while OnDataReceived's velocity damping is blind to it,
-    /// because it works off the AVERAGE part velocity and a symmetric thrash averages to zero
+    /// Status: root cause still open. See OwnTeleportSequence for related fixes that reduced
+    /// correlated state but were never confirmed to prevent the thrash.
     /// </summary>
     internal static class RemoteRagdollWatch
     {
@@ -68,9 +46,6 @@ namespace PEAKQuickResume
         internal static void Init(ManualLogSource log)
         {
             _log = log;
-            // Logged so a session log confirms the watch is actually present - it is otherwise
-            // silent until it fires, which makes "no warning" ambiguous between "no bug" and
-            // "old build without the watch"
             log.LogInfo("RemoteRagdollWatch: watching for the co-op ragdoll-thrash bug on this machine.");
         }
 

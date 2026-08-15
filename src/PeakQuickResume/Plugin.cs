@@ -6,17 +6,12 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// PEAK Quick Resume, press one key to start a fresh run of your saved
-    /// difficulty and immediately load your latest checkpoint, instead of doing it
-    /// all by hand
-    ///
-    /// Fully self-contained: orchestrates the vanilla "start run" flow
-    /// (<see cref="RunLauncher"/>) and drives its own independent save/load/teleport
-    /// (<see cref="OwnLoadEntryPoints"/> / <see cref="OwnTeleportSequence"/> / etc.).
-    /// The save file format descends from dominik0207's "PEAK Checkpoint Save", which
-    /// this mod was originally built around, but that mod is no longer required,
-    /// referenced, or integrated with in any way - we keep our own saves in our own
-    /// folder (see <see cref="OwnSavePaths"/>) and never read or write that mod's
+    /// PEAK Quick Resume: press one key to start a fresh run of your saved difficulty
+    /// and immediately load your latest checkpoint. Fully self-contained: orchestrates
+    /// the vanilla "start run" flow (<see cref="RunLauncher"/>) and drives its own
+    /// independent save/load/teleport. The save format descends from dominik0207's
+    /// "PEAK Checkpoint Save", but that mod is no longer required or integrated with -
+    /// saves live in our own folder (see <see cref="OwnSavePaths"/>).
     /// </summary>
     [BepInPlugin(PluginInfo.Guid, PluginInfo.Name, PluginInfo.Version)]
     public class Plugin : BaseUnityPlugin
@@ -35,37 +30,22 @@ namespace PEAKQuickResume
         private HelpScreen _helpScreen;
         private TeleportWatchdog _watchdog;
 
-        // Our own on-screen message overlay (see OwnMessageOverlay.cs)
         private OwnMessageOverlay _messageOverlay;
-
-        // Our own PhotonView/RPC channel (see OwnNetwork.cs)
         private OwnNetwork _ownNetwork;
-
-        // Our own PreStartSetSegment/LoadPlayerOffline/LoadPlayerCoop guard chain,
-        // driving OwnTeleportSequence (see OwnLoadEntryPoints.cs)
         private OwnLoadEntryPoints _ownLoadEntryPoints;
 
-        // BepInEx GUID of the old PEAK Checkpoint Save mod. We no longer depend on,
-        // reference, or integrate with it, but if it's STILL installed alongside us both
-        // mods run their own campfire-autosave + logging independently, so the player sees
-        // duplicate save messages and log lines. Purely cosmetic - the two
-        // don't even share a save folder anymore (see OwnSavePaths), so there's no file or
-        // logic conflict left - we just detect it to warn the player, see Update / HelpScreen
+        // BepInEx GUID of the old PEAK Checkpoint Save mod. No longer depended on or
+        // integrated with, but if it's still installed alongside us both mods run their own
+        // campfire-autosave + logging independently, producing duplicate messages/log lines.
+        // Purely cosmetic - detected only to warn the player.
         private const string CheckpointSaveGuid = "PEAK_Checkpoint_Save";
         private bool _dupWarningShown;
 
-        // One-time (per session) game-update notice - see Update() and GameVersionCompat.
-        // Independent of _dupWarningShown above: unrelated condition, own popup, must not
-        // be skipped just because that one already fired this session (or vice versa)
         private bool _versionCheckDone;
 
         /// <summary>
-        /// Whether PEAK Checkpoint Save is loaded alongside us. Queried lazily (NOT cached at
-        /// Awake): with the soft dependency gone there's no load-order guarantee, and
-        /// <c>Chainloader.PluginInfos</c> only lists plugins loaded so far - at our Awake the
-        /// checkpoint mod may not be in it yet. Every caller here runs well after all plugins
-        /// have finished loading (in a game scene / on opening the help screen), when the list
-        /// is complete, so the lookup is reliable there
+        /// Whether PEAK Checkpoint Save is loaded alongside us. Queried lazily, not cached at
+        /// Awake, since <c>Chainloader.PluginInfos</c> may not yet list it there.
         /// </summary>
         internal bool CheckpointModInstalled =>
             BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(CheckpointSaveGuid);
@@ -85,23 +65,16 @@ namespace PEAKQuickResume
             go.hideFlags = HideFlags.HideAndDontSave;
             _orchestrator = go.AddComponent<ResumeOrchestrator>();
 
-            // Give the shared cooldown/queue (see OrchestrationLock's remarks) a
-            // DontDestroyOnLoad coroutine host to run its queued-request wait on
             OrchestrationLock.Init(_orchestrator);
 
-            // Phase 8 M9: stand up our own message overlay first - several components
-            // below need it immediately
             _messageOverlay = go.AddComponent<OwnMessageOverlay>();
             _messageOverlay.Init(Logger);
 
-            // Suppresses vanilla's forced-quit "game has been updated" modal, which
-            // (unlike vanilla) can otherwise fire at our mid-run Airport pit stop and
-            // brick an unfinished save - see GameUpdateModalSuppressPatch
+            // Suppresses vanilla's forced-quit "game has been updated" modal, which can
+            // otherwise fire at our mid-run Airport pit stop and brick an unfinished save.
             GameUpdateModalSuppressPatch.Apply(harmony, Logger, _messageOverlay);
 
-            // Detect the intermittent bad-teleport symptoms after a resume (see
-            // TeleportWatchdog / ROADMAP.md Phase 6). Created before the Harmony patches
-            // below since TeleportWatchdogPatch needs a reference to it
+            // Created before the Harmony patches below since TeleportWatchdogPatch needs a reference to it.
             _watchdog = go.AddComponent<TeleportWatchdog>();
             _watchdog.Init(Logger, _cfg, _messageOverlay);
 
@@ -111,112 +84,50 @@ namespace PEAKQuickResume
             _picker = go.AddComponent<SavePicker>();
             _picker.Init(Logger, _cfg);
 
-            // The help screen (help-key), a small menu built from the same visual
-            // primitives as the picker above
             _helpScreen = go.AddComponent<HelpScreen>();
             _helpScreen.Init(Logger, _cfg);
 
-            // Our own PhotonView/RPC channel (separate GameObject, own ViewID)
             _ownNetwork = go.AddComponent<OwnNetwork>();
             _ownNetwork.Init(Logger, _cfg);
 
-            // Native-feeling wake-up + loading-screen crossfade around the teleport step
-            // (see OwnWakeUpEffect.cs / OwnLoadingScreen.cs); wired into OwnTeleportSequence below
             var ownWakeUpEffect = go.AddComponent<OwnWakeUpEffect>();
             ownWakeUpEffect.Init(Logger);
 
             var ownLoadingScreen = go.AddComponent<OwnLoadingScreen>();
             ownLoadingScreen.Init(Logger);
 
-            // Phase 8 M3: our own literal port of CustomJumpToSegment/TeleportToPosition/
-            // TeleportClientsToHost/ReviveDeadPlayers (see OwnTeleportSequence.cs)
             var ownTeleportSequence = go.AddComponent<OwnTeleportSequence>();
 
-            // Phase 8 M2/M3: our own load-entry-point guard chain. As of M3, its solo path
-            // IS wired live via ResumeOrchestrator below
             _ownLoadEntryPoints = go.AddComponent<OwnLoadEntryPoints>();
             _ownLoadEntryPoints.Init(Logger, _cfg, _ownNetwork, ownTeleportSequence);
             ownTeleportSequence.Init(Logger, _cfg, _ownLoadEntryPoints, ownWakeUpEffect, ownLoadingScreen);
 
-            // Phase 8 M7/M9: now that _watchdog/_messageOverlay/_ownLoadEntryPoints all
-            // exist, wire them onto the channel so its RPC handlers (RPC_Loadingscreen ->
-            // TeleportWatchdog, RPC_SendMessage -> our own overlay, RPC_RequestSave/
-            // RPC_RecentlyLitCampfire -> OwnLoadEntryPoints' cooldowns) can reach them -
-            // see OwnNetwork.AttachDependencies. Also wires ownWakeUpEffect/ownLoadingScreen so
-            // RPC_ClientPresentation can mirror the host's own presentation on this machine too
             _ownNetwork.AttachDependencies(_messageOverlay, _watchdog, _ownLoadEntryPoints, ownWakeUpEffect, ownLoadingScreen);
 
-            // Now that _ownLoadEntryPoints exists, wire the orchestrator - it drives the
-            // whole resume through our own load path, solo and coop (see ResumeOrchestrator.cs)
             _orchestrator.Init(Logger, _cfg, _messageOverlay, _ownLoadEntryPoints, _watchdog);
 
-            // Phase 8 M3: our own copy of the checkpoint mod's fall/lava-damage
-            // protection window, armed from OwnTeleportSequence (see OwnFallDamageProtection.cs)
             OwnFallDamageProtection.Apply(harmony, Logger);
-
-            // Our own MapBaker.GetLevel prefix (forces the saved island - see MapBakerLevelOverridePatch.cs)
             MapBakerLevelOverridePatch.Apply(harmony, Logger);
 
-            // Third-party mod compat, no-op if not installed (see TerrainRandomiserCompat.cs):
-            // stops Snosz's TerrainRandomiser from re-randomizing the terrain on an F7 load
+            // Third-party mod compat, no-op if not installed: stops Snosz's TerrainRandomiser
+            // from re-randomizing the terrain on an F7 load.
             TerrainRandomiserCompat.Apply(harmony, Logger);
 
-            // Our own save-capture port, the canonical save writer (see OwnSaveCapture.cs)
             CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, _ownNetwork, Logger);
-
-            // Vanilla CharacterItems/Campfire hooks only; reads item state via OwnItemStateIO
             BackpackSaveMitigation.Apply(harmony, Logger);
 
-            // Pure observability for achievement-progress restore (see AchievementProgressIO) -
-            // logs run-based counters/steam-stat changes as "[achievement-debug]" lines, no
-            // gameplay effect. Entirely a debug aid, so it's not even patched in unless debug
-            // logging is on - no point paying the Harmony patch cost for lines nobody will see.
-            // TODO: remove once the achievement-progress restore is confirmed solid across a
-            // few real sessions
+            // Debug aid only, not patched in unless debug logging is on.
             if (_cfg.EnableDebugLogging.Value) AchievementDebugLogging.Apply(harmony, Logger);
 
-            // Vanilla bug fix, unrelated to save/restore: RespawnChest.Interact_CastFinished
-            // fires its achievement-progress event unconditionally, even on a repeat cast
-            // against an already-open statue - see RespawnChestDoubleCreditFix's own remarks
-            // for the full diagnosis (session-confirmed root cause of a Clutch Badge
-            // over-credit)
             RespawnChestDoubleCreditFix.Apply(harmony, Logger);
-
-            // Mod bug fix: our achievement restore calls InitRunBasedValues a second time,
-            // and its unconditional SubscribeToEvents left every GlobalEvents-driven
-            // achievement counter with two handlers (three after a further load, once a
-            // destroyed manager's leftover handler is counted) - so every luggage/statue/
-            // meal credited twice for the rest of a resumed run. See its own remarks for
-            // the logged diagnosis (a Jester Badge thrown after only two Clown Luggage)
             AchievementSubscriptionFix.Apply(harmony, Logger);
-
-            // Vanilla Character.WarpPlayerRPC patch, records the local player's teleport
-            // target for the watchdog above (Character is a vanilla type). Our own
-            // OwnTeleportSequence/OwnInventoryRestore arm the watchdog's load window
-            // directly for every resume through our own path (solo AND coop)
             TeleportWatchdogPatch.Apply(harmony, Logger, _watchdog);
-
-            // Miscellaneous QoL, no dependency on the checkpoint mod: injects Restart /
-            // Return to Airport / Board Flight buttons into the vanilla pause menu
             PauseMenuPatch.Apply(harmony, _cfg, Logger);
-
-            // Optional QoL, off by default: relocates the vanilla Rebind Controls button
-            // out of the pause menu (see RebindControlsRelocationPatch for why)
             RebindControlsRelocationPatch.Apply(harmony, _cfg, Logger);
-
-            // Stops Escape from bleeding through and opening the vanilla pause menu right
-            // behind the F7 save picker closing (see PauseSuppressPatch for why)
             PauseSuppressPatch.Apply(harmony, Logger);
-
-            // Keeps a restored arrow from replaying its impact sound as it re-attaches
             ThornRestoreSilencer.Apply(harmony, Logger);
-
-            // Stops a load crediting the player's restored altitude to the permanent
-            // HeightClimbed Steam stat all over again
             HeightAchievementGuard.Apply(harmony, Logger);
 
-            // Reports the known co-op bug where another player's ragdoll convulses on this
-            // machine only - observational, see RemoteRagdollWatch
             RemoteRagdollWatch.Init(Logger);
             go.AddComponent<RemoteRagdollWatchPump>();
 
@@ -228,19 +139,14 @@ namespace PEAKQuickResume
         {
             if (_cfg == null) return;
 
-            // One-time heads-up when PEAK Checkpoint Save is still installed (see
-            // CheckpointModInstalled's remarks for why this is checked here, in-game, and
-            // not at Awake). Deferred until the player is actually in a game scene (Airport
-            // or a level) so the overlay is on-screen and seen, rather than firing over the
-            // title - and so Chainloader.PluginInfos is fully populated by now
+            // Deferred until the player is in a game scene so the overlay is seen, and so
+            // Chainloader.PluginInfos is fully populated by then.
             if (!_dupWarningShown && _messageOverlay != null
                 && (RunLauncher.InAirport || RunLauncher.InLevel))
             {
                 _dupWarningShown = true;
                 if (CheckpointModInstalled)
                 {
-                    // Full detail goes to the log (persists) and the help screen (re-viewable);
-                    // the one-time popup stays brief and just points at the help screen
                     Logger.LogWarning("PEAK Checkpoint Save is still installed. Quick Resume no longer needs it and "
                         + "runs fully on its own; both mods will save/log independently, so expect duplicate log "
                         + "messages and saves appearing. This is harmless (no logic conflict), but uninstall PEAK "
@@ -251,14 +157,9 @@ namespace PEAKQuickResume
                 }
             }
 
-            // One-time (per version bump) game-update notice: shown when the game version
-            // this session is running under has moved past the one last recorded here (see
-            // GameVersionCompat.IsOlderThan - major/minor only, the trailing hotfix letter
-            // doesn't count). An empty slot means either a fresh install or an upgrade from
-            // a mod version that predates this feature - neither has a real baseline to
-            // compare against, so it's deliberately treated as "nothing to warn about" rather
-            // than firing on the very first launch. Deferred to Airport/Level for the same
-            // reasons as the check above (overlay on-screen, not over the title)
+            // Shown when the game version has moved past the last one recorded here. An empty
+            // slot (fresh install, or an upgrade predating this feature) has no real baseline,
+            // so it's treated as "nothing to warn about" rather than firing on first launch.
             if (!_versionCheckDone && _messageOverlay != null
                 && (RunLauncher.InAirport || RunLauncher.InLevel))
             {
@@ -269,21 +170,13 @@ namespace PEAKQuickResume
                 {
                     string msg = MessagesLocalization.Get(MsgKey.GameUpdatedSavesMayBeWrong, current);
                     Logger.LogWarning(msg);
-                    // Longer than the "still installed" popup above (7s) - more
-                    // important (loading the wrong island is an actual gameplay
-                    // problem, not just a cosmetic duplicate-log heads-up)
                     _messageOverlay.Show(msg, new Color(1f, 0.8f, 0.4f, 1f), 12f);
                 }
 
-                // Rewritten regardless of outcome, so a bump that fires no notice (or an
-                // empty starting slot) still updates the baseline and isn't re-evaluated
-                // forever
+                // Rewritten regardless of outcome, so this isn't re-evaluated forever.
                 _cfg.LastCheckedGameVersion.Value = current;
             }
 
-            // While the picker is open, Enter is the "load selected" key (the only one,
-            // unless resume-key-loads-instead-of-closing is on); the picker itself
-            // handles arrows / Delete / Escape
             if (_picker != null && _picker.IsOpen
                 && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)))
             {
@@ -291,8 +184,6 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Our own help-key listener, toggling the help screen (same shape as the
-            // resume key below)
             if (_helpScreen != null && Input.GetKeyDown(_cfg.HelpKey.Value))
             {
                 if (_helpScreen.IsOpen) _helpScreen.Close();
@@ -306,13 +197,9 @@ namespace PEAKQuickResume
 
         private void OnResumeKey()
         {
-            // Picker already open → the resume key toggles it shut again, which is what
-            // muscle memory expects from the key that opened it (players kept loading a
-            // save by accident while trying to close the picker). Loading is Enter's job
-            //
-            // Opt-in via config: the old behaviour, where this second press loads the
-            // highlighted save instead (newest is preselected, so F7 then F7 loads the
-            // latest checkpoint) and only Escape closes the picker
+            // Picker already open: the resume key closes it again by default (players kept
+            // loading a save by accident while trying to close the picker). Opt-in via
+            // config for the old behaviour where a second press loads instead.
             if (_picker != null && _picker.IsOpen)
             {
                 if (_cfg.ResumeKeyLoadsInsteadOfClosing.Value) ConfirmLoad();
@@ -326,8 +213,7 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // In coop only the host can drive save/load, tell clients immediately
-            // instead of opening a picker that can't do anything
+            // Only the host can drive save/load in coop.
             if (!RunLauncher.IsHost)
             {
                 Logger.Trace("Resume key ignored: only the host can resume.");
@@ -342,7 +228,6 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Block mid-game use unless allowed. "Mid-game" == alive in a level
             bool midGame = RunLauncher.InLevel && !PlayerIsDead();
             if (midGame && !_cfg.AllowMidGame.Value)
             {
@@ -350,9 +235,6 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Open the save picker for the current category. Mid-run we prefer the current
-            // run's difficulty as the default selection, so F7+F7 loads the current run's
-            // latest checkpoint just like before
             bool offline;
             try { offline = Photon.Pun.PhotonNetwork.OfflineMode; } catch { offline = true; }
 
@@ -376,8 +258,6 @@ namespace PEAKQuickResume
             }
         }
 
-        // Load the picker's highlighted save: close the picker and hand the choice to the
-        // orchestrator (which resolves which files that checkpoint reads, then resumes)
         private void ConfirmLoad()
         {
             var chosen = _picker.Selected;
@@ -396,11 +276,8 @@ namespace PEAKQuickResume
         /// <summary>Send everyone back to the Airport, no new run started</summary>
         internal void RequestReturnToAirport()
         {
-            // Route through the shared cooldown/queue first - see OrchestrationLock's
-            // remarks. Unlike Resume/Restart this isn't itself a multi-step coroutine, but
-            // it still triggers a full scene transition (GameOverHandler.LoadAirport /
-            // RunLauncher.ReturnToAirport), so it's included for the same safety reason -
-            // per the maintainer's explicit direction (2026-07-25 follow-up)
+            // Routed through the shared cooldown/queue too: it triggers a full scene
+            // transition just like Resume/Restart, so it needs the same safety.
             OrchestrationLock.RunOrQueue("return-to-airport", RequestReturnToAirportNow, Logger);
         }
 
@@ -412,28 +289,16 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Same busy-lock guard Resume/Restart already had against each other - a
-            // Return-to-Airport had none at all before this, despite firing the same kind
-            // of scene-altering RPC (GameOverHandler.LoadAirport) they do
             if (OrchestrationLock.IsBusy)
             {
                 Logger.Trace("Return to Airport ignored: a resume/restart is already in progress.");
                 return;
             }
 
-            // Us intentionally moving the player away, not a checkpoint-mod teleport -
-            // see TeleportWatchdog.LiftWatch
             _watchdog?.LiftWatch();
-
-            // The pause menu's "Return to Airport" drives the same Airport load the
-            // orchestrators do, so it needs the same guard - see
-            // RunLauncher.ClearVanillaQuicksaveResume
             RunLauncher.ClearVanillaQuicksaveResume(Logger);
-
             RunLauncher.ReturnToAirport(Logger);
 
-            // Arm the post-orchestration cooldown (coop only) - see
-            // PostOrchestrationCooldown's remarks
             if (!PhotonNetwork.OfflineMode)
                 OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
         }

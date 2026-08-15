@@ -16,15 +16,13 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<float> PanelOpacity;
         public readonly ConfigEntry<bool> MinimalPickerUi;
 
-        // Miscellaneous QoL: pause menu buttons (mechanics 3 & 4). Each independently
-        // hides its button from the pause menu entirely when disabled
+        // Pause menu buttons; each independently hides its button when disabled.
         public readonly ConfigEntry<bool> ShowRestartButton;
         public readonly ConfigEntry<bool> ShowReturnToAirportButton;
         public readonly ConfigEntry<bool> ShowBoardFlightButton;
         public readonly ConfigEntry<bool> MoveRebindControlsToSettings;
 
-        // Timing knobs, tuned blindly for now, exposed so we can iterate from
-        // in-game reports without recompiling. Times are in seconds
+        // Timing knobs, exposed so they can be iterated from in-game reports without recompiling.
         public readonly ConfigEntry<float> SettleAfterAirport;
         public readonly ConfigEntry<float> SettleAfterLevel;
         public readonly ConfigEntry<float> StepTimeout;
@@ -32,40 +30,25 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<float> PostOrchestrationCooldown;
         public readonly ConfigEntry<float> CoopAirportSettle;
 
-        // Phase 8 M3: our own copies of the checkpoint mod's teleport-sequence
-        // config entries (same names/defaults/meaning as configAdvancedTeleportFramesToWait,
-        // configAdvancedJumpLogicWaitTime, configCampfireReset, configDaytime - decompile
-        // lines 1081-1116), used by OwnTeleportSequence.cs instead of reflecting into the
-        // checkpoint mod's instance
         public readonly ConfigEntry<int> OwnTeleportFramesToWait;
         public readonly ConfigEntry<float> OwnJumpLogicWaitTime;
 
-        // Solo-only speed-up: collapse the per-step waits between the map/campfire warp
-        // and the final precise teleport (see OwnTeleportSequence). Off = the original,
-        // slower, more conservative cadence
+        // Solo-only: collapse the per-step waits between the map/campfire warp and the final
+        // precise teleport (see OwnTeleportSequence).
         public readonly ConfigEntry<bool> OwnFastSoloTeleport;
 
-        // Coop client-warp anti-spam (see OwnTeleportSequence.TeleportClientsToHost): the
-        // host re-warps a client off its own network-lagged view of that client's position,
-        // so on a slow connection it can fire dozens of redundant safety warps before the
-        // client's teleport ever round-trips back. These bound and pace those re-sends
+        // Coop client-warp anti-spam (see OwnTeleportSequence.TeleportClientsToHost): bounds
+        // and paces re-sends against the host's network-lagged view of a slow client.
         public readonly ConfigEntry<int> OwnMaxClientWarpResends;
         public readonly ConfigEntry<float> OwnClientWarpResendGraceSeconds;
         public readonly ConfigEntry<float> OwnClientWarpSpreadRadius;
 
-        // Phase 8 M4: our own copies of configInventory/configItemStats (decompile
-        // 1082-1083), used by OwnInventoryRestore.cs instead of reflecting into the
-        // checkpoint mod's instance
         public readonly ConfigEntry<bool> RestoreInventory;
         public readonly ConfigEntry<bool> RestoreItemStats;
-
-        // Phase 8 M5: our own copy of configAfflictions (decompile line 1081)
         public readonly ConfigEntry<bool> RestoreAfflictions;
 
-        // v2.0.0: per-mechanic restore toggles for everything else OwnTeleportSequence
-        // restores around/alongside the campfire - each independently gates just its
-        // own mechanic's RESTORE step (capture always still runs, matching every
-        // existing toggle above - see PluginConfig ctor for why)
+        // Per-mechanic restore toggles - each independently gates just its own mechanic's
+        // restore step (capture always still runs).
         public readonly ConfigEntry<bool> RestoreGroundedItems;
         public readonly ConfigEntry<bool> RestoreGroundedBackpacks;
         public readonly ConfigEntry<bool> RestoreDeployables;
@@ -77,37 +60,28 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> RestorePlayerTempSlot;
         public readonly ConfigEntry<bool> RestoreAchievements;
 
-        // Coop-only: put players who were dead when the checkpoint was saved back into
-        // that state after a load (see DeathStateRestore). Gates ONLY the re-killing
-        // half - the load always revives everyone first, since that half is what stops a
-        // friend who joined the run late from being stuck dead and spectating
+        // Coop-only: puts players who were dead when the checkpoint was saved back into that
+        // state after a load (see DeathStateRestore). Gates only the re-killing half - the load
+        // always revives everyone first, so a friend who joined late is never stuck spectating.
         public readonly ConfigEntry<bool> RestoreDeathState;
 
-        // Phase 8 M1: our own PhotonView/RPC channel (OwnNetwork.cs), replacing the
-        // checkpoint mod's configAdvancedEnableClientReadyStatusCheck (same default,
-        // same meaning) once we stop reflecting into its instance for this
         public readonly ConfigEntry<bool> OwnEnableClientReadyStatusCheck;
 
-        // Phase 6: helps recover from the checkpoint mod's own intermittent teleport
-        // bug (up/down warp-loop glitching, occasionally falling through the world).
-        // We never touch its teleport logic, only detect + soften the aftermath
+        // Detects and softens the aftermath of the intermittent teleport bug (warp-loop
+        // glitching, falling through the world) without touching the teleport logic itself.
         public readonly ConfigEntry<bool> EnableTeleportWatchdog;
         public readonly ConfigEntry<float> WatchdogWindowSeconds;
         public readonly ConfigEntry<float> FallDistanceThreshold;
         public readonly ConfigEntry<int> GlitchOscillationCount;
         public readonly ConfigEntry<float> NeverTeleportedDistanceThreshold;
 
-        // Phase 6 steps 4-5: auto-fixes that only ever act on a teleport the watchdog
-        // above already flagged as bad, never unconditionally on every teleport
+        // Auto-fixes that only ever act on a teleport already flagged bad by the watchdog above.
         public readonly ConfigEntry<bool> EnableFallDamageRevert;
         public readonly ConfigEntry<float> DamageRevertDelaySeconds;
         public readonly ConfigEntry<bool> EnablePositionRecovery;
         public readonly ConfigEntry<float> PositionRecoveryDelaySeconds;
         public readonly ConfigEntry<float> PositionRecoveryDistanceThreshold;
 
-        // Native-feeling wake-up + loading-screen crossfade around the teleport step of
-        // our own restore path (OwnWakeUpEffect.cs / OwnLoadingScreen.cs), replacing the
-        // checkpoint mod's abrupt instant on/off overlay
         public readonly ConfigEntry<bool> OwnWakeUpAnimationEnabled;
         public readonly ConfigEntry<float> OwnLoadingScreenFadeInDelay;
         public readonly ConfigEntry<float> OwnLoadingScreenFadeOutDelay;
@@ -117,33 +91,20 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> EnableDebugLogging;
         public readonly ConfigEntry<bool> DebugDisableLoadingScreen;
 
-        // Internal bookkeeping, not meant to be hand-edited: the game version this mod
-        // last saw at launch (see Plugin's game-update notice / GameVersionCompat).
-        // Compared against Application.version on every launch to detect an update;
-        // rewritten every launch once evaluated, regardless of outcome
         public readonly ConfigEntry<string> LastCheckedGameVersion;
 
         public PluginConfig(ConfigFile cfg)
         {
-            // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig (the in-game mod
-            // settings menu, if installed) only recognizes a handful of concrete
-            // ConfigEntry value types (bool/float/double/int/string/KeyCode/enum) and
-            // renders a real "click, then press a key" rebind widget specifically for
-            // KeyCode. KeyboardShortcut isn't one of the recognized types, so it fell
-            // through to ModConfig's "unhandled setting type" case entirely (not shown
-            // there at all, only editable by hand in the config file), which is the
-            // exact problem this setting exists to avoid. The trade-off is losing
-            // modifier-key combos (e.g. Ctrl+F7); ModConfig's own rebind capture only
-            // ever assigns a single KeyCode anyway, so that ceiling already existed
-            // for anyone using it to rebind
+            // Plain KeyCode, not KeyboardShortcut: PEAKLib.ModConfig only renders a rebind
+            // widget for KeyCode - KeyboardShortcut falls through to its "unhandled type" case
+            // and isn't shown there at all.
             ResumeKey = cfg.Bind("General", "resume-key", KeyCode.F7,
                 "Opens the save picker (a menu of your checkpoints for the current solo/co-op category), and "
                 + "closes it again. Use the arrow keys to choose, then press Enter to load. The newest save is "
                 + "preselected, so Enter right after opening loads your latest checkpoint. Delete removes the "
                 + "highlighted save; Escape also closes the menu.");
 
-            // Read BEFORE binding, see the method - binding consumes the orphaned entries
-            // this inspects
+            // Read before binding: binding consumes the orphaned entries this inspects.
             bool? inheritedFromOldSetting = TryReadDeprecatedResumeKeyConfirmsLoad(cfg);
 
             ResumeKeyLoadsInsteadOfClosing = cfg.Bind("General", "resume-key-loads-instead-of-closing", false,
@@ -160,15 +121,11 @@ namespace PEAKQuickResume
                     + "keeps behaving the way you had it. The old setting has been removed from the config file.");
             }
 
-            // Same plain-KeyCode reasoning as resume-key above (ModConfig only renders a
-            // rebind widget for KeyCode, not KeyboardShortcut)
             HelpKey = cfg.Bind("General", "help-key", KeyCode.F4,
                 "Opens the help screen (Quick Resume controls).");
 
-            // Default of B (not the more obvious S): while the F7 picker is open, key
-            // input still reaches the character underneath it (it's an overlay, not a
-            // real pause), so WASD-adjacent keys double as movement input - some players
-            // even rely on that bleed-through deliberately. B has no vanilla listener
+            // Default of B, not S: the F7 picker is an overlay, so key input still reaches the
+            // character underneath, and WASD-adjacent keys double as movement input. B has no vanilla listener.
             StarKey = cfg.Bind("General", "star-key", KeyCode.B,
                 "While the F7 save picker is open, stars/unstars the highlighted save. Starred saves are pinned "
                 + "to the top of the list (newest first) and can't be deleted until unstarred again.");
@@ -476,44 +433,27 @@ namespace PEAKQuickResume
                 "Internal bookkeeping - do not edit by hand. The game version this mod last saw at "
                 + "launch, used to show a one-time notice after a game update rotates the map pool.");
 
-            // Deliberately last: Save() writes every BOUND entry plus any leftover orphans,
-            // so flushing before the binds above would rewrite the file while most settings
-            // were still orphans and strip their comments. Only needed when nothing else
-            // marked the config dirty - a migrated value already triggers its own save
+            // Deliberately last: Save() writes every bound entry plus leftover orphans, so
+            // flushing before the binds above would strip their comments.
             if (_removedDeprecatedEntry) cfg.Save();
         }
 
-        // Set when the deprecated entry below was dropped, so the constructor knows it has
-        // to force a save - removing an orphan alone changes nothing on disk
+        // Set when the deprecated entry below was dropped, so the constructor forces a save
+        // (removing an orphan alone changes nothing on disk).
         private bool _removedDeprecatedEntry;
 
-        // The setting resume-key-loads-instead-of-closing replaced, removed in 2.2.0
+        // The setting resume-key-loads-instead-of-closing replaced, removed in 2.2.0.
         private static readonly ConfigDefinition DeprecatedConfirmsLoad =
             new ConfigDefinition("General", "resume-key-also-confirms-load");
         private static readonly ConfigDefinition CurrentKeyLoads =
             new ConfigDefinition("General", "resume-key-loads-instead-of-closing");
 
         /// <summary>
-        /// One-time migration of the removed <c>resume-key-also-confirms-load</c> setting
-        /// onto its replacement, <c>resume-key-loads-instead-of-closing</c>. The two mean
-        /// the same thing (does the resume key load, or just close?), so anyone who had
-        /// deliberately turned the old one off - or simply kept its default-on behaviour
-        /// and got used to double-tapping F7 to load - keeps exactly the behaviour they
-        /// had, instead of silently getting the new default and wondering why the key
-        /// stopped loading.
-        ///
-        /// Returns the value to carry over, or null when there is nothing to migrate.
-        ///
-        /// MUST BE CALLED BEFORE BINDING the replacement. BepInEx parks every setting it
-        /// reads from disk in a private <c>OrphanedEntries</c> map and removes each one as
-        /// it gets bound, so this can distinguish the two cases that matter:
-        ///  - the replacement is ALREADY in the file: this user has run a version that had
-        ///    it, their choice stands, migrate nothing
-        ///  - only the old key is there: they are coming from an older version, carry it
-        ///
-        /// The old entry is then dropped from that map, because <c>ConfigFile.Save</c>
-        /// writes leftover orphans back out - without this it would linger in every config
-        /// file forever, looking like a setting that still does something
+        /// One-time migration of the removed <c>resume-key-also-confirms-load</c> setting onto
+        /// its replacement, <c>resume-key-loads-instead-of-closing</c>, so a user's existing
+        /// behaviour is preserved. Returns the value to carry over, or null if nothing to migrate.
+        /// Must be called before binding the replacement, since BepInEx removes each setting
+        /// from its <c>OrphanedEntries</c> map as it gets bound.
         /// </summary>
         private bool? TryReadDeprecatedResumeKeyConfirmsLoad(ConfigFile cfg)
         {
@@ -525,23 +465,18 @@ namespace PEAKQuickResume
 
                 if (!orphans.TryGetValue(DeprecatedConfirmsLoad, out string raw)) return null;
 
-                // Drop it UNCONDITIONALLY, even when not migrating below. Save() writes
-                // leftover orphans back out, so skipping this for someone who already has
-                // the replacement would strand a dead setting in their config permanently
+                // Drop unconditionally, even when not migrating below, or it lingers forever.
                 orphans.Remove(DeprecatedConfirmsLoad);
                 _removedDeprecatedEntry = true;
 
-                // The replacement is already in their file, so they have run a version that
-                // had it and their choice stands - clean up, but never overwrite it
+                // The replacement is already in their file - their choice stands, clean up only.
                 if (orphans.ContainsKey(CurrentKeyLoads)) return null;
 
-                // Unparseable means a hand-edited file; fall back to the old setting's own
-                // default (true), which is the behaviour that user actually experienced
+                // Unparseable means a hand-edited file; fall back to the old default.
                 return bool.TryParse(raw?.Trim(), out bool value) ? value : true;
             }
             catch
             {
-                // Purely a convenience migration - never let it stop the config loading
                 return null;
             }
         }

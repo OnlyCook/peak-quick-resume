@@ -5,19 +5,12 @@ using HarmonyLib;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Prevents the vanilla pause menu from opening as a side effect of the SAME Escape
-    /// press that just closed our F7 save picker (<see cref="SavePicker"/>)
-    ///
-    /// The obvious fix, clearing <c>Character.localCharacter.input.pauseWasPressed</c>
-    /// right after we close, does NOT work: <c>CharacterInput</c> re-derives that field
-    /// straight from the new Input System's <c>WasPressedThisFrame()</c> every single
-    /// frame, so whatever we set it to gets silently overwritten back to true the next
-    /// time that runs, regardless of ordering. Chasing that field is a dead end
-    ///
-    /// Instead we Harmony-prefix the actual method that opens the menu
-    /// (<c>GUIManager.UpdatePaused</c>) and skip its body entirely, exactly once, right
-    /// after our own picker closes on Escape. This never depends on which MonoBehaviour's
-    /// Update() happens to run first this frame, unlike clearing a shared input flag
+    /// Prevents the vanilla pause menu from opening as a side effect of the same Escape
+    /// press that just closed our F7 save picker (<see cref="SavePicker"/>). Clearing
+    /// <c>Character.localCharacter.input.pauseWasPressed</c> doesn't work, since
+    /// <c>CharacterInput</c> re-derives it from the Input System every frame, so instead
+    /// this Harmony-prefixes <c>GUIManager.UpdatePaused</c> and skips it entirely, once,
+    /// right after the picker closes.
     /// </summary>
     public static class PauseSuppressPatch
     {
@@ -45,12 +38,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Call the moment Escape closes the F7 picker: the game's very next
-        /// <c>UpdatePaused()</c> call (later this same frame) is skipped entirely, so it
-        /// cannot open the pause menu from that press. Self-resetting; never lingers
-        /// into a later frame even if, for some reason, no call ever consumes it
-        /// </summary>
+        /// <summary>Call the moment Escape closes the F7 picker; skips the next UpdatePaused() call. Self-resetting.</summary>
         public static void SuppressNextOpen() => _suppressOnce = true;
 
         private static bool Prefix()

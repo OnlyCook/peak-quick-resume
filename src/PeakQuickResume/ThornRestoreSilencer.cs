@@ -8,31 +8,14 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// Stops a checkpoint load from sounding like you are being shot: re-attaching a saved
-    /// arrow replayed the arrow-impact sound, once per arrow.
+    /// arrow replayed the arrow-impact sound (<c>SFX_PlayOneShot</c> component, fired via
+    /// Unity's <c>Start()</c> on <c>SetActive</c>).
     ///
-    /// THE MECHANISM (confirmed from a live capture, after two wrong guesses - see the
-    /// comments in <see cref="ThornsAndTicksRestore"/> for what it was NOT):
-    /// <code>
-    /// AddThorn -> RPC_EnableThorn -> ThornOnMe.EnableThorn -> gameObject.SetActive(true)
-    ///   -> Unity Start() on the arrow's SFX_PlayOneShot component
-    ///     -> playOnStart == true -> Play() -> PlayOneShot() -> SFX_Player.PlaySFX
-    ///        ("SFXI Arrow Hit 1/2/3" - one component plays its `sfx` plus every entry
-    ///         in its `sfxs[]` array, which is why ONE arrow made three sounds)
-    /// </code>
-    /// The sound is a <c>SFX_PlayOneShot</c> COMPONENT, not an <c>AudioSource</c> - which
-    /// is why sweeping the arrow objects for AudioSources found nothing.
-    ///
-    /// WHY A PATCH RATHER THAN TOGGLING <c>playOnStart</c>: Unity does not run
-    /// <c>Start()</c> during <c>SetActive</c>, it runs it later, before the next Update.
-    /// Clearing the flag and putting it back around the re-attach loop would therefore put
-    /// it back BEFORE Start ever ran, and the sound would play anyway. Leaving the flag
-    /// off instead would silently change the object for the rest of the run. A prefix that
-    /// declines the call for a moment needs no game state changed and expires by itself.
-    ///
-    /// Scope is deliberately tight: only components on (or under) the specific thorn
-    /// objects being restored, and only for a couple of seconds. Anything else that wants
-    /// to play a one-shot during a load - including a genuine arrow hit on a DIFFERENT
-    /// body part - is untouched
+    /// A Harmony prefix rather than toggling <c>playOnStart</c>: Unity runs <c>Start()</c>
+    /// after <c>SetActive</c>, not during it, so clearing/restoring the flag around the
+    /// re-attach loop would restore it before Start ever ran. A prefix that declines the
+    /// call for a moment needs no game state changed and expires on its own. Scoped tightly:
+    /// only the specific thorn objects being restored, for a couple of seconds.
     /// </summary>
     internal static class ThornRestoreSilencer
     {
@@ -46,9 +29,7 @@ namespace PEAKQuickResume
             _log = log;
             try
             {
-                // PlayOneShot rather than Play: Play is a one-line forwarder to it, but
-                // other callers reach PlayOneShot directly, and the Start/OnEnable paths
-                // both funnel through it
+                // PlayOneShot, not Play: other callers reach it directly, and Start/OnEnable both funnel through it.
                 var target = AccessTools.Method(typeof(SFX_PlayOneShot), "PlayOneShot");
                 if (target == null)
                 {
@@ -81,8 +62,7 @@ namespace PEAKQuickResume
                 Transform t = __instance.transform;
                 foreach (Transform root in _silenced)
                 {
-                    // IsChildOf is true for the transform itself as well, so this covers
-                    // the component sitting directly on the arrow or on a child of it
+                    // IsChildOf is also true for the transform itself.
                     if (root != null && t.IsChildOf(root)) return false;
                 }
             }
@@ -91,11 +71,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Silences the given thorn objects for a moment, covering the Unity callback that
-        /// fires after they are switched back on. <paramref name="seconds"/> only has to
-        /// outlast the next frame - <c>Start</c> runs before the following Update, and
-        /// <c>playOnEnable</c>'s coroutine waits a single end-of-frame - but a small margin
-        /// costs nothing because the filter is per-object
+        /// Silences the given thorn objects for a moment. <paramref name="seconds"/> only
+        /// needs to outlast the next frame (Start runs before the following Update).
         /// </summary>
         public static void SilenceDuringRestore(CharacterAfflictions afflictions, List<ushort> thornIndices, float seconds = 2f)
         {

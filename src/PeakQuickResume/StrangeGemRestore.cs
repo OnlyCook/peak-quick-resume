@@ -7,56 +7,17 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Puts the Strange Gem back on the scout statue behind the peak after a load into
-    /// the final segment (THE CITADEL, and the Volcano island's THE KILN variant, both
-    /// <c>Segment.TheKiln</c> = 4).
+    /// Puts the Strange Gem back on the scout statue after a load into the final segment
+    /// (<c>Segment.TheKiln</c>). The gem isn't placed by a level <c>ISpawner</c>; it's spawned
+    /// once by <c>Peak.ScoutStatue.Update</c> the first frame the statue is active, then our
+    /// own world-loot cleanup deletes it again (its Photon view isn't a room view, so it looks
+    /// like ordinary dropped loot). <c>spawnedInitialGem</c> latches after that first spawn, so
+    /// vanilla never retries and the statue stays empty for the rest of the run. Loading a
+    /// Gloom checkpoint is unaffected since the statue only activates later, via the normal
+    /// campfire transition.
     ///
-    /// WHY THIS IS NEEDED: the gem is not placed by a level <c>ISpawner</c> like the rest
-    /// of the world loot, so nothing in our restore or in the game's own segment logic
-    /// ever re-creates it. It is spawned exactly once, by <c>Peak.ScoutStatue</c> itself,
-    /// on the first frame the statue is active for the master client:
-    /// <code>
-    /// private void Update() {
-    ///     if (PhotonNetwork.InRoom &amp;&amp; PhotonNetwork.IsMasterClient &amp;&amp; !spawnedInitialGem) {
-    ///         SpawnGem_Master();
-    ///         spawnedInitialGem = true;
-    ///     }
-    /// }
-    /// private void SpawnGem_Master() {
-    ///     if (PhotonNetwork.IsMasterClient &amp;&amp; spawnedGem_master == null) {
-    ///         spawnedGem_master = PhotonNetwork.Instantiate("0_Items/" + gemPrefab.name, ...);
-    ///         ...
-    ///     }
-    /// }
-    /// </code>
-    /// The statue lives inside the final segment's own parent (Gloom/Temple_Segment/Peak/
-    /// AmuletScoutStatue, or Volcano/Volcano_Segment/"Peak_Kiln Variant"/AmuletScoutStatue),
-    /// so it only starts ticking once that segment is activated. Loading a checkpoint taken
-    /// in the Citadel activates the segment during the jump, the statue's <c>Update</c> spawns
-    /// the gem a frame later, and then our own cleanup deletes it again:
-    /// <c>ScoutStatue</c> uses <c>PhotonNetwork.Instantiate</c>, NOT <c>InstantiateItemRoom</c>,
-    /// so the gem's view has <c>CreatorActorNr = host</c> and therefore <c>IsRoomView == false</c>
-    /// (PUN2: <c>IsRoomView =&gt; CreatorActorNr == 0</c>). That is exactly the case
-    /// <see cref="OwnWorldLootReset.ResetWorldLoot"/>'s dropped-item pass destroys, map-wide
-    /// with no radius, and <see cref="OwnWorldLootReset.DestroyLeftoverHeldItems"/> would take
-    /// it too on a repeat load (<c>IsMine</c> is true for the host on its own instantiate).
-    /// <c>spawnedInitialGem</c> has already latched by then, so vanilla never tries again and
-    /// the statue is left empty for the rest of the run.
-    ///
-    /// Loading a GLOOM checkpoint is unaffected, which is how this was reported: there the
-    /// statue is still inactive while our cleanup runs, and the normal Gloom -> Citadel
-    /// campfire transition activates it long afterwards, so the gem spawns and survives.
-    /// Lighting the campfire normally is likewise unaffected, which is why this only runs on
-    /// the load path (called from <see cref="OwnTeleportSequence"/>, host only).
-    ///
-    /// The statue's own state needs no save/restore alongside this: it can only be interacted
-    /// with in the final segment, past the last campfire, so no checkpoint can ever exist with
-    /// amulets already inserted.
-    ///
-    /// Reflection rather than a direct <c>Peak.ScoutStatue</c> reference: the type is new in
-    /// PEAK 2.x and both the field and the spawn method are private, and a hard type reference
-    /// would throw a <c>TypeLoadException</c> right in the middle of the restore coroutine on
-    /// any game build that doesn't have it. Everything here degrades to a log line instead
+    /// Uses reflection, not a direct <c>Peak.ScoutStatue</c> reference: the type is new in
+    /// PEAK 2.x, so a hard reference would throw on older builds. Degrades to a log line instead.
     /// </summary>
     internal static class StrangeGemRestore
     {
@@ -66,11 +27,8 @@ namespace PEAKQuickResume
         private static bool _statueTypeResolved;
 
         /// <summary>
-        /// Re-spawns the gem on every active scout statue that is currently missing one.
-        /// Safe to call when there is nothing to do: a statue whose gem is still alive (or
-        /// is being carried by someone) is skipped, and so is one whose gem prefab already
-        /// exists somewhere in the scene, so this can never duplicate the gem. Host only,
-        /// and only ever called for <c>Segment.TheKiln</c>
+        /// Re-spawns the gem on every active scout statue currently missing one. Safe to call
+        /// when there's nothing to do; never duplicates the gem. Host only, TheKiln only.
         /// </summary>
         public static void Restore(ManualLogSource log)
         {
@@ -102,10 +60,7 @@ namespace PEAKQuickResume
                         Component statue = statueObject as Component;
                         if (statue == null) continue;
 
-                        // The unused biome variant's statue is disabled along with its whole
-                        // branch, and a statue in a segment we are not in has never ticked, so
-                        // spawning its gem here would be putting it in place early. Only the
-                        // one belonging to the segment we just loaded into is live
+                        // Only the statue in the segment we just loaded into is active/live.
                         if (!statue.gameObject.activeInHierarchy) continue;
 
                         if (!IsDestroyedOrMissing(spawnedGemField.GetValue(statue) as UnityEngine.Object))
@@ -114,9 +69,7 @@ namespace PEAKQuickResume
                             continue;
                         }
 
-                        // Second, independent guard against ever ending up with two gems: the
-                        // field above is only the statue's own bookkeeping, so also make sure no
-                        // instance of the prefab is lying around (or being carried) elsewhere
+                        // Second guard against duplicates: also check no prefab instance exists elsewhere.
                         GameObject gemPrefab = gemPrefabField?.GetValue(statue) as GameObject;
                         if (gemPrefab != null && GemInstanceExists(gemPrefab.name))
                         {
@@ -126,8 +79,6 @@ namespace PEAKQuickResume
                         }
 
                         // Exactly what vanilla's own RPC_InsertAmulet(99) path does on the host.
-                        // Self-guarded on spawnedGem_master == null, and PhotonNetwork.Instantiate
-                        // inside it networks the gem to every client the same as the first spawn
                         spawnGemMethod.Invoke(statue, null);
 
                         bool spawned = !IsDestroyedOrMissing(spawnedGemField.GetValue(statue) as UnityEngine.Object);
@@ -147,11 +98,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Unity's fake-null semantics on purpose: a gem destroyed by our own cleanup leaves
-        /// the statue's field pointing at a destroyed object, which is what we want to treat
-        /// as "missing", exactly like <c>SpawnGem_Master</c>'s own <c>== null</c> check does
-        /// </summary>
+        /// <summary>Unity's fake-null semantics: a gem destroyed by our cleanup leaves the field pointing at a destroyed object.</summary>
         private static bool IsDestroyedOrMissing(UnityEngine.Object obj) => obj == null;
 
         private static bool GemInstanceExists(string prefabName)

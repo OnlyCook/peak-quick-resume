@@ -6,34 +6,16 @@ using Zorro.Core;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Pure observability - every patch here is a postfix (or a prefix that only reads
-    /// state via <c>__state</c>), never blocks or changes any game behavior. Added so
-    /// the achievement-progress restore (see <see cref="AchievementProgressIO"/>) can
-    /// be verified straight from <c>LogOutput.log</c> - specifically so a false
-    /// "climbed height" credit from teleporting (High Altitude Badge) shows up as a
-    /// clearly tagged log line instead of silently inflating a permanent Steam stat,
-    /// and so the run-scoped counters (Plunderer, First Aid, Foraging, Mycology, Advanced
-    /// Mycology, Gourmand, Knot Tying, Clutch, ...) can be watched ticking up from their
-    /// restored value while testing, all WITHOUT needing Steam Achievement Manager or
-    /// risking an accidental real unlock of something the player wants to earn legitimately.
-    ///
-    /// Every log line here is tagged "[achievement-debug]" for easy grepping out of a
-    /// full session log. HighAltitudeBadge-relevant lines are logged at Warning level
-    /// (so they stand out) when they'd actually credit height; everything else is Info
+    /// Pure observability: postfix/state-only patches that log achievement-progress
+    /// activity (tagged "[achievement-debug]") without altering game behavior.
     /// </summary>
     public static class AchievementDebugLogging
     {
         private static ManualLogSource _log;
 
-        // NOTE for anyone adding a patch here: NEVER call
-        // AchievementManager.GetRunBasedInt from a patch that sits on SetRunBasedInt.
-        // Vanilla's getter WRITES on a miss (GetRunBasedInt -> if (!ContainsKey)
-        // SetRunBasedInt(type, 0)), so a SetRunBasedInt prefix that calls the getter
-        // re-enters itself, and the key is still absent every time round because the outer
-        // setter's body hasn't run yet - unbounded recursion, no log output, game wedged on
-        // the loading screen. Hit for real on 2026-08-13 with ClownLuggageOpened, which is
-        // absent from every save written before that counter existed. Read the backing
-        // runBasedInts dictionary by reflection instead, which cannot create the entry
+        // Never call AchievementManager.GetRunBasedInt from a SetRunBasedInt patch: vanilla's
+        // getter writes on a miss, causing unbounded re-entrant recursion. Read the backing
+        // runBasedInts dictionary via reflection instead.
         public static void Apply(Harmony harmony, ManualLogSource log)
         {
             _log = log;
@@ -82,9 +64,7 @@ namespace PEAKQuickResume
 
         // --- High Altitude Badge: the one that matters most for teleport-safety ---
 
-        // Captures the permanent HeightClimbed Steam stat BEFORE RecordMaxHeight runs,
-        // via __state, so the postfix can log the exact delta it produced (0 is what a
-        // correctly-restored teleport should show)
+        // Captures HeightClimbed before RecordMaxHeight runs so the postfix can log the delta.
         private static void RecordMaxHeight_Prefix(out int __state)
         {
             __state = 0;
@@ -166,21 +146,13 @@ namespace PEAKQuickResume
             _log?.LogInfo($"[achievement-debug] GourmandBadge: {counts.gourmand}/4 required items cooked+eaten this run (coconut half, honeycomb, yellow winterberry, egg).");
         }
 
-        // --- Every achievement check, for correlating "I just did X" with the log ---
-
-        // --- Run won: fires once per player, locally, the moment THEY reach the peak ---
+        // --- Run won ---
 
         private static void TestWonRun_Postfix()
             => AchievementProgressIO.LogSnapshot("run-won", _log);
 
-        // --- Temporary (2026-08-06 session): diagnosing a reproducible Clutch over-credit
-        // right after a Quick Resume load. TestRespawnChestOpened's native loop grants one
-        // ScoutsResurrected credit per Character.AllCharacters entry currently dead/fully-
-        // passed-out - if that list ever holds a stale/duplicate entry (e.g. left over from
-        // a previous load in the same session) alongside the real one, a single statue touch
-        // would over-credit. This dumps every entry's identity + flags at the exact moment
-        // the native loop is about to run, so a repro immediately shows whether that's what's
-        // happening. Remove once resolved
+        // Diagnostic for a Clutch over-credit repro: dumps Character.AllCharacters state
+        // right before the native ScoutsResurrected loop runs.
         private static void TestRespawnChestOpened_Prefix(RespawnChest chest, Character opener)
         {
             try

@@ -60,12 +60,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Force <c>RunSettings.IsCustomRun</c> to <paramref name="value"/> before we
-        /// start a run. Required in BOTH directions: the checkpoint mod's
-        /// <c>GetPlayerSaveFile</c> chooses the CustomRun file iff this is true, and the
-        /// game does not reliably reset it at the Airport, so a stale value would make
-        /// us resume the wrong save (custom vs normal). <c>kiosk.StartGame</c> serializes
-        /// the current run settings (this flag included), so setting it here is enough
+        /// Forces <c>RunSettings.IsCustomRun</c> before starting a run: the game doesn't
+        /// reliably reset it at the Airport, and a stale value picks the wrong save file.
         /// </summary>
         public static bool TrySetCustomRun(bool value, ManualLogSource log)
         {
@@ -82,33 +78,12 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Clear vanilla's "this scene load is resuming the quicksave" latch
-        /// (<c>Peak.Quicksave.ShouldUseSaveData</c>) before we drive a scene transition of
-        /// our own.
-        ///
-        /// PEAK 2.0.a's main-menu "Continue Run" button sets that latch to true and NOTHING
-        /// clears it for the rest of the session short of the run ending
-        /// (<c>Character.RPCEndGame</c> -> <c>Quicksave.DestroySaveData</c>). It is read by
-        /// <c>CharacterSpawner.SpawnHostCharacter</c> on EVERY subsequent scene load, and
-        /// when it is set that method takes the resume branch:
-        /// <c>Quicksave.PopulateMapAndPlayerStates()</c> (-> <c>MapHandler.JumpToSegment</c>)
-        /// followed by <c>MapHandler.PreviousCampfire</c>. In the Airport there is no
-        /// MapHandler at all, so that branch throws, the host's character is never spawned,
-        /// and <c>LoadSceneProcess</c>'s <c>WaitForCharacterSpawn</c> sits there for its full
-        /// 200s timeout - i.e. <c>LoadingScreenHandler.loading</c> never clears and the
-        /// player is stuck on vanilla's "LOADING..." screen. That is exactly the reported
-        /// hang: continue a run, press the resume key, and our Airport step times out on
-        /// "airport loading to finish" while the game itself is wedged (see the session log).
-        /// (The Airport dodges the earlier <c>IsInGameplayScene</c> guard because
-        /// <c>GameHandler.IsGameplayScene</c> only matches scene names containing "Island"
-        /// or "Level_".)
-        ///
-        /// Clearing the latch is both necessary and sufficient: our own load path never uses
-        /// vanilla's quicksave (we restore from our own files - see OwnSaveCapture /
-        /// OwnLoadEntryPoints), so a run resumed through us must spawn the ordinary way. This
-        /// deliberately does NOT call <c>Quicksave.DestroySaveData()</c>, which would also
-        /// delete quicksave.peak and take the player's own "Continue Run" button away; the
-        /// file is left untouched and gets rewritten by vanilla at the next campfire anyway
+        /// Clears vanilla's "resuming the quicksave" latch (<c>Peak.Quicksave.ShouldUseSaveData</c>)
+        /// before driving our own scene transition. Main-menu "Continue Run" sets it and nothing
+        /// else clears it; left set, <c>CharacterSpawner.SpawnHostCharacter</c> takes the resume
+        /// branch on the next scene load, which throws in the Airport (no MapHandler there) and
+        /// hangs the loading screen for its full 200s timeout. Doesn't call
+        /// <c>Quicksave.DestroySaveData()</c> (would delete quicksave.peak and remove "Continue Run").
         /// </summary>
         public static void ClearVanillaQuicksaveResume(ManualLogSource log)
         {
@@ -128,31 +103,12 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Drops the room's buffered-RPC cache, the way vanilla itself does on an Airport
-        /// transition (<c>GameOverHandler.LoadAirportMaster</c> calls
-        /// <c>PhotonNetwork.OpRemoveCompleteCache()</c> immediately before broadcasting the load).
-        ///
-        /// WHY WE NEED OUR OWN CALL
-        /// Buffered RPCs replay for anyone who joins later, so one left pointing at a Character
-        /// that no longer exists throws on every future arrival. The clearest example is the
-        /// spectator ghost: <c>MainCameraMovement</c> sends
-        /// <c>RPCA_InitGhost(RpcTarget.AllBuffered, ...)</c>, and that method's FIRST statement
-        /// dereferences the character view it was handed. Our load destroys and recreates every
-        /// Character, so a ghost that existed beforehand leaves a buffered call aimed at a dead
-        /// view - it throws before reaching <c>m_owner.Ghost = this</c>, and since
-        /// <c>StopSpectating</c> only destroys the ghost <c>if (Character.localCharacter.Ghost
-        /// != null)</c>, nothing ever cleans it up. The result is a player who stays a ghost with
-        /// an orphaned model parked at the world origin, matching a user report of friends "still
-        /// being ghost" after a resume
-        ///
-        /// Vanilla's own clear normally covers us, but there are two paths where it does not: a
-        /// resume started while ALREADY at the Airport never calls ReturnToAirport at all, and
-        /// <c>LoadAirportMaster</c> early-returns before the clear when a
-        /// <c>SceneSwitchingStatus</c> is already set. Calling it ourselves right before starting
-        /// the run closes both, and only ever discards buffered calls belonging to the run that is
-        /// about to be replaced
-        ///
-        /// Master-only (it is a master-client operation) and a no-op offline
+        /// Drops the room's buffered-RPC cache, same as vanilla does on an Airport transition.
+        /// Needed because a leftover buffered <c>RPCA_InitGhost</c> pointing at a Character our
+        /// load destroyed throws on every later joiner, leaving that player stuck as a ghost
+        /// (matches reported "still being ghost" after a resume). Vanilla's own clear misses two
+        /// paths we hit (resume started already at the Airport; an early-return in
+        /// <c>LoadAirportMaster</c>), so this call closes both. Master-only, no-op offline.
         /// </summary>
         public static void ClearBufferedRpcs(ManualLogSource log)
         {
@@ -171,15 +127,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Send EVERYONE back to the Airport.
-        ///
-        /// Uses <c>GameOverHandler.LoadAirport()</c>, the game's canonical synchronized
-        /// return: it RPCs the master, which RPCs <c>BeginAirportLoadRPC</c> to *All*,
-        /// the same reliable RPC-to-all pattern as the run-start. This is essential in
-        /// coop: <c>EndScreen.ReturnToAirport()</c> (which we used before) only loads the
-        /// Airport locally for the caller, so a client sitting on the endscreen got left
-        /// behind. GameOverHandler brings every client along, and works offline too
-        /// (Photon routes the RPCs locally). Fallbacks kept for safety
+        /// Sends everyone back to the Airport via <c>GameOverHandler.LoadAirport()</c> (RPC-to-all),
+        /// unlike <c>EndScreen.ReturnToAirport()</c> which only loads locally and leaves clients
+        /// behind. Fallbacks kept for safety.
         /// </summary>
         public static bool ReturnToAirport(ManualLogSource log)
         {
@@ -220,10 +170,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Mirrors EndScreen.ReturnToAirport() exactly: a *networked* Airport load via
-        // LoadingScreenHandler. Networked (PhotonNetwork.LoadLevel under the hood) is
-        // essential in coop, the host's load propagates to all clients. In offline
-        // mode Photon runs it locally, so the same call works solo too
+        // Mirrors EndScreen.ReturnToAirport(): a networked Airport load, so it propagates to all clients.
         private static bool LoadAirportDirect(ManualLogSource log)
         {
             try

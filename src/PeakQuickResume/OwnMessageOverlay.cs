@@ -6,17 +6,9 @@ using UnityEngine.UI;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own top-of-screen transient message overlay. Every on-screen message this
-    /// mod shows (resume status, errors, teleport-bug hints, save confirmations, etc.)
-    /// goes through <see cref="Show"/>
-    ///
-    /// Deliberately simple: single text, no queue - a new call immediately replaces
-    /// whatever's showing and resets its timer ("last call wins"). Several call sites
-    /// rely on this, e.g. <see cref="TeleportWatchdog.ShowMessageResiliently"/>'s repeated
-    /// re-shows to win a race against a later message
-    ///
-    /// Built from the same primitives as <see cref="SavePicker"/>/<see cref="HelpScreen"/>
-    /// (own Canvas, <see cref="SavePicker.FindGameFont"/>), word-wrapped from the start
+    /// Top-of-screen transient message overlay; every on-screen message this mod shows
+    /// goes through <see cref="Show"/>. Single text, no queue - a new call immediately
+    /// replaces whatever's showing and resets its timer ("last call wins").
     /// </summary>
     public class OwnMessageOverlay : MonoBehaviour
     {

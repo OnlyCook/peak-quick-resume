@@ -6,40 +6,21 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// "Has every player in the room actually finished spawning?", answered from the HOST by
-    /// looking at <c>Player.character</c> rather than by asking anyone.
-    ///
-    /// WHY IT IS NEEDED
-    /// Two separate session-confirmed co-op bugs come from acting while a client is still
-    /// mid-spawn:
-    ///  1. RESTART sent <c>kiosk.StartGame</c> the moment the HOST was done loading the Airport.
-    ///     A client still spawning in has <c>LoadingScreenHandler.loading == true</c>, and
-    ///     <c>LoadingScreenHandler.Load</c> refuses outright in that state ("Tried to load while
-    ///     already loading!") - so the island load RPC was simply dropped on their end and they
-    ///     were left standing in the previous level, in a biome that no longer existed for
-    ///     anyone else. The host's log shows it plainly: the spawn requests for the client are
-    ///     still being repeated on both sides of <c>StartRun</c>
-    ///  2. The RESUME's segment jump advances the run, and <c>CharacterSpawner</c> kills anyone
-    ///     who finishes spawning after that point (see OwnTeleportSequence's call site)
-    ///
-    /// WHY NOT OUR OWN READY RPC
-    /// <see cref="OwnNetwork"/> already has a readiness handshake, but it only exists on machines
-    /// running this mod, and both bugs reproduce with a completely unmodded client. Watching the
-    /// characters the host can already see works for everyone
-    ///
-    /// A non-null <c>Character</c> alone is NOT sufficient - see <see cref="AllRegistered"/>
+    /// "Has every player in the room actually finished spawning?", answered from the host by
+    /// looking at <c>Player.character</c> rather than asking anyone. Acting while a client is
+    /// still mid-spawn causes two co-op bugs: a Restart's island-load RPC gets dropped while
+    /// <c>LoadingScreenHandler.loading</c> is still true, and a Resume's segment jump can get
+    /// <c>CharacterSpawner</c> to kill anyone who finishes spawning after it (see
+    /// OwnTeleportSequence's call site). Doesn't use <see cref="OwnNetwork"/>'s own readiness
+    /// RPC, since both bugs reproduce with a completely unmodded client.
     /// </summary>
     internal static class PlayerRegistration
     {
         /// <summary>
-        /// True when every player in the room has a Character that is actually usable.
-        ///
-        /// The transform check is the point of this method. A player who is respawning (a
-        /// reconnect, or a fresh spawn replacing an old body) briefly still has a reference to a
-        /// Character whose GameObject is already being torn down; counting that as "registered"
-        /// is what let a segment jump run against a half-destroyed player list, where
-        /// <c>Character.Center</c> dereferences a dead transform and throws - which stranded a
-        /// restore on "LOADING SAVE..." forever in a real session
+        /// True when every player in the room has a Character that is actually usable. The
+        /// transform check matters: a respawning player briefly has a reference to a Character
+        /// whose GameObject is already being torn down, and counting that as registered let a
+        /// segment jump run against a half-destroyed player list and throw.
         /// </summary>
         internal static bool AllRegistered() => AllRegistered(out _, out _);
 
@@ -62,7 +43,6 @@ namespace PEAKQuickResume
             }
             catch
             {
-                // Mid-scene-load churn; report "not yet" and let the caller try again
                 return false;
             }
 

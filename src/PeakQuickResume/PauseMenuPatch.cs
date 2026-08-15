@@ -12,21 +12,11 @@ using UnityEngine.UI;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Miscellaneous QoL: inject three in-game-styled buttons into the vanilla pause
-    /// menu (<see cref="PauseMenuMainPage"/>), matching the screenshot's banner style
-    /// by cloning an existing button rather than building new UI from scratch:
-    ///
-    ///   - "Restart"            mid-run only, host only. Confirms, then restarts the
-    ///                          current run at the same difficulty (see <see cref="RestartOrchestrator"/>)
-    ///   - "Return to Airport"  mid-run only, host only. Confirms, then sends
-    ///                          everyone back to the Airport (no new run started)
-    ///   - "Board Flight"       Airport only, any player. Opens the gate-kiosk UI
-    ///                          directly, skipping the walk over to it
-    ///
-    /// <see cref="GUIManager"/>/<see cref="PauseMenuMainPage"/> are NOT DontDestroyOnLoad
-    /// (each scene load, offline or Photon, is a full Single-mode scene swap), so a
-    /// fresh instance is created every time and <c>Start()</c> runs again. We rebuild
-    /// our buttons on every such instance rather than trying to make them survive
+    /// Injects three in-game-styled buttons into the vanilla pause menu
+    /// (<see cref="PauseMenuMainPage"/>) by cloning an existing button: "Restart"
+    /// (mid-run, host only), "Return to Airport" (mid-run, host only), "Board Flight"
+    /// (Airport only, any player - opens the gate-kiosk UI directly). Rebuilt on every
+    /// fresh <see cref="PauseMenuMainPage"/> instance, since it isn't DontDestroyOnLoad.
     /// </summary>
     public static class PauseMenuPatch
     {
@@ -111,30 +101,16 @@ namespace PEAKQuickResume
 
                 var b = new Buttons
                 {
-                    // Restart, Return to Airport and Board Flight all get their own
-                    // colors instead of inheriting the Accolades button's gold: a
-                    // crimson for Restart (close kin to "Leave Game"'s red, since it's
-                    // the most severe of the three, skipping straight into a fresh
-                    // run), and the same teal for Return to Airport and Board Flight
-                    // (both are calmer "just travel, nothing is lost" actions)
+                    // Crimson for Restart (the most severe action), teal for Return to
+                    // Airport / Board Flight (calmer "just travel" actions).
                     Restart = MakeButton(template, parent, insertIndex++,
                         () => PauseMenuLocalization.Get(ButtonLabel.Restart),
                         () => OnRestartClicked(__instance), new Color(0.80f, 0.20f, 0.15f)),
                     ReturnToAirport = MakeButton(template, parent, insertIndex++,
                         () => PauseMenuLocalization.Get(ButtonLabel.ReturnToAirport),
                         () => OnReturnToAirportClicked(__instance), new Color(0.12f, 0.55f, 0.58f)),
-                    // Reuses the game's own official "BOARDFLIGHT" string (same text shown
-                    // interacting with the kiosk directly), guaranteed to match/already
-                    // translated into every language the game ships, no guesswork needed.
-                    // That string comes back in normal case ("Board Flight" / "An Bord
-                    // gehen" / ...), but every other pause menu button is all-caps, so
-                    // force it to match. ToUpperInvariant (not culture-sensitive ToUpper)
-                    // to sidestep the Turkish dotted/dotless "i" casing quirk
-                    //
-                    // Same teal as Return to Airport (not the cloned Accolades gold):
-                    // both are "just travel, nothing lost" actions, so they read as one
-                    // color family rather than Board Flight looking like a leftover
-                    // Accolades-styled button
+                    // Reuses the game's own "BOARDFLIGHT" string, forced to all-caps to match
+                    // the other buttons (ToUpperInvariant to sidestep Turkish "i" casing).
                     OpenKiosk = MakeButton(template, parent, insertIndex++,
                         () => LocalizedText.GetText("BOARDFLIGHT").ToUpperInvariant(),
                         () => OnOpenKioskClicked(__instance), new Color(0.12f, 0.55f, 0.58f)),
@@ -173,10 +149,8 @@ namespace PEAKQuickResume
             SetActiveAndRefresh(b.OpenKiosk, RunLauncher.InAirport && _cfg.ShowBoardFlightButton.Value);
         }
 
-        // Re-reads the label's translation every time this runs (Start + every pause
-        // menu OnEnable), so a language change made in the game's own Settings takes
-        // effect the next time the player pauses/returns to this page, no separate
-        // language-change event subscription needed
+        // Re-reads the translation every call, so a language change in Settings takes effect
+        // next time the player pauses, without a separate language-change subscription.
         private static void SetActiveAndRefresh(ButtonEntry entry, bool active)
         {
             entry.GameObject.SetActive(active);
@@ -197,16 +171,9 @@ namespace PEAKQuickResume
 
             if (bannerColor.HasValue)
             {
-                // Selectable.targetGraphic is whichever Image the button itself treats
-                // as its banner fill (for hover/press tinting) - not necessarily on the
-                // root GameObject. GetComponent<Image>() on the root came back null on
-                // these buttons, which is why the first attempt at this silently did
-                // nothing. There's also a separate Image for the dashed-stitch border,
-                // which is a shade VARIANT of the fill color (not a fixed color), not
-                // touching it left it looking like leftover Accolades gold. Rather than
-                // hardcoding a second color per button, derive the border's new color
-                // from the template's own fill/border ratio, so any custom fill color
-                // automatically gets a matching border shade
+                // Selectable.targetGraphic is the fill Image, not necessarily on the root
+                // GameObject. The border Image is a shade variant of the fill, not a fixed
+                // color, so its new shade is derived from the template's own fill/border ratio.
                 Image fill = btn.targetGraphic as Image ?? clone.GetComponentInChildren<Image>(includeInactive: true);
                 if (fill != null)
                 {
@@ -236,15 +203,11 @@ namespace PEAKQuickResume
             TextMeshProUGUI tmp;
             if (loc != null)
             {
-                // loc.tmp is typed as the base TMP_Text; our buttons use TextMeshProUGUI
                 tmp = loc.tmp as TextMeshProUGUI ?? clone.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true);
                 loc.SetText(label);
-                // LocalizedText.OnEnable() re-derives `index` from its serialized `row`
-                // field (0 on a clone) whenever the GameObject is re-enabled, and then
-                // calls RefreshText(), stomping our text with the "LOC: 0" placeholder.
-                // Our buttons get SetActive() toggled every time the pause menu
-                // context changes, so disable the component permanently instead. We
-                // drive `tmp.text` ourselves from here on (see SetActiveAndRefresh)
+                // LocalizedText.OnEnable() re-derives its index from a serialized `row` field
+                // (0 on a clone) and stomps our text with a "LOC: 0" placeholder on re-enable.
+                // Disable it permanently instead; we drive tmp.text ourselves (see SetActiveAndRefresh).
                 loc.enabled = false;
             }
             else
@@ -286,9 +249,8 @@ namespace PEAKQuickResume
             Plugin.Instance?.RequestOpenGateKiosk();
         }
 
-        // Reuses the SAME confirm dialog + OK/Cancel buttons the vanilla "Leave Game"
-        // flow uses (PauseMenuMainPage.OpenQuitConfirmWindow), reconfiguring the OK
-        // listener and text each time, exactly like the game's own code does
+        // Reuses the same confirm dialog + OK/Cancel buttons the vanilla "Leave Game" flow
+        // uses, reconfiguring the OK listener and text each time.
         private static void OpenConfirm(PauseMenuMainPage instance, string text, Action onConfirm)
         {
             try

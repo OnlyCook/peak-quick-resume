@@ -3,12 +3,8 @@ using System.Collections.Generic;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Translations for every on-screen message OUR code triggers via
-    /// <see cref="OwnMessageOverlay.Show"/> (from <see cref="Plugin"/>,
-    /// <see cref="ResumeOrchestrator"/>, <see cref="RestartOrchestrator"/>)
-    ///
-    /// Same indexing/fallback rule as <see cref="PauseMenuLocalization"/> and
-    /// <see cref="SavePickerLocalization"/>
+    /// Translations for on-screen messages triggered via <see cref="OwnMessageOverlay.Show"/>.
+    /// Same indexing/fallback rule as <see cref="PauseMenuLocalization"/> and <see cref="SavePickerLocalization"/>.
     /// </summary>
     internal enum MsgKey
     {

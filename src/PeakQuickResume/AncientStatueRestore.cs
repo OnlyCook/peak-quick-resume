@@ -8,74 +8,30 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Native save/restore for the "Ancient Statue" found near most campfires - a
-    /// <c>RespawnChest</c> (decompile ~69353, subclass of <c>Luggage</c>): touching it
-    /// either revives a downed/dead teammate (if one qualifies) or breaks it open for a
-    /// random mystical item. First of the "item/object restore around the campfire"
-    /// mechanics (more to follow); nothing in the game's own save systems tracks this.
-    ///
-    /// PEAK's OWN mid-run "Quicksave" system (decompile ~88340, <c>Quicksave.RunProgress</c>)
-    /// tracks a SEPARATE, narrower case - only base-camp <c>Luggage.IsOpen</c>
-    /// (<c>openLuggageViewIds</c>), restored via item-spawn history
-    /// (<c>SpawnedItemTracker</c>/<c>Hash128 SpawnerId</c>). Deliberately not reused here:
-    /// that history mechanism only exists on a GameObject once
-    /// <c>MapHandler.EnsureSpawnTrackersAttached()</c> has run, which itself is only ever
-    /// triggered from the vanilla Quicksave load path (<c>RunManager.Start</c>) - we never
-    /// use vanilla Quicksave, so relying on it here would be silently inert on a fresh
-    /// map load. Restoring the saved item id ourselves (rather than replaying the
-    /// vanilla open flow, which would just roll a fresh random item) matches this mod's
-    /// existing approach elsewhere (see BackpackSaveMitigation, OwnInventoryRestore):
-    /// reconstruct saved state directly instead of re-triggering original gameplay
-    /// events and hoping they land the same way
-    ///
-    /// Three states captured/restored, matching Luggage's own state machine exactly:
-    ///  - Closed (unbroken): nothing to do, this is the scene's own default after
-    ///    <see cref="OwnWorldLootReset.ResetWorldLoot"/> runs
-    ///  - Open (broken), no item nearby (already picked up, or the touch revived a
-    ///    player instead of spawning anything): <c>chest.Break()</c> only - sets
-    ///    state=Open with no spawn, mirroring the vanilla revive-bookkeeping path's own
-    ///    no-item open exactly (decompile: <c>RespawnChest.Break()</c>)
-    ///  - Open (broken), with an unclaimed item nearby: <c>chest.Break()</c> plus we
-    ///    spawn the saved item ourselves via <c>PhotonNetwork.InstantiateItemRoom</c>
-    ///    (the same API <c>Spawner</c>/<c>SpawnedItemTracker</c> use), instead of letting
-    ///    the vanilla open flow (<c>Interact_CastFinished</c> -&gt; <c>OpenLuggageRPC(true)</c>
-    ///    -&gt; <c>SpawnItemRoutine</c>) roll a new random one
-    ///
-    /// Host-only throughout (world state, not per-player - only the host should ever
-    /// touch it). Every step is wrapped and non-fatal: this class never touches disk, so
-    /// a failure here can only mean a statue restores wrong (or not at all), never a
-    /// corrupted save - matching the maintainer's explicit priority for this mechanic
+    /// Save/restore for the "Ancient Statue" (RespawnChest) found near most campfires,
+    /// which nothing in the game's own save systems tracks. Vanilla's mid-run Quicksave
+    /// system covers a separate, narrower case (base-camp Luggage.IsOpen) that depends
+    /// on spawn-tracker state we never set up, so it isn't reused here. Instead we
+    /// reconstruct the saved item directly via PhotonNetwork.InstantiateItemRoom rather
+    /// than replaying the vanilla open flow (which would roll a new random item).
+    /// Host-only (world state, not per-player); every step fails soft since this class
+    /// never touches disk.
     /// </summary>
     public static class AncientStatueRestore
     {
-        // Statues aren't placed a consistent distance from their campfire (session-
-        // reported: not always ~30m as first assumed), so this is a generous hard cap
-        // rather than a tight proximity check - just enough to stop a full map scan.
-        // The farthest confirmed real placement is ~68m; a statue can't be reached
-        // before its paired campfire is lit anyway (session-confirmed: it's the final
-        // one, gated behind the campfire), so there's no real case for the nearest one
-        // within range being some OTHER, unrelated statue. We still only ever take the
-        // SINGLE nearest candidate within it, matching BackpackSaveMitigation's own
-        // approach: if a buggy scene somehow put two RespawnChest within range, the
-        // farther one can't be the one paired with this campfire anyway
+        // Statues aren't a consistent distance from their campfire (farthest confirmed
+        // ~68m), so this is a generous hard cap rather than a tight proximity check.
         private const float StatueSearchRadius = 100f;
 
-        // RespawnChest's own revive spot formula (decompile: RandomRevivePoint =
-        // transform.position + transform.up * 6f + Random.onUnitSphere) tops out
-        // ~7m from the statue - 8m comfortably covers a real spawned item without
-        // reaching into unrelated ground loot a player happened to drop nearby
+        // RespawnChest's revive spot tops out ~7m away; 8m covers a spawned item
+        // without reaching unrelated ground loot.
         private const float ItemSearchRadius = 8f;
 
         /// <summary>
-        /// Called from OwnSaveCapture right before writing OwnSaveData. Searches around
-        /// the actual Campfire object nearest <paramref name="fallbackPos"/> (the saving
-        /// player's own position - whoever lit the campfire is standing right next to
-        /// it), falling back to that raw position if no Campfire is found nearby at all.
-        /// Adds the found item (if any) to <paramref name="claimed"/> so LuggageRestore/
-        /// WorldItemRestore, called right after this in the same save, don't also save
-        /// it as their own - see WorldItemRestore's class remarks for why that matters.
-        /// Returns null when there's no statue nearby at all (as opposed to a non-null
-        /// state with <c>broken = false</c>, which means a statue WAS found, just untouched)
+        /// Called from OwnSaveCapture before writing OwnSaveData. Searches near the
+        /// Campfire closest to fallbackPos. Adds any found item to claimed so
+        /// LuggageRestore/WorldItemRestore don't also save it. state stays null when no
+        /// statue is found (vs. non-null with broken=false, meaning found but untouched).
         /// </summary>
         public static void Capture(Vector3 fallbackPos, HashSet<Item> claimed, ManualLogSource log, out OwnSavedStatueState state)
         {
@@ -127,14 +83,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Called once per load (host-only, world state - not per player, so callers
-        /// should only invoke this once regardless of coop player count) from
-        /// <see cref="OwnTeleportSequence"/> right after
-        /// <see cref="OwnWorldLootReset.ResetWorldLoot"/> has reset every Luggage/
-        /// RespawnChest back to Closed, which would otherwise silently undo whatever
-        /// this restores. A no-op for saves made before this feature existed (the new
-        /// fields default to false/false/0 on deserialize) and for campfires with no
-        /// nearby statue at all
+        /// Called once per load (host-only, world state) from <see cref="OwnTeleportSequence"/>
+        /// right after <see cref="OwnWorldLootReset.ResetWorldLoot"/> resets every statue to
+        /// Closed. No-op for pre-feature saves or campfires with no nearby statue.
         /// </summary>
         public static void Restore(OwnSaveData data, Vector3 fallbackPos, ManualLogSource log)
         {
@@ -155,10 +106,7 @@ namespace PEAKQuickResume
                 log.Trace($"AncientStatueRestore: found statue '{statue.name}' at {statue.transform.position} "
                     + $"({Vector3.Distance(statue.transform.position, searchCenter):F1}m from search center), currently open={statue.IsOpen}.");
 
-                // Defensive only - ResetWorldLoot should already have closed it. If it's
-                // somehow already open (e.g. a repeat load this round, or a future game
-                // update changes the field ResetWorldLoot resets), don't re-break it and
-                // don't spawn a second copy of the item on top of whatever's already there
+                // Defensive: ResetWorldLoot should already have closed it; don't double-spawn.
                 if (statue.IsOpen) return;
 
                 statue.Break();
@@ -167,23 +115,17 @@ namespace PEAKQuickResume
                 OwnSavedPositionedItem item = data.ancientStatue.item;
                 if (item != null && ItemDatabase.TryGetItem(item.itemId, out Item prefab) && prefab != null)
                 {
-                    // Spawn at the item's OWN captured position/rotation (see
-                    // OwnSavedPositionedItem's remarks, same reasoning applies here) rather
-                    // than the statue's configured spawn spot or a transform.up offset -
-                    // both were tried and reverted (session-confirmed): a spawn spot is
-                    // where physics DROPS the item, not necessarily where it settles,
-                    // and transform.up isn't reliably "the hands" on uneven terrain
+                    // Spawn at the item's captured position/rotation rather than the statue's
+                    // spawn spot or a transform.up offset - both were tried and reverted, since
+                    // neither reliably matches where the item actually settled.
                     Vector3 spawnPos = new Vector3(item.posX, item.posY, item.posZ);
                     Quaternion spawnRot = new Quaternion(item.rotX, item.rotY, item.rotZ, item.rotW);
 
                     GameObject spawned = PhotonNetwork.InstantiateItemRoom(prefab.name, spawnPos, spawnRot);
                     if (spawned != null)
                     {
-                        // Mirrors Spawner.InitializePhysics's own kinematic-freeze step
-                        // (decompile ~23649) so a restored item settles the same way a
-                        // freshly-broken statue's item would, using the statue's own
-                        // isKinematic setting (public field on Spawner) rather than
-                        // assuming true
+                        // Mirrors Spawner.InitializePhysics's kinematic-freeze step so the
+                        // restored item settles like a freshly-broken statue's item would.
                         if (statue.isKinematic && spawned.TryGetComponent<PhotonView>(out PhotonView view))
                             view.RPC("SetKinematicRPC", RpcTarget.AllBuffered, true, spawnPos, spawnRot);
 

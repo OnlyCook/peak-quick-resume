@@ -7,19 +7,11 @@ using UnityEngine.UI;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// The help screen: a real small menu built from the SAME visual primitives as
-    /// the F7 save picker (<see cref="SavePicker"/>) - the rounded/bordered blue panel
-    /// sprite (including its animated jagged-edge cycling), the game's own font, the
-    /// gold key badges - rather than a plain screen-wide TMP text block. Opened/closed
-    /// by the help-key listener in <see cref="Plugin"/>
-    ///
-    /// Deliberately simple compared to SavePicker: no row list/navigation, just a
-    /// title, a word-wrapped body (auto-sized to its content height, so the panel
-    /// grows vertically to fit rather than a fixed box), and a single "(F1) Close"
-    /// footer entry. No bold anywhere (the game's own font has no real bold face, TMP
-    /// faking it is what made the previous plain-text version unreadable), text color
-    /// alone (matching the picker's own gold key / near-white title palette) does the
-    /// section/emphasis work instead
+    /// The help screen: a small menu built from the same visual primitives as the F7
+    /// save picker (see SavePicker) - bordered blue panel, game font, gold key badges -
+    /// rather than a plain screen-wide TMP text block. Opened/closed by the help-key
+    /// listener in Plugin. Simpler than SavePicker: no row list/navigation, just a
+    /// title, an auto-sized word-wrapped body, and a "(F1) Close" footer.
     /// </summary>
     public class HelpScreen : MonoBehaviour
     {
@@ -40,17 +32,14 @@ namespace PEAKQuickResume
         private TextMeshProUGUI _bodyText;
         private TMP_FontAsset _font;
 
-        // First-open loading indicator (same reasoning as SavePicker's): building this
-        // panel (baking its rounded-rect sprite from scratch) takes ~300ms, heavy enough
-        // to cause a visible hitch. Shown immediately, the real menu is built a frame
-        // later; every subsequent open this session skips straight to the instant path
+        // First-open loading indicator: baking the rounded-rect panel sprite takes ~300ms,
+        // enough to cause a visible hitch. Shown immediately; subsequent opens skip it.
         private GameObject _loadingRoot;
         private bool _uiWarmedUp;
         private bool _warmingUp;
 
-        // Jagged-edge animation, same cadence as SavePicker's own, but this screen's
-        // own independent frame counter/timer (its panel is a different size, cached
-        // separately, see SavePicker.PanelSprite)
+        // Jagged-edge animation, same cadence as SavePicker's but its own independent
+        // frame counter (this panel is a different size, cached separately).
         private int _jagFrame;
         private float _jagFrameTimer;
         private int _lastWidth, _lastHeight;
@@ -96,13 +85,9 @@ namespace PEAKQuickResume
         private IEnumerator WarmUpThenShow()
         {
             yield return null;
-            // skipDimFade: the loading indicator's own dim is already at full DimColor
-            // (see EnsureLoadingUi), deactivating it and activating the real root happen
-            // in this same frame (no yield between them), so the real root's dim starts
-            // already-opaque too, same color, same alpha, nothing to visually distinguish
-            // the swap. Fading it in from 0 here (like a normal open) would instead cause
-            // the dim to flash away to nothing for a frame and then re-fade in, since
-            // deactivating the loading root removes the ONLY dim currently showing
+            // skipDimFade: the loading indicator's dim is already at full opacity, and
+            // deactivating it happens in the same frame as activating the real root, so
+            // fading in from 0 here would cause a visible flash-to-nothing-and-back.
             ShowReal(skipDimFade: true);
             _loadingRoot?.SetActive(false);
             _uiWarmedUp = true;
@@ -122,8 +107,6 @@ namespace PEAKQuickResume
             }
             else
             {
-                // Dim fades in from fully transparent each time the screen opens (rather
-                // than snapping straight to DimColor), same treatment as the F7 picker
                 if (_dimImage != null)
                     _dimImage.color = new Color(SavePicker.DimColor.r, SavePicker.DimColor.g, SavePicker.DimColor.b, 0f);
                 _dimFadeElapsed = 0f;
@@ -134,11 +117,8 @@ namespace PEAKQuickResume
         {
             if (!IsOpen || _root == null || !_root.activeSelf) return;
 
-            // Closable with Escape too, not just the tutorial key it was opened with -
-            // deliberately: a player who's used to "same key closes it" would otherwise
-            // try F7 to close the F7 picker, which does something else entirely there
-            // (loads the highlighted save). Same Escape-suppression trick the F7 picker
-            // already uses, so this doesn't also pop the vanilla pause menu open
+            // Also closable with Escape, since F7 (the "same key closes it" instinct) does
+            // something else on the F7 picker. Suppresses the vanilla pause menu too.
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 Close();
@@ -153,8 +133,7 @@ namespace PEAKQuickResume
                 _dimImage.color = new Color(SavePicker.DimColor.r, SavePicker.DimColor.g, SavePicker.DimColor.b, SavePicker.DimColor.a * t);
             }
 
-            // Skipped entirely in minimal mode (see PluginConfig.MinimalPickerUi): the
-            // flat sprite baked for that mode is identical every frame, nothing to animate
+            // Minimal mode's flat sprite is identical every frame, nothing to animate.
             if (MinimalUi) return;
 
             _jagFrameTimer += Time.unscaledDeltaTime;
@@ -232,10 +211,8 @@ namespace PEAKQuickResume
                 _panelRect.anchorMin = _panelRect.anchorMax = new Vector2(0.5f, 0.5f);
                 _panelRect.pivot = new Vector2(0.5f, 0.5f);
 
-                // Same fractal-noise grain overlay as the F7 picker's panel, masked to
-                // just the fill area (inset by the border thickness) so it never draws
-                // over the border ring, see SavePicker's own EnsureUi for the full
-                // reasoning (this is the exact same construction, reusing its sprites)
+                // Same grain overlay as the F7 picker's panel, masked to the fill area
+                // (inset by border thickness) so it never draws over the border ring.
                 var maskGo = new GameObject("GrainMask", typeof(RectTransform));
                 maskGo.transform.SetParent(panelGo.transform, false);
                 var maskImage = maskGo.AddComponent<Image>();
@@ -362,9 +339,8 @@ namespace PEAKQuickResume
             return tmp;
         }
 
-        // Fills in the title/body/footer key text and re-sizes the panel to fit the
-        // body's actual wrapped height, called every time the screen opens so it
-        // always reflects live key bindings / config
+        // Fills in title/body/footer text and re-sizes the panel to fit the body's
+        // wrapped height; called every open so it reflects live key bindings/config.
         private void RebuildContent()
         {
             if (_root == null) return;
@@ -377,13 +353,10 @@ namespace PEAKQuickResume
                 _footerKeyText.text = $"{tutorialKey} / Esc";
                 _footerLabelText.text = HelpScreenLocalization.Get(HelpText.Close);
 
-                // Same native-widescreen scaler as the F7 picker (see SavePicker.
-                // ApplyWidescreenScaler): the canvas width scales with aspect ratio
-                // rather than 1:1 with Screen.width
                 float w = Mathf.Min(SavePicker.PanelWidth, SavePicker.CanvasWidthUnits - 80f) + 2f * SavePicker.PanelOuterMargin;
 
-                // Force a layout pass at the final width so the body's ContentSizeFitter
-                // reports the correct wrapped height for THIS width, not a stale one
+                // Force a layout pass at the final width so ContentSizeFitter reports the
+                // correct wrapped height for this width, not a stale one.
                 _panelRect.sizeDelta = new Vector2(w, 200f);
                 _root.SetActive(true);
                 Canvas.ForceUpdateCanvases();
@@ -400,13 +373,8 @@ namespace PEAKQuickResume
                 _lastHeight = Mathf.RoundToInt(h);
                 _panelFillImage.sprite = SavePicker.PanelSprite(_lastWidth, _lastHeight, _jagFrame, minimalUi);
 
-                // Same PluginConfig.PanelOpacity the F7 picker's own panel respects, read
-                // fresh every rebuild so a change while the screen happens to be open
-                // takes effect immediately. The grain overlay is faded the same amount
-                // (it's baked fully opaque, see SavePicker.PanelGrainTexture) or it would
-                // keep hiding whatever the fill's own transparency reveals. In minimal
-                // mode (see PluginConfig.MinimalPickerUi) the grain overlay is hidden
-                // entirely, leaving a plain flat-colored panel, same as the F7 picker
+                // Grain overlay is faded by the same opacity, since it's baked fully opaque
+                // and would otherwise hide the fill's transparency; hidden entirely in minimal mode.
                 float panelOpacity = _cfg != null ? Mathf.Clamp01(_cfg.PanelOpacity.Value) : 1f;
                 _panelFillImage.color = new Color(1f, 1f, 1f, panelOpacity);
                 if (_grainImage != null)

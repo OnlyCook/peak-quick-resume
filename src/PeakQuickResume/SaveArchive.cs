@@ -12,18 +12,17 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// One archived checkpoint save the player can pick from the F7 menu. In co-op this
-    /// is always the HOST's file for a save event - the one carrying the level/world
-    /// state (see <see cref="SaveArchive.List"/>); the connected clients' own files from
-    /// that same event are its siblings, resolved into a <see cref="SaveSelection"/> at
-    /// load time
+    /// is always the HOST's file for a save event (the one carrying level/world state); the
+    /// connected clients' own files from that event are its siblings, resolved into a
+    /// <see cref="SaveSelection"/> at load time.
     /// </summary>
     public class ArchivedSave
     {
-        public string FilePath; // full path to the .json in our store
-        public bool Offline; // category: offline vs coop
-        public SaveTarget Target; // difficulty / custom-run this save belongs to
+        public string FilePath;
+        public bool Offline;
+        public SaveTarget Target;
         public string Stamp; // the save event's identity, from the filename (see OwnSavePaths)
-        public string OwnerUserId = ""; // whose file this is (co-op only; "" offline)
+        public string OwnerUserId = ""; // co-op only; "" offline
         public DateTime SortTime; // parsed from Stamp
         public bool Starred; // pinned to the top of the F7 picker; can't be deleted while true
 
@@ -32,38 +31,24 @@ namespace PEAKQuickResume
         public string CampfireName = "";
         public float Playtime;
         public string BiomesSummary = "";
-        // Everyone who played this run (co-op). Player names are stored alphabetically,
-        // NOT host-first, so we show the whole list.
-        public string Players = "";
+        public string Players = ""; // co-op; alphabetical, not host-first
 
-        // The scene this save's level state belongs to. Only ever written into the file
-        // that carries world state (the host's, or the single offline file) - a co-op
-        // CLIENT's file has none, which is what lets List() tell the two apart even when
-        // the local Photon userId isn't resolvable
+        // Only written into the file carrying world state (host's, or the single offline
+        // file); a co-op client's file has none, which lets List() tell them apart.
         public string SceneName = "";
 
-        // Save-format version. >= SaveArchive.ArchiveNativeSettingsVersion means this
-        // event was written straight into the archive with a shared per-event stamp, so
-        // its siblings can be matched exactly; below that it's a legacy save copied in
-        // from the old canonical-file layout, whose siblings need the fuzzy timestamp
-        // match instead (see SaveSelection.Build)
+        // >= ArchiveNativeSettingsVersion: written with a shared per-event stamp, siblings
+        // match exactly. Below: legacy save from the old canonical-file layout, needs fuzzy
+        // timestamp matching (see SaveSelection.Build).
         public int SettingsVersion;
 
-        // Game version this save was written under (e.g. "1.65.a"), or "" if it
-        // predates that field entirely (see DisplayGameVersion for how that's resolved
-        // for display/staleness, and SavePicker for how it's shown).
-        public string GameVersion = "";
+        public string GameVersion = ""; // "" if written before this field existed
 
         public string DifficultyLabel => SaveArchive.DifficultyLabel(Target);
 
         /// <summary>
-        /// GameVersion as stored, or a safe guess for the one legacy case where it's
-        /// missing but still knowable: a settingsVersion 6 save (see
-        /// SaveArchive.ArchivedSave.SettingsVersion / ArchiveNativeSettingsVersion) can
-        /// only have been written during that narrow 1.65.a-update window, so
-        /// GameVersionCompat.LegacySettingsVersion6GameVersion is a safe stand-in. Any
-        /// other missing-GameVersion save (older or newer settingsVersion) truly could be
-        /// from anywhere, so stays "" (shown as GameVersionCompat.NoVersionDisplay).
+        /// GameVersion as stored, or a safe guess for settingsVersion 6 (which could only
+        /// have been written during the 1.65.a update window). Otherwise "".
         /// </summary>
         public string DisplayGameVersion =>
             !string.IsNullOrEmpty(GameVersion) ? GameVersion
@@ -71,34 +56,18 @@ namespace PEAKQuickResume
             : "";
 
         /// <summary>
-        /// True if this save was written under an older game version than the one
-        /// currently running - the map pool was very likely rotated since, so it may
-        /// load the wrong island (see GameVersionCompat, SavePicker's use of this for
-        /// the "vX.Y.z instead of playtime" row indicator). A missing DisplayGameVersion
-        /// counts as stale too (GameVersionCompat.IsOlderThan treats "" that way) - we
-        /// just don't know which version it was, so best to flag it rather than assume
-        /// it's current.
+        /// True if written under an older game version, meaning the map pool may have
+        /// rotated since. A missing DisplayGameVersion counts as stale too.
         /// </summary>
         public bool IsStaleVersion => GameVersionCompat.IsOlderThan(DisplayGameVersion, GameVersionCompat.Current);
     }
 
     /// <summary>
-    /// Everything one load needs to know about which files to read, resolved ONCE up
-    /// front by <see cref="SaveArchive.BuildSelection"/> and threaded through the whole
-    /// load path (see <see cref="OwnLoadEntryPoints.TryLoadPlayer"/>)
-    ///
-    /// The split this type encodes is the whole point of it, and is deliberately
-    /// enforced by having exactly one path for each half:
-    ///  - <see cref="HostFilePath"/> is the ONLY file the level/world restore ever
-    ///    reads: which island and segment to load, where to teleport to, time of day,
-    ///    day counter, ground items, luggage, the ancient statue, deployables
-    ///  - <see cref="TryGetPlayerFile"/> gives each connected player THEIR OWN file, the
-    ///    only place per-player state is ever read from: inventory, backpack, held item,
-    ///    afflictions, extra stamina, skeleton flag, thorns, ticks, achievement progress
-    ///
-    /// A player with no file in this save event simply isn't in the map, and every
-    /// per-player restore step skips them - their current in-game state is left exactly
-    /// as it is rather than being overwritten from some other run's file
+    /// Everything one load needs to know about which files to read, resolved once by
+    /// <see cref="SaveArchive.BuildSelection"/>. <see cref="HostFilePath"/> is the only file
+    /// level/world state is read from; <see cref="TryGetPlayerFile"/> gives each connected
+    /// player their own file for per-player state. A player missing from the map is skipped
+    /// entirely, leaving their current state untouched.
     /// </summary>
     public class SaveSelection
     {
@@ -107,15 +76,10 @@ namespace PEAKQuickResume
         public string Stamp = "";
         public string HostFilePath = "";
 
-        // userId -> that player's own file within this save event. Empty offline (the
-        // single file is both host and player file, see TryGetPlayerFile)
+        // userId -> that player's own file within this save event. Empty offline.
         public readonly Dictionary<string, string> PlayerFiles = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        /// <summary>
-        /// The file to read <paramref name="userId"/>'s own per-player state from.
-        /// Offline always resolves to the single save file; co-op resolves only to a
-        /// file from THIS save event, never a near-miss from another one
-        /// </summary>
+        /// <summary>Offline resolves to the single save file; co-op resolves only within this save event.</summary>
         public bool TryGetPlayerFile(string userId, out string path)
         {
             if (Offline)
@@ -129,89 +93,52 @@ namespace PEAKQuickResume
 
     /// <summary>
     /// The mod's save store: every checkpoint ever written, browsable from the F7 menu,
-    /// living in <c>BepInEx/plugins/QuickResume/Archive</c> split by category into
-    /// <c>Offline</c> and <c>Coop</c>
+    /// living in <c>BepInEx/plugins/QuickResume/Archive</c> split into <c>Offline</c>/<c>Coop</c>.
+    /// The one store; dominik0207's "PEAK Checkpoint Save" folder is never touched (see
+    /// <see cref="OwnSavePaths"/>). Files are never copied over each other, so a hand-edited
+    /// save is safe and identity comes from its filename, not modification time.
     ///
-    /// This is the ONE store - there is no separate "canonical" current
-    /// save file, and dominik0207's "PEAK Checkpoint Save" folder is never read, written
-    /// or migrated from (see <see cref="OwnSavePaths"/> for the full reasoning).
-    /// <see cref="OwnSaveCapture"/> writes save events directly in here, and loading a
-    /// checkpoint just reads the files back - nothing is ever copied over anything else,
-    /// which is what makes a hand-edited save safe: its contents are read as-is, and its
-    /// identity comes from its filename, not its modification time
-    ///
-    /// Filename: <c>{stem}__{stamp}.json</c>, e.g.
-    /// <c>peak_save_2_offline__20260702_140311_204.json</c>. The stem carries the
-    /// difficulty/custom + category (+ the owning userId in co-op); the stamp identifies
-    /// the save EVENT and is shared by every player's file from that same autosave
+    /// Filename: <c>{stem}__{stamp}.json</c>. The stem carries difficulty/custom + category
+    /// (+ owning userId in co-op); the stamp identifies the save event, shared across every
+    /// player's file from that autosave.
     /// </summary>
     public static class SaveArchive
     {
         /// <summary>
-        /// <c>settingsVersion</c> stamped into every save this version writes.
-        ///
-        /// Bumped to 8 for the PEAK 2.0.a work, which added fields older saves simply do
-        /// not have: <c>backpackType</c> (backpacks became typed - Backpack/Fannypack/
-        /// Jetpack/Rocketpack), <c>backpackOwnValues</c> (the worn backpack's own stats,
-        /// i.e. a jetpack's fuel), a 15-entry rather than 12-entry <c>afflictions_current</c>,
-        /// and area names taken from the game's own progress points so the 2.0.a areas
-        /// are no longer recorded as Caldera/The Kiln.
-        ///
-        /// Reading stays fully backward compatible - every one of those fields degrades on
-        /// its own (see BackpackTypeCompat.FromSave, AfflictionArrayCompat.CopyOverlap and
-        /// SaveArchive's campfire-name table), so this is a marker of what a file contains
-        /// rather than a compatibility gate
+        /// <c>settingsVersion</c> stamped into every save this version writes. Bumped to 8
+        /// for PEAK 2.0.a (typed backpacks, backpackOwnValues, 15-entry afflictions_current,
+        /// progress-point area names). Reading stays backward compatible; see
+        /// BackpackTypeCompat.FromSave, AfflictionArrayCompat.CopyOverlap, and the
+        /// campfire-name table below.
         /// </summary>
         public const int CurrentSettingsVersion = 8;
 
         /// <summary>
-        /// The oldest <c>settingsVersion</c> written by the archive-native save path.
-        /// Saves at or above this were written with a shared per-event stamp, so their
-        /// co-op siblings match exactly; anything below is a legacy save copied in from
-        /// the old canonical-file layout, where each player's file got its own write-time
-        /// stamp a few milliseconds apart and siblings can only be matched fuzzily.
-        ///
-        /// DELIBERATELY NOT bumped alongside <see cref="CurrentSettingsVersion"/>: this is
-        /// a THRESHOLD, not the current version. Raising it would reclassify every
-        /// existing version-7 save as legacy and send it down the fuzzy sibling-matching
-        /// path, even though those saves do carry proper shared event stamps
+        /// Oldest <c>settingsVersion</c> written by the archive-native save path (shared
+        /// per-event stamp, exact sibling matching). Below this, a legacy save's siblings
+        /// need fuzzy timestamp matching. Deliberately NOT bumped alongside
+        /// <see cref="CurrentSettingsVersion"/> — this is a threshold, not the current version.
         /// </summary>
         public const int ArchiveNativeSettingsVersion = 7;
 
         private static bool _migrated;
 
-        // Starred saves, persisted as a flat JSON array of archive filenames (unique
-        // across both categories: offline stems always end "_offline", coop stems
-        // never do). One shared file rather than one per category, there's no
-        // per-category state here worth splitting. Loaded lazily, cached in memory for
-        // the rest of the session, written back to disk on every change
+        // Starred filenames, persisted as one shared JSON array across both categories
+        // (offline/coop stems are distinguishable). Cached in memory, written on every change.
         private static string StarredFile => Path.Combine(OwnSavePaths.ArchiveRoot, "starred.json");
         private static HashSet<string> _starredCache;
 
         /// <summary>
-        /// How far apart two LEGACY files may be and still count as the same save event.
-        /// Only ever consulted for saves below <see cref="ArchiveNativeSettingsVersion"/>
-        /// (see <see cref="BuildSelection"/>): those were written one-file-at-a-time into
-        /// the old canonical layout and copied in here with each file's own write time,
-        /// so a co-op event's files land a few milliseconds - not zero - apart. The window
-        /// is wide enough to absorb that jitter and far too narrow to ever span two
-        /// different runs. Archive-native saves need none of this: every file in an event
-        /// carries the same stamp by construction
+        /// Max gap between two LEGACY files to still count as the same save event (see
+        /// <see cref="BuildSelection"/>). Legacy files were copied in with per-file write
+        /// times a few ms apart; archive-native saves share an exact stamp and don't need this.
         /// </summary>
         private static readonly TimeSpan MaxLegacySiblingDelta = TimeSpan.FromMinutes(2);
 
         /// <summary>
-        /// All archived saves for the given category (offline vs coop), newest first -
-        /// exactly ONE row per save event
-        ///
-        /// In co-op an event has one file per player, but only the host's carries the
-        /// level/world state a load actually resumes from, so that's the one shown (and
-        /// the one <see cref="BuildSelection"/> resolves siblings around). Earlier
-        /// versions matched the host's file against the live Photon userId and fell back
-        /// to listing EVERY player's file when that wasn't resolvable (browsing outside a
-        /// room), which showed the same checkpoint several times over and let a client's
-        /// file be loaded as if it were the host's. Grouping by event stamp instead makes
-        /// one row per event structural rather than something we have to get right
+        /// All archived saves for the given category, newest first, exactly one row per save
+        /// event. Grouped by event stamp (not matched against the live Photon userId) so
+        /// browsing outside a room doesn't duplicate rows or misattribute a client's file as the host's.
         /// </summary>
         public static List<ArchivedSave> List(bool offline, ManualLogSource log)
         {
@@ -225,16 +152,9 @@ namespace PEAKQuickResume
 
                 string localUserId = offline ? "" : OwnSavePaths.LocalUserId();
 
-                // Keep only host files, then collapse by event so one event can never
-                // contribute two rows even if the filter above lets a pair through (a
-                // legacy event browsed outside a room, say)
-                //
-                // Keyed by run target AND stamp, not the stamp alone: two LEGACY files are
-                // only siblings if they belong to the same run, and their stamps are
-                // independent file write times rather than a shared event id. Two
-                // different ascents saved in the same millisecond is unlikely but not
-                // impossible, and keying on the stamp alone would silently hide one of
-                // them. Archive-native events share both fields, so this splits nothing
+                // Keyed by run target AND stamp: legacy stamps are independent file write
+                // times, not a shared event id, so two different ascents saved in the same
+                // millisecond must stay distinct.
                 var byEvent = new Dictionary<(bool custom, int ascent, string stamp), ArchivedSave>();
                 foreach (ArchivedSave entry in ReadAll(archiveDir, offline, log))
                 {
@@ -262,21 +182,10 @@ namespace PEAKQuickResume
             return result;
         }
 
-        // Does this file carry the level/world half of its save event - i.e. is it the
-        // one a load actually resumes from, and therefore the one the picker should show?
-        //
-        //  - Offline: there's only ever one file per event, and it's both halves at once
-        //  - Archive-native co-op: a client's file has no world state in it AT ALL (see
-        //    OwnSaveCapture's field split), so the presence of a scene name answers this
-        //    structurally, with no guessing and no dependence on live Photon state. This
-        //    is what makes browsing correct even outside a room, where earlier versions
-        //    gave up and listed every player's file as a separate row for the same
-        //    checkpoint
-        //  - Legacy co-op: every player's file has a full copy of the world state, so the
-        //    only available signal is whether it's ours (we only ever write saves as the
-        //    host, so our own file IS the host's). With no local userId to compare
-        //    against, fall back to accepting them all, exactly as earlier versions did -
-        //    there is genuinely nothing in those files to tell them apart
+        // Does this file carry the level/world half of its save event (the one the picker
+        // should show)? Offline: always. Archive-native co-op: presence of a scene name
+        // (client files have none). Legacy co-op: no reliable signal without a local userId,
+        // so falls back to accepting them all.
         private static bool IsHostFile(ArchivedSave entry, bool offline, string localUserId)
         {
             if (offline) return true;
@@ -299,12 +208,9 @@ namespace PEAKQuickResume
                 string ownerUserId = "";
                 if (!offline) OwnSavePaths.TryGetCoopUserId(stem, out ownerUserId);
 
-                // A stamp we can't parse as a timestamp is still a perfectly good event
-                // IDENTITY (sibling matching only ever compares stamps for equality) - it
-                // just can't order the list on its own, so fall back to the file's own
-                // write time for that, exactly as earlier versions did. This is what keeps
-                // a hand-renamed file (a "__before-edit" backup, say) visible and loadable
-                // instead of silently vanishing from the picker
+                // An unparseable stamp is still a valid event identity for sibling matching;
+                // fall back to the file's write time just for sort order (keeps a
+                // hand-renamed file visible instead of vanishing from the picker).
                 if (!DateTime.TryParseExact(stamp, OwnSavePaths.StampFormat, CultureInfo.InvariantCulture,
                         DateTimeStyles.None, out DateTime sortTime))
                 {
@@ -357,14 +263,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Resolve one archived save into the full set of files a load should read: the
-        /// host's file for level/world state, plus each connected player's own file for
-        /// their own state. See <see cref="SaveSelection"/> for why that split matters
-        ///
-        /// Nothing is copied, moved, or rewritten here - a selection is just a set of
-        /// paths. Loading an older checkpoint therefore leaves every file in the store
-        /// byte-identical, which is what stops a load from re-stamping files and
-        /// duplicating rows in the picker
+        /// Resolves one archived save into the full set of files a load should read. Nothing
+        /// is copied, moved, or rewritten; a selection is just a set of paths. See <see cref="SaveSelection"/>.
         /// </summary>
         public static SaveSelection BuildSelection(ArchivedSave save, ManualLogSource log)
         {
@@ -397,14 +297,10 @@ namespace PEAKQuickResume
                     selection.PlayerFiles[e.OwnerUserId] = e.FilePath;
                 }
 
-                // Legacy events only (see MaxLegacySiblingDelta): those were copied in from
-                // the old canonical layout with per-file write times, so an event's files
-                // don't share a stamp and the exact match above finds only the host's own.
-                // Fall back to the nearest file per userId within a tight window, exactly
-                // like earlier versions did. Never applied to archive-native saves: there,
-                // "no file with this stamp" genuinely means that player wasn't part of the
-                // event, and pulling in their nearest OTHER save is the precise mistake
-                // this rewrite exists to remove
+                // Legacy events only (see MaxLegacySiblingDelta): files don't share an exact
+                // stamp, so fall back to the nearest file per userId within a tight window.
+                // Never applied to archive-native saves, where "no file with this stamp"
+                // means that player genuinely wasn't part of the event.
                 if (save.SettingsVersion < ArchiveNativeSettingsVersion)
                 {
                     var bestByUser = new Dictionary<string, (string file, TimeSpan delta)>(StringComparer.Ordinal);
@@ -435,19 +331,12 @@ namespace PEAKQuickResume
             return selection;
         }
 
-        /// <summary>
-        /// The newest save event for <paramref name="target"/>, as a ready-to-load
-        /// selection. This is what a plain "continue" resume uses - with no canonical
-        /// current-save file anymore, "the current save" simply IS the most recent event
-        /// in the store for that run
-        /// </summary>
+        /// <summary>The newest save event for <paramref name="target"/>, as a ready-to-load selection.</summary>
         public static SaveSelection TryGetLatestSelection(bool offline, SaveTarget target, ManualLogSource log)
         {
             List<ArchivedSave> all = List(offline, log);
-            // Ordered by resolved time, not by raw stamp string: a stamp that isn't a
-            // parseable timestamp falls back to the file's write time (see ReadAll), and
-            // ordinal-comparing those two kinds of stamp against each other would let a
-            // hand-renamed file sort itself to the top and be picked as "latest"
+            // Ordered by resolved SortTime, not raw stamp string, or a hand-renamed file
+            // with an unparseable stamp could sort itself to the top.
             ArchivedSave newest = all
                 .Where(e => e.Target.SameRunAs(target))
                 .OrderByDescending(e => e.SortTime)
@@ -464,11 +353,8 @@ namespace PEAKQuickResume
         /// <summary>
         /// Applies a JSON field patch to one already-written save file, used by
         /// <see cref="BackpackSaveMitigation"/> right after <see cref="OwnSaveCapture"/>
-        /// writes it - see that class for why the patch has to land at this exact point.
-        /// The exact file is addressed by path (run target + owning userId + save event),
-        /// never searched for: an earlier version scanned a folder and patched whichever
-        /// file came back first, which could silently write the restore into a stale,
-        /// unrelated save
+        /// writes it. Addressed by exact path, never searched for, to avoid patching a
+        /// stale, unrelated save.
         /// </summary>
         public static bool PatchSaveFile(string path, Action<JObject> patch, ManualLogSource log)
         {
@@ -488,13 +374,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Permanently delete one archived save. In co-op that means the WHOLE save
-        /// event - the host's file and every client file sharing its stamp - since a row
-        /// in the picker represents the event, not one file, and leaving the clients'
-        /// files behind would strand them with no host file to ever be loaded alongside.
-        /// Refuses starred saves outright (the F7 picker's own two-step confirm should
-        /// never even reach here for one, see SavePicker.OnDeletePressed, this is just
-        /// the defensive backstop)
+        /// Permanently deletes one archived save. In co-op that's the whole save event
+        /// (host file + every client file sharing its stamp), since a picker row represents
+        /// the event, not one file. Refuses starred saves as a defensive backstop.
         /// </summary>
         public static bool Delete(ArchivedSave save, ManualLogSource log)
         {
@@ -507,10 +389,8 @@ namespace PEAKQuickResume
             {
                 var paths = new HashSet<string>(StringComparer.Ordinal) { save.FilePath };
 
-                // EXACT stamp matches only - deliberately not BuildSelection, whose legacy
-                // fallback also accepts files merely CLOSE in time. That's a reasonable
-                // guess when deciding what to read; it is not one to make when deleting,
-                // where a wrong match destroys a neighbouring run's save outright
+                // Exact stamp matches only; unlike BuildSelection's fuzzy legacy fallback,
+                // a wrong match here would destroy a neighbouring run's save.
                 if (!save.Offline)
                 {
                     string archiveDir = OwnSavePaths.ArchiveDir(offline: false);
@@ -597,8 +477,7 @@ namespace PEAKQuickResume
             if (!string.IsNullOrEmpty(official))
                 return t.IsCustom ? TruncateCustomLabel(official) : official;
 
-            // Fallback if the game's own AscentData couldn't be reached (e.g. a future
-            // update changes its shape); our own translations, better than nothing
+            // Fallback if the game's own AscentData couldn't be reached; our own translations.
             if (t.IsCustom) return TruncateCustomLabel(SavePickerLocalization.Get(PickerText.CustomRun));
             switch (t.Ascent)
             {
@@ -608,15 +487,8 @@ namespace PEAKQuickResume
             }
         }
 
-        // The "Custom" run's OWN (official or our fallback) label is by far the longest
-        // difficulty string in a couple of languages - Ukrainian "КОРИСТУВАЦЬКИЙ ЗАБІГ"
-        // and Polish "SPERSONALIZOWANE PODEJŚCIE" both run well past every other
-        // difficulty label (PEAK/Tenderfoot/Ascent N are short everywhere). Since the
-        // difficulty column's reserved width is the max across EVERY archived save, one
-        // long custom-run label blows up the row layout for every OTHER row too, not
-        // just its own. Custom runs are rare, so trading a clipped/ellipsized label on
-        // them (only them, only when actually this long) for a sane column width
-        // everywhere else is the right trade
+        // "Custom" run labels are by far the longest difficulty string in some languages
+        // (e.g. Ukrainian, Polish) and would blow up the picker's shared column width.
         private const int MaxCustomLabelLength = 12;
 
         private static string TruncateCustomLabel(string label)
@@ -625,12 +497,8 @@ namespace PEAKQuickResume
             return label.Substring(0, MaxCustomLabelLength).TrimEnd() + "…";
         }
 
-        // Reuses the game's OWN localized difficulty names instead of re-translating them
-        // ourselves, exact wording in every language, no guesswork (our own German
-        // "Benutzerdefinierter Lauf" for a custom run, for instance, doesn't match the
-        // game's own "Eigener Aufstieg"). Same indexing AscentUI itself uses:
-        // ascents[0] = custom run, ascents[ascent + 2] = normal difficulty (so ascent -1 =
-        // index 1 "Tenderfoot", ascent 0 = index 2 "PEAK", ascent 1 = index 3, ...)
+        // Reuses the game's own localized difficulty names for exact wording. Same indexing
+        // AscentUI uses: ascents[0] = custom run, ascents[ascent + 2] = normal difficulty.
         private static string TryGetOfficialAscentTitle(SaveTarget t)
         {
             try
@@ -644,35 +512,21 @@ namespace PEAKQuickResume
             catch { return null; }
         }
 
-        /// <summary>Human, localized label for a save's deepest-reached campfire/segment
-        /// (see <see cref="ArchivedSave.CampfireName"/> - NOT BiomesSummary, which is the
-        /// level's whole fixed biome roster baked in at edit time, not player progress,
-        /// see the comment on CampfireLocKeys below). Falls back to the raw stored name
-        /// (English, as OwnSaveCapture wrote it) if the game's own localization table
-        /// can't be reached, better than nothing</summary>
+        /// <summary>
+        /// Human, localized label for a save's deepest-reached campfire/segment. Falls back
+        /// to the raw stored name if the game's localization table can't be reached.
+        /// </summary>
         public static string CampfireLabel(string internalName)
         {
             string official = TryGetOfficialCampfireTitle(internalName);
             return !string.IsNullOrEmpty(official) ? official : internalName;
         }
 
-        // Same reasoning as TryGetOfficialAscentTitle: the raw name saved to disk is an
-        // internal English dev enum name, not what players ever see on screen. The game
-        // shows these via the "big label" on climb progress (MountainProgressHandler.
-        // progressPoints), which are plain LocalizedText.GetText(key) lookups, so we can
-        // hit that same table directly by key without needing the scene-attached
-        // MountainProgressHandler singleton itself.
-        //
-        // CampfireName is `MapHandler.GetCurrentSegment().ToString()` (Segment: Beach,
-        // Tropics, Alpine, Caldera, TheKiln, Peak), NOT a Biome.BiomeType name - except
-        // for two special cases (OwnSaveCapture overrides it to the BiomeType name
-        // "Roots"/"Mesa" for the Tropics/Alpine cave variants), so this table needs to
-        // cover both enums' literal names, keyed by whichever one CampfireName actually
-        // ends up holding. "Volcano" is also mapped here (even though it's not a Segment
-        // name and isn't written by the current OwnSaveCapture code above) since some
-        // older/other save sources do store the plain Biome.BiomeType name "Volcano" as
-        // campfireName - same target as TheKiln, since a saved checkpoint is always the
-        // DEEPEST point reached, and "The Kiln" is that biome's upper/later progress label
+        // CampfireName is normally a Segment name (Beach, Tropics, Alpine, Caldera, TheKiln,
+        // Peak), except OwnSaveCapture overrides it to "Roots"/"Mesa" for the Tropics/Alpine
+        // cave variants, so this table covers both enums' literal names. "Volcano" is also
+        // mapped (some save sources store the plain BiomeType name) to the same target as
+        // TheKiln, its later progress label.
         private static readonly Dictionary<string, string> CampfireLocKeys =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -687,18 +541,10 @@ namespace PEAKQuickResume
             { "Peak", "PEAK" },
         };
 
-        // Saves written since the AreaNameCompat change store the game's own progress-
-        // point title, which IS the localization key already ("SHORE", "THE CITADEL", ...)
-        // rather than an internal enum name. Those need no table entry, and adding one per
-        // area would just reintroduce the hardcoded list that missed GLOOM and THE CITADEL
-        // in the first place - so an unmapped name is tried as a key directly before
-        // giving up. The table above stays for the older internal-name saves ("Beach",
-        // "TheKiln", "Volcano", ...), which are NOT valid keys and would otherwise fail.
-        //
-        // The pass-through is gated on the key actually being in the localization table,
-        // because GetText does NOT stay quiet about misses: even with printDebug false it
-        // returns "" *and* fires a Debug.LogError. Handing it every unrecognized
-        // campfireName would turn one bad value into an error per save-picker row
+        // Saves written since AreaNameCompat store the progress-point title directly as the
+        // localization key, so an unmapped name is tried as a key before giving up. Gated on
+        // the key actually existing in the table, since GetText logs an error on a miss even
+        // with printDebug false.
         private static string TryGetOfficialCampfireTitle(string internalName)
         {
             try

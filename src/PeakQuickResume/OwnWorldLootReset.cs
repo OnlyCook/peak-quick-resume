@@ -8,24 +8,10 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own port of the checkpoint mod's post-load world-state cleanup. None of
-    /// this RESTORES anything from the save file - it is entirely a "clean slate"
-    /// pass so a repeat load (loading again after already having loaded once this
-    /// run) doesn't end up with duplicated or orphaned player-placed props/loot from
-    /// a different timeline; segment loot is then deterministically respawned by the
-    /// level's own <c>ISpawner</c>s (called separately from <see cref="OwnTeleportSequence"/>,
-    /// matching decompile 2415-2434)
-    ///
-    /// Three pieces, ported field-for-field:
-    ///  - <see cref="ResetWorldLoot"/> = <c>ResetLuggage</c> a.k.a. "ResetWorldLoot" in
-    ///    the original's own log lines (decompile 3527-3627): resets luggage/chests via
-    ///    reflective duck-typing, then destroys stray dropped-item PhotonViews
-    ///  - <see cref="DestroyStaleWorldObjects"/> = the segment-object destroy-by-name-
-    ///    substring pass + stray <c>MagicBeanVine</c> destroy, both inlined directly in
-    ///    <c>CustomJumpToSegment</c> (decompile 2441-2504)
-    ///  - <see cref="DestroyLeftoverHeldItems"/> = the "destroy items I'm holding that
-    ///    aren't a Marshmallow/Glizzy" pass, also inlined in <c>CustomJumpToSegment</c>
-    ///    (decompile 2372-2404)
+    /// Post-load world-state cleanup. Doesn't restore anything from the save file - a
+    /// "clean slate" pass so a repeat load doesn't end up with duplicated or orphaned
+    /// player-placed props/loot; segment loot is then respawned by the level's own
+    /// <c>ISpawner</c>s (called separately from <see cref="OwnTeleportSequence"/>).
     /// </summary>
     public static class OwnWorldLootReset
     {
@@ -40,7 +26,6 @@ namespace PEAKQuickResume
             "MagicBean",
         };
 
-        /// <summary>Mirrors ResetLuggage/"ResetWorldLoot" exactly (decompile 3527-3627)</summary>
         public static void ResetWorldLoot(ManualLogSource log)
         {
             try
@@ -115,12 +100,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Mirrors the segment-object destroy-by-name-substring pass + stray
-        /// MagicBeanVine destroy, both inlined in CustomJumpToSegment (decompile
-        /// 2441-2504). Only called when <c>loadedSaveFileThisRound</c> (a repeat
-        /// load), matching the original exactly
-        /// </summary>
+        /// <summary>Destroys stale segment objects by name substring, plus stray MagicBeanVine. Only called on a repeat load.</summary>
         public static void DestroyStaleWorldObjects(ManualLogSource log)
         {
             try
@@ -144,10 +124,7 @@ namespace PEAKQuickResume
                             }
                         }
                     }
-                    catch
-                    {
-                        // matches the original's own inner per-object try/catch swallow
-                    }
+                    catch { }
                 }
             }
             catch (Exception e)
@@ -173,13 +150,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Mirrors the "destroy items I'm holding that aren't a Marshmallow/Glizzy"
-        /// pass inlined in CustomJumpToSegment (decompile 2372-2404). Master-client
-        /// only, and only when <c>loadedSaveFileThisRound</c> (a repeat load),
-        /// matching the original exactly. PEAKapalooza's branch (decompile 2384-2390)
-        /// is deliberately not ported (see ROADMAP.md Phase 8)
-        /// </summary>
+        /// <summary>Destroys held items that aren't a Marshmallow/Glizzy. Master-client only, on a repeat load.</summary>
         public static void DestroyLeftoverHeldItems(ManualLogSource log)
         {
             try
@@ -200,8 +171,6 @@ namespace PEAKQuickResume
             }
         }
 
-        // Mirrors ResetLootObjectGeneric/TrySetBoolFieldOrProp/TrySetEnumToDefault/
-        // TryInvokeNoArg exactly (decompile 3629-3714)
         private static void ResetLootObjectGeneric(MonoBehaviour obj, string[] methodNames)
         {
             TrySetBoolFieldOrProp(obj, "opened", false);
@@ -243,7 +212,7 @@ namespace PEAKQuickResume
                 PropertyInfo prop = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (prop != null && prop.CanWrite && prop.PropertyType == typeof(bool)) prop.SetValue(inst, value);
             }
-            catch { /* matches the original: best-effort, silently skip */ }
+            catch { }
         }
 
         private static void TrySetEnumToDefault(object inst, string name)
@@ -257,7 +226,7 @@ namespace PEAKQuickResume
                 PropertyInfo prop = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (prop != null && prop.CanWrite && prop.PropertyType.IsEnum) prop.SetValue(inst, Enum.ToObject(prop.PropertyType, 0));
             }
-            catch { /* matches the original: best-effort, silently skip */ }
+            catch { }
         }
     }
 }

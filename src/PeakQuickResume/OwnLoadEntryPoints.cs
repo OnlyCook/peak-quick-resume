@@ -7,23 +7,10 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own <c>PreStartSetSegment</c>/<c>LoadPlayerOffline</c>/<c>LoadPlayerCoop</c>
-    /// guard chain, ported field-for-field from the decompile (914-954, 4605-4763).
-    /// As of Phase 8 M3, <see cref="TryLoadPlayer"/> hands off to the real
-    /// <see cref="OwnTeleportSequence"/> port (solo path only is wired live via
-    /// <see cref="ResumeOrchestrator"/> - see ROADMAP.md Phase 8)
-    ///
-    /// Known, deliberate gaps versus the original (documented here rather than silently
-    /// diverging, revisit when their real logic is ported):
-    ///  - The "one-time load in Hardmode" guard (<c>configOnetimeLoad</c>) always passes
-    ///    (never blocks) since that config isn't ported yet - <see cref="OneTimeLoadEnabled"/>.
-    ///  - <c>RecentlyLoaded</c>'s cooldown is only ever RESET here (on reaching the
-    ///    Airport); nothing sets it into the future yet, since the two real call sites
-    ///    that do (the campfire autosave patch, decompile line 148; the end of inventory
-    ///    restore, decompile line 2968) are both ported in later milestones (M6, M4/M5)
-    ///  - <see cref="CurrentlyLoading"/> is set true here; as of M5,
-    ///    <see cref="MarkNotCurrentlyLoading"/> is called by <see cref="OwnInventoryRestore"/>
-    ///    at the same point the original resets it (decompile line 2966)
+    /// Guard chain for loading a save: <see cref="TryPreStartSetSegment"/> resolves which
+    /// scene to load, <see cref="TryLoadPlayer"/> hands off to <see cref="OwnTeleportSequence"/>.
+    /// The "one-time load in Hardmode" guard (<see cref="OneTimeLoadEnabled"/>) always
+    /// passes since that config isn't ported.
     /// </summary>
     public class OwnLoadEntryPoints : MonoBehaviour
     {
@@ -33,24 +20,12 @@ namespace PEAKQuickResume
         private OwnTeleportSequence _teleportSequence;
 
         /// <summary>
-        /// The saved scene name for whichever save <see cref="TryPreStartSetSegment"/>
-        /// last resolved, consumed by <see cref="MapBakerLevelOverridePatch"/> exactly
-        /// like the checkpoint mod's own <c>selectedLevel</c> field. "null" (the string,
-        /// not a null reference) mirrors the original's own sentinel for "nothing selected"
-        ///
-        /// Unlike the original (which keeps this live by re-resolving it on every
-        /// <c>BoardingPass.OnOpen</c>/<c>UpdateAscent</c> - a patch we deliberately don't
-        /// port, see <see cref="Plugin"/>'s class remarks), we only ever set this right
-        /// before OUR OWN <c>RunLauncher.StartRun</c> call in <see cref="ResumeOrchestrator"/>.
-        /// <see cref="MapBakerLevelOverridePatch"/> therefore clears it back to "null"
-        /// the instant it consumes a real value (one-shot), so a plain, manual Boarding
-        /// Pass start the player does themselves afterward is never silently redirected
-        /// onto a stale saved island with none of our restore/wake-up logic behind it
-        /// (session-reported: without this, a later normal start looked "broken" - forced
-        /// onto the old saved scene but spawned instantly standing at its default spawn,
-        /// with no position/inventory restore and no wake-up beat, since nothing but
-        /// <see cref="TryLoadPlayer"/> triggers those and that's never called for a
-        /// normal start)
+        /// The saved scene name for whichever save <see cref="TryPreStartSetSegment"/> last
+        /// resolved, consumed by <see cref="MapBakerLevelOverridePatch"/>. "null" (the
+        /// string) is the sentinel for "nothing selected". Cleared back to "null" the
+        /// instant it's consumed (one-shot), so a later plain manual Boarding Pass start
+        /// isn't silently redirected onto a stale saved island with none of our restore
+        /// logic behind it.
         /// </summary>
         public static string SelectedLevel { get; private set; } = "null";
 
@@ -58,34 +33,21 @@ namespace PEAKQuickResume
         internal static void ClearSelectedLevel() => SelectedLevel = "null";
 
         /// <summary>
-        /// Own addition, used by <see cref="RestartOrchestrator"/> only: forces
-        /// <see cref="SelectedLevel"/> directly to a scene name (the CURRENT level's own
-        /// <c>RunLauncher.ActiveSceneName</c>, captured before returning to the Airport)
-        /// rather than resolving it from a save file like <see cref="TryPreStartSetSegment"/>
-        /// does. Restart deliberately has no save/checkpoint involved at all - without
-        /// this, its fresh <c>RunLauncher.StartRun</c> call left <see cref="SelectedLevel"/>
-        /// at "null", so <see cref="MapBakerLevelOverridePatch"/> fell through to vanilla's
-        /// own selection, which is TODAY'S DAILY-ROTATION scene, not necessarily the island
-        /// the player was actually just on - confirmed via a real session report
-        /// (2026-07-25): restarting swapped the host onto the daily map instead of a fresh
-        /// run of the same island
+        /// Used by <see cref="RestartOrchestrator"/> to force <see cref="SelectedLevel"/>
+        /// to the current level's scene name directly (no save file involved). Without
+        /// this, a restart's fresh <c>RunLauncher.StartRun</c> left <see cref="SelectedLevel"/>
+        /// at "null" and fell through to vanilla's daily-rotation scene instead of the
+        /// island the player was just on.
         /// </summary>
         internal static void ForceSelectedLevel(string sceneName) =>
             SelectedLevel = string.IsNullOrEmpty(sceneName) ? "null" : sceneName;
 
         /// <summary>
-        /// Armed on every peer (via <c>OwnNetwork.ArmTerrainRandomizerSuppressionAll</c>,
-        /// RpcTarget.All so the host arms itself too, same reasoning as
-        /// <c>RequestFalldamageProtectionAll</c>) right before <c>RunLauncher.StartRun</c>
-        /// for an F7/quick-resume load. Consumed one-shot by
-        /// <see cref="TerrainRandomiserCompat"/>'s <c>MapHandler.InitializeMap</c> prefix,
-        /// which fires on every peer as the level scene loads - this is what tells it
-        /// "this load is OUR resume, not a fresh Boarding Pass start", so it knows to
-        /// suppress that mod's terrain regeneration for this one load only.
-        ///
-        /// Survives longer than <see cref="SelectedLevel"/> deliberately: that one gets
-        /// consumed by <c>MapBaker.GetLevel</c>, which runs well BEFORE the scene (and
-        /// thus <c>MapHandler.InitializeMap</c>) actually loads
+        /// Armed on every peer right before <c>RunLauncher.StartRun</c> for a quick-resume
+        /// load. Consumed one-shot by <see cref="TerrainRandomiserCompat"/>'s
+        /// <c>MapHandler.InitializeMap</c> prefix to suppress that mod's terrain
+        /// regeneration for this one load. Survives longer than <see cref="SelectedLevel"/>
+        /// deliberately, since that gets consumed earlier by <c>MapBaker.GetLevel</c>.
         /// </summary>
         private static bool _suppressExternalTerrainRandomizer;
 
@@ -122,22 +84,15 @@ namespace PEAKQuickResume
         internal OwnNetwork Network => _network;
 
         /// <summary>
-        /// Mirrors the checkpoint mod's own <c>loadedSaveFileThisRound</c> (decompile
-        /// field ~833): false for the FIRST load after a fresh run start, true for any
-        /// repeat load in the same run instance - several restore steps (item respawn,
-        /// stale-object cleanup, campfire reset) only run on a repeat load, matching
-        /// the original exactly. Reset on reaching the Airport (decompile 1345-1353)
+        /// False for the first load after a fresh run start, true for any repeat load in
+        /// the same run instance. Several restore steps only run on a repeat load. Reset
+        /// on reaching the Airport.
         /// </summary>
         public bool LoadedSaveFileThisRound { get; private set; }
 
         private float _recentlyLoadedUntil = -1f;
 
-        /// <summary>
-        /// Mirrors the checkpoint mod's own <c>RecentlyLitCampfire</c> (decompile line
-        /// 827): armed at the end of a real restore (decompile line 2969) so the
-        /// campfire-autosave patch doesn't immediately re-save right after a load.
-        /// Unused until M6 ports that patch; tracked now for fidelity/completeness
-        /// </summary>
+        /// <summary>Armed at the end of a real restore so the campfire-autosave patch doesn't immediately re-save right after a load.</summary>
         public float RecentlyLitCampfireUntil { get; private set; } = -1f;
 
         public void Init(ManualLogSource log, PluginConfig cfg, OwnNetwork network, OwnTeleportSequence teleportSequence)
@@ -148,16 +103,11 @@ namespace PEAKQuickResume
             _teleportSequence = teleportSequence;
         }
 
-        /// <summary>Mirrors <c>currentlyLoading = false;</c> (decompile line 2966)</summary>
         internal void MarkNotCurrentlyLoading() => CurrentlyLoading = false;
-
-        /// <summary>Mirrors <c>RecentlyLoaded = Time.time + 10f;</c> (decompile line 2968)</summary>
         internal void ArmRecentlyLoadedCooldown(float seconds) => _recentlyLoadedUntil = Time.time + seconds;
-
-        /// <summary>Mirrors <c>RecentlyLitCampfire = Time.time + 32f;</c> (decompile line 2969)</summary>
         internal void ArmRecentlyLitCampfireCooldown(float seconds) => RecentlyLitCampfireUntil = Time.time + seconds;
 
-        /// <summary>Called by <see cref="OwnTeleportSequence"/> at the end of its own sequence, mirroring the original's <c>loadedSaveFileThisRound = true;</c> (decompile line 2560)</summary>
+        /// <summary>Called by <see cref="OwnTeleportSequence"/> at the end of its sequence.</summary>
         internal void MarkLoadedThisRound() => LoadedSaveFileThisRound = true;
 
         private void Update()
@@ -170,14 +120,10 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Mirrors <c>PreStartSetSegment</c> (decompile 914-954): records the chosen
-        /// save's <c>sceneName</c> into <see cref="SelectedLevel"/>. Returns true iff the
-        /// selection's HOST file exists, deserialized, and actually names a scene
-        ///
-        /// Deliberately reads <see cref="SaveSelection.HostFilePath"/> and nothing else:
-        /// which island to load is level state, so it comes from the one file that owns
-        /// the level half of the save (see <see cref="SaveSelection"/>). A co-op client's
-        /// file has no <c>sceneName</c> at all and could never answer this question
+        /// Records the chosen save's <c>sceneName</c> into <see cref="SelectedLevel"/>.
+        /// Returns true iff the selection's host file exists, deserializes, and names a
+        /// scene. Reads <see cref="SaveSelection.HostFilePath"/> only, since a co-op
+        /// client's file has no <c>sceneName</c>.
         /// </summary>
         public bool TryPreStartSetSegment(SaveSelection selection)
         {
@@ -205,10 +151,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Reads the level/world half of a selection - the host's file. The ONLY place
-        /// this class ever reads world state from; per-player state is read per player,
-        /// from that player's own file, by <see cref="OwnInventoryRestore"/> and
-        /// <see cref="AchievementProgressIO"/>
+        /// Reads the level/world half of a selection - the host's file. Per-player state
+        /// is read separately by <see cref="OwnInventoryRestore"/> and <see cref="AchievementProgressIO"/>.
         /// </summary>
         private OwnSaveData ReadHostSave(SaveSelection selection)
         {
@@ -230,12 +174,8 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Mirrors <c>LoadPlayerOffline</c>/<c>LoadPlayerCoop</c>'s shared guard chain
-        /// (decompile 4605-4763) exactly: not at the Airport, host-only, the one-time-
-        /// hardmode-load guard (see class remarks), the post-load cooldown, and (coop
-        /// only) the readiness gate - THEN, where the original starts its
-        /// <c>CustomJumpToSegment</c> coroutine, this hands off to the real
-        /// <see cref="OwnTeleportSequence"/> port (Phase 8 M3)
+        /// Guard chain (not at Airport, host-only, one-time-load, cooldown, coop
+        /// readiness) before handing off to <see cref="OwnTeleportSequence"/>.
         /// </summary>
         public bool TryLoadPlayer(SaveSelection selection)
         {
@@ -288,8 +228,6 @@ namespace PEAKQuickResume
             }
         }
 
-        // Not ported yet (see class remarks) - always disabled until configOnetimeLoad's
-        // real Hardmode behavior is ported alongside the rest of SavePlayerOffline/Coop
         private bool OneTimeLoadEnabled() => false;
     }
 }

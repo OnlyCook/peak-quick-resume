@@ -11,60 +11,21 @@ using Zorro.UI;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Optional QoL (<see cref="PluginConfig.MoveRebindControlsToSettings"/>, disabled by
-    /// default): relocates the vanilla "Rebind Controls" button from the pause menu's main
-    /// page into the Settings page, stacked below whatever's already lowest there (its own
-    /// Back button, plus anything another mod already placed under it, e.g. PEAKLib.
-    /// ModConfig's "Mod Settings")
+    /// Optional QoL (<see cref="PluginConfig.MoveRebindControlsToSettings"/>, off by default):
+    /// reparents the vanilla "Rebind Controls" button from the pause menu's main page into
+    /// the Settings page, below whatever's already lowest there (Back, or another mod's own
+    /// addition e.g. PEAKLib.ModConfig's "Mod Settings"). Frees a row on the 9-button-max
+    /// pause menu for a button that's typically used once, if ever.
     ///
-    /// The pause menu can hold at most 9 visible buttons; in coop, mid-run, with every QoL
-    /// button this mod adds plus other mods' own, that ceiling is easy to hit. Rebind
-    /// Controls is used once (if ever) and then never again, so it's a good candidate to
-    /// free up a row without losing functionality, it's just one extra click away instead
-    ///
-    /// Implemented by literally REPARENTING the existing button (not cloning it): its
-    /// Button/onClick/LocalizedText all stay exactly as the game set them up, only its
-    /// Transform moves. Its click handler was wired in <c>PauseMenuMainPage.Start()</c> as
-    /// a closure over THAT instance, which still calls the correct (shared, one per pause
-    /// menu) <c>UIPageHandler</c>, so it keeps transitioning to <c>PauseMenuControlsPage</c>
-    /// correctly regardless of which page's hierarchy it now physically sits under
-    ///
-    /// Two hooks, not one, each solving a different half of the problem:
-    ///
-    ///  - <c>PauseMenuMainPage.OnEnable()</c> (already proven to re-fire every single time
-    ///    the pause menu opens, see <see cref="PauseMenuPatch"/>) does the actual move,
-    ///    re-evaluating the config live on every pause rather than only reacting once ever
-    ///    like a plain <c>PauseMenuSettingsMenuPage.Start()</c> postfix would (Unity defers
-    ///    a MonoBehaviour's Start() until its GameObject is first active, i.e. only once the
-    ///    player has actually opened Settings, which made an earlier version of this feature
-    ///    require exactly that one extra step before it took effect). Its
-    ///    <c>backButton</c>-equivalent field lookups aren't even needed to do the move
-    ///    itself: <see cref="PauseMenuSettingsMenuPage.backButton"/> is a serialized
-    ///    reference, valid immediately even before that page's own Start() has ever run
-    ///  - <c>PauseMenuSettingsMenuPage.Start()</c> gets a second, corrective postfix: other
-    ///    mods that add their own Settings-page buttons (PEAKLib.ModConfig's "Mod Settings",
-    ///    seen in practice) turned out to inject THEIRS via a hook on this exact method,
-    ///    only the first time Settings is actually opened, and not even as a sibling of
-    ///    Back (a different container entirely, at a hardcoded fixed position). The OnEnable
-    ///    pass above can't see a button that doesn't exist yet, so this second pass re-runs
-    ///    the same placement once Settings has actually been opened at least once, by which
-    ///    point anything else's own injection into this method is guaranteed to have already
-    ///    run too (a Harmony postfix here fires after the original method body, and after
-    ///    any earlier-registered prefix, regardless of patching framework)
-    ///
-    /// Either pass alone leaves a gap: OnEnable alone can collide with a not-yet-existing
-    /// competitor; the Settings-page postfix alone would need Settings opened once before
-    /// doing anything at all. Running both means the button always moves immediately on
-    /// pause, and self-corrects the moment there's enough information to place it right
-    ///
-    /// Positioning compares WORLD-space bottom edges (see <see cref="PositionBelowLowest"/>),
-    /// not raw anchoredPosition: other mods' buttons aren't guaranteed to share Back's own
-    /// parent transform, and anchoredPosition values from two different parents aren't
-    /// comparable at all, only a common (world) space is
+    /// Reparents (doesn't clone) so the button's existing click handler/closure keeps working.
+    /// Two hooks cover both timing gaps: <c>PauseMenuMainPage.OnEnable()</c> does the move on
+    /// every pause; <c>PauseMenuSettingsMenuPage.Start()</c> re-runs it once Settings has
+    /// actually been opened, since other mods (e.g. ModConfig) inject their own Settings
+    /// buttons via a hook on that same method and OnEnable can't see a button that doesn't
+    /// exist yet.
     /// </summary>
     public static class RebindControlsRelocationPatch
     {
-        // Gap between whatever's already lowest in that column and the relocated button
         private const float ButtonSpacing = 10f;
 
         private static ManualLogSource _log;
@@ -79,8 +40,7 @@ namespace PEAKQuickResume
             public Vector2 OriginalAnchorMin, OriginalAnchorMax, OriginalPivot, OriginalSizeDelta, OriginalAnchoredPosition;
         }
 
-        // Keyed by PauseMenuMainPage instance, same reasoning as PauseMenuPatch's own
-        // table: a fresh scene load means a fresh instance, state shouldn't carry over
+        // Keyed by instance so a fresh scene load starts with fresh state (see PauseMenuPatch).
         private static readonly ConditionalWeakTable<PauseMenuMainPage, RelocationState> _state =
             new ConditionalWeakTable<PauseMenuMainPage, RelocationState>();
 
@@ -101,13 +61,9 @@ namespace PEAKQuickResume
                 var onEnable = AccessTools.Method(typeof(PauseMenuMainPage), "OnEnable");
                 harmony.Patch(onEnable, postfix: new HarmonyMethod(typeof(RebindControlsRelocationPatch), nameof(OnEnablePostfix)));
 
-                // Corrective second pass: PEAKLib.ModConfig's own "Mod Settings" button
-                // (and potentially other mods' own additions) is injected via a hook on
-                // this EXACT method (a prefix, so it runs before Start()'s own body), and
-                // only ever the first time the player actually opens Settings. A Harmony
-                // postfix here is guaranteed to run after both that injection AND Start()'s
-                // own body have finished, so re-running our placement at this point sees
-                // everything that's actually there instead of racing it
+                // Corrective second pass: other mods (e.g. ModConfig) inject their own
+                // Settings buttons via a prefix on this same method, only the first time
+                // Settings opens. This postfix re-runs placement once that's happened.
                 var settingsStart = AccessTools.Method(typeof(PauseMenuSettingsMenuPage), "Start");
                 harmony.Patch(settingsStart, postfix: new HarmonyMethod(typeof(RebindControlsRelocationPatch), nameof(SettingsStartPostfix)));
 
@@ -153,10 +109,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Runs once, the first time the player actually opens Settings this scene load.
-        // By this point PEAKLib.ModConfig's own "Mod Settings" button (if installed) is
-        // guaranteed to already exist, so this just re-runs the same placement logic
-        // MoveToSettings already did, now with an accurate picture of what's there
+        // Re-runs MoveToSettings' placement now that other mods' Settings buttons exist.
         private static void SettingsStartPostfix(PauseMenuSettingsMenuPage __instance)
         {
             try
@@ -197,8 +150,7 @@ namespace PEAKQuickResume
 
             var ctrlRect = (RectTransform)controlsButton.transform;
 
-            // Remember exactly how/where this button sits today so it can be put back
-            // byte-for-byte if the setting is ever turned off again mid-session
+            // Remember original layout so it can be restored if the setting is turned off.
             state.OriginalParent = ctrlRect.parent;
             state.OriginalSiblingIndex = ctrlRect.GetSiblingIndex();
             state.OriginalAnchorMin = ctrlRect.anchorMin;
@@ -209,23 +161,14 @@ namespace PEAKQuickResume
 
             var backRect = (RectTransform)settingsPage.backButton.transform;
 
-            // Parented directly to the settings page's own ROOT transform, the exact
-            // same transform PEAKLib.ModConfig itself parents "Mod Settings" to (see
-            // PauseMenuSettingsMenuPageHooks.Prefix_Start passing `self.gameObject.
-            // transform`), rather than Back's own immediate parent: Back may sit inside
-            // a small container sized/masked just for the 1-2 buttons the vanilla page
-            // ships with, and a 3rd button placed further down INSIDE that same
-            // container could get silently clipped even though correctly positioned.
-            // The page root is proven to render buttons fine at arbitrary Y (that's
-            // where Mod Settings itself already renders correctly)
+            // Parent to the settings page's own root (same as ModConfig's "Mod Settings"),
+            // not Back's immediate parent, which may be a small container that would clip
+            // a button placed further down inside it.
             Transform targetParent = settingsPage.transform;
 
             ctrlRect.SetParent(targetParent, worldPositionStays: false);
 
-            // Match the Back button's own anchors/pivot for consistent positioning, but
-            // deliberately NOT its sizeDelta: keep the button's own original width/height
-            // from the pause menu (it already looked right there) rather than squeezing
-            // it to Back's narrower size
+            // Match Back's anchors/pivot, but keep our own sizeDelta (original width/height).
             ctrlRect.anchorMin = backRect.anchorMin;
             ctrlRect.anchorMax = backRect.anchorMax;
             ctrlRect.pivot = backRect.pivot;
@@ -239,25 +182,14 @@ namespace PEAKQuickResume
             _log.Trace("RebindControlsRelocationPatch: moved Rebind Controls into the Settings page.");
         }
 
-        // The settings page's own scrollable list of actual settings (audio/graphics/
-        // gameplay sliders, toggles, dropdowns) lives under sharedSettingsMenu, several
-        // controls of which are themselves Buttons (dropdown headers, toggle switches,
-        // etc.). Scanning the WHOLE page for "whichever Button sits lowest" without
-        // excluding that subtree picks up something buried in that scrollable list
-        // instead of a top-level page button, landing the relocated button somewhere
-        // arbitrary (often off-screen or in an unrelated masked area, effectively
-        // invisible) rather than actually below Back/Mod Settings
+        // Excludes sharedSettingsMenu's own scrollable controls (dropdowns, toggles, etc.),
+        // which are also Buttons and would otherwise get picked up as "lowest".
         private static Transform ExcludedSubtree(PauseMenuSettingsMenuPage settingsPage) =>
             settingsPage.sharedSettingsMenu != null ? settingsPage.sharedSettingsMenu.transform : null;
 
-        // Places ctrlRect directly below whichever Button anywhere in the settings page
-        // currently sits lowest on screen (Back itself, or another mod's own addition,
-        // e.g. PEAKLib.ModConfig's "Mod Settings"). Compares WORLD-space bottom edges
-        // rather than raw anchoredPosition: other mods' buttons aren't guaranteed to share
-        // Back's own parent transform (ModConfig's "Mod Settings" doesn't, it turned out;
-        // it's placed at its own hardcoded fixed anchoredPosition under a different
-        // container entirely), and anchoredPosition values from two different parents
-        // aren't comparable at all, only a common (world) space is
+        // Places ctrlRect below whichever Button in the settings page sits lowest on screen,
+        // comparing world-space bottom edges since other mods' buttons don't share Back's
+        // parent transform and anchoredPosition values across parents aren't comparable.
         private static void PositionBelowLowest(Transform settingsRoot, RectTransform ctrlRect, RectTransform fallback, Transform excludeSubtree)
         {
             RectTransform lowest = fallback;
@@ -276,23 +208,9 @@ namespace PEAKQuickResume
                 }
             }
 
-            // Assign via Transform.position (WORLD space), not anchoredPosition: ctrlRect
-            // and "lowest" aren't guaranteed to share a parent (or even a comparable
-            // anchored-position convention), and a world-space position setter is
-            // correct regardless of parent, sidestepping manual cross-parent coordinate
-            // conversion entirely. lossyScale.y stands in for "this canvas's current
-            // scale factor" (Canvas Scaler's Scale With Screen Size mode scales the
-            // canvas itself, which every RectTransform under it inherits uniformly),
-            // so both the button height and the fixed spacing convert consistently
-            // Position ctrlRect's TOP edge `spacing` below the existing element's bottom
-            // edge, then its own BOTTOM edge is heightWorld further down still (going
-            // further down the screen means a SMALLER world Y, top-anchored UI): top =
-            // lowestBottom - spacing; bottom = top - height; pivot = bottom + pivot.y *
-            // height, which simplifies to top - height * (1 - pivot.y). The earlier
-            // version added pivot.y * height to the wrong reference point (a "desired
-            // bottom" that wasn't actually the bottom), which pushed the pivot UP above
-            // the existing element's own bottom edge instead of below it, that's the
-            // actual bug that put "Rebind Controls" back behind "Mod Settings"
+            // Uses Transform.position (world space) since ctrlRect and "lowest" may not
+            // share a parent. pivotY = topY - height * (1 - pivot.y), derived from
+            // top = lowestBottom - spacing, bottom = top - height, pivot = bottom + pivot.y * height.
             float scale = fallback.lossyScale.y;
             float heightWorld = ctrlRect.sizeDelta.y * scale;
             float desiredTopWorldY = lowestBottomWorldY - ButtonSpacing * scale;

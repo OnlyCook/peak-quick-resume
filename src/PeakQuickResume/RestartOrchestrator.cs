@@ -7,16 +7,9 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Miscellaneous QoL: "Restart" the current run without quitting or dying.
-    ///
-    /// Reproduces the FIRST half of <see cref="ResumeOrchestrator"/>'s sequence
-    /// (return to Airport, start a fresh run of the same difficulty) and stops
-    /// there, it never touches the checkpoint mod or restores a save. The result
-    /// is exactly what vanilla does after death/quitting-and-rejoining, minus the
-    /// travel time: everyone lands back at the Airport and a brand-new run of the
-    /// same ascent begins immediately
-    ///
-    /// Deliberately has NO dependency on the checkpoint mod, unlike ResumeOrchestrator
+    /// QoL: "Restart" the current run without quitting or dying. Reproduces only the first
+    /// half of <see cref="ResumeOrchestrator"/>'s sequence (return to Airport, start a fresh
+    /// run of the same difficulty) and has no dependency on the checkpoint mod.
     /// </summary>
     public class RestartOrchestrator : MonoBehaviour
     {
@@ -38,16 +31,10 @@ namespace PEAKQuickResume
             _watchdog = watchdog;
         }
 
-        /// <summary>
-        /// Kick off a restart of the run currently in progress. Only valid while
-        /// mid-run (in a Level); the ascent/custom-run flag is captured from the
-        /// CURRENT run before anything moves
-        /// </summary>
+        /// <summary>Only valid mid-run; the ascent/custom-run flag is captured from the current run.</summary>
         public void RequestRestart()
         {
-            // Route through the shared cooldown/queue first - see OrchestrationLock's
-            // remarks. The whole guard chain below is re-evaluated fresh whenever this
-            // actually runs (now, or after the queued wait), not stale-checked up front
+            // Routes through the shared cooldown/queue; see OrchestrationLock.
             OrchestrationLock.RunOrQueue("restart", RequestRestartNow, _log);
         }
 
@@ -72,10 +59,7 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Acquire the shared lock right before actually starting - see
-            // OrchestrationLock's remarks (this is the exact bug it fixes: a Restart
-            // firing while a Resume is still mid-flight raced GameOverHandler.LoadAirport()
-            // underneath the Resume and won with a fresh, unrelated run)
+            // Prevents a Restart racing GameOverHandler.LoadAirport() under an in-flight Resume; see OrchestrationLock.
             if (!OrchestrationLock.TryAcquire(LockOwner))
             {
                 _log.Trace("Cannot restart: a resume is already in progress; ignoring request.");
@@ -88,11 +72,7 @@ namespace PEAKQuickResume
             catch (Exception e) { _log.LogError($"Could not read Ascents.currentAscent: {e}"); ascent = 0; }
             custom = RunLauncher.IsCustomRun;
 
-            // Capture the CURRENT island's scene name while we're still standing in it
-            // (RunLauncher.InLevel was just confirmed above) - see
-            // OwnLoadEntryPoints.ForceSelectedLevel's remarks for why this is needed at
-            // all: without it, the fresh run below re-rolls onto today's daily-rotation
-            // scene instead of a fresh run of the island the player was actually just on
+            // Captured now so the fresh run below targets this island, not today's daily rotation.
             string currentScene = RunLauncher.ActiveSceneName;
 
             StartCoroutine(RestartRoutine(ascent, custom, currentScene));
@@ -104,14 +84,8 @@ namespace PEAKQuickResume
         {
             _running = true;
 
-            // See ResumeOrchestrator.ResumeRoutine's equivalent call: the Airport return
-            // below is us intentionally moving the player, not a checkpoint-mod teleport,
-            // and would otherwise false-positive a watch window still active from a
-            // prior load
+            // Avoids false-positiving a watch window still active from a prior load; see ResumeOrchestrator.
             _watchdog?.LiftWatch();
-
-            // Same reason as ResumeOrchestrator's equivalent call - a restart drives the
-            // very same Airport return, and hangs the same way without this
             RunLauncher.ClearVanillaQuicksaveResume(_log);
 
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
@@ -152,14 +126,9 @@ namespace PEAKQuickResume
             if (!_lastWaitOk) { Fail("Timed out waiting for loading to clear before StartRun"); yield break; }
 
 
-            // Every client must have finished spawning into the Airport before we start the run.
-            // RunLauncher.IsLoading above only reports the HOST's loading screen; a client still
-            // spawning in has its own LoadingScreenHandler busy, and LoadingScreenHandler.Load
-            // REFUSES while that is true ("Tried to load while already loading!"), so the island
-            // load RPC we are about to send is silently dropped on their end and they are left
-            // standing in the previous level - session-reported as "the client stayed where they
-            // were, in another biome which wasn't loaded in". The host log showed the client's
-            // spawn requests still repeating on both sides of StartRun. See PlayerRegistration
+            // RunLauncher.IsLoading only reports the host's loading screen; a client still
+            // spawning in refuses LoadingScreenHandler.Load, silently dropping the island load
+            // RPC and leaving it stuck in the previous level. See PlayerRegistration.
             if (!PhotonNetwork.OfflineMode)
             {
                 yield return WaitFor(PlayerRegistration.AllRegistered,
@@ -169,13 +138,7 @@ namespace PEAKQuickResume
                         + "starting the run anyway. A client still loading may not follow into the new level.");
             }
 
-            // Force the fresh run onto the SAME island we just left, not whatever
-            // vanilla/today's daily rotation would otherwise pick - see
-            // OwnLoadEntryPoints.ForceSelectedLevel's remarks
             OwnLoadEntryPoints.ForceSelectedLevel(currentScene);
-
-            // Drop any buffered RPCs from the run we are replacing - see
-            // RunLauncher.ClearBufferedRpcs (stale ghost inits are the known case)
             RunLauncher.ClearBufferedRpcs(_log);
 
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
@@ -183,9 +146,6 @@ namespace PEAKQuickResume
             _log.LogInfo("=== Restart: sequence COMPLETE (fresh run started) ===");
             Msg(MessagesLocalization.Get(MsgKey.RunRestarted), MsgSuccess);
 
-            // Arm the post-orchestration cooldown (coop only) - see
-            // PostOrchestrationCooldown's remarks. A genuinely FAILED restart (Fail()
-            // above) does NOT arm this - nothing actually changed
             if (!PhotonNetwork.OfflineMode)
                 OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
 

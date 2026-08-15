@@ -10,53 +10,28 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Own addition, no decompile counterpart: puts each player's ALIVE/DEAD state back
-    /// the way it was when the checkpoint was written (see <see cref="OwnSaveData.isDead"/>).
-    /// Co-op only - solo can never save while dead (the one player being dead is the whole
-    /// team being dead, which ends the run), so there is nothing to restore offline
+    /// Restores each player's alive/dead state to match the checkpoint (see
+    /// OwnSaveData.isDead). Co-op only - solo can never save while dead. Fixes a bug
+    /// where a late-joining player killed on arrival (spawned as a spectating ghost)
+    /// stayed stuck as a ghost after a load, because the revive step's local write to
+    /// Character.data.dead never reached the client - dead state only syncs through the
+    /// RPCA_Die/RPCA_Revive/RPCA_SetDead RPC family. Whoever the checkpoint recorded as
+    /// dead is put back via RPCA_SetDead (not RPCA_Die, which would also drop their
+    /// inventory - matching vanilla's own reconnect path).
     ///
-    /// This exists because of a real co-op bug (session-reported 2026-07-25): a friend who
-    /// joins a run already in progress is deliberately killed on arrival by the game itself
-    /// (<c>DeathOnArrival</c> -> <c>KillImmediately</c> -> <c>RPCA_Die</c>), so they spawn as
-    /// a spectating ghost. Loading a checkpoint left them stuck exactly like that - watching
-    /// the host - even though they had never died in the run being resumed. The load's own
-    /// revive step (<c>OwnTeleportSequence.ReviveDeadPlayers</c>, a literal port) only ever
-    /// wrote <c>Character.data.dead = false</c> on the HOST's own local copy of that client's
-    /// character, which is never visible on the client's own machine: <c>dead</c> is only
-    /// ever synced through the <c>RPCA_Die</c>/<c>RPCA_Revive</c>/<c>RPCA_SetDead</c> RPC
-    /// family (plus <c>RPC_SyncOnJoin</c>), never through the continuous character-sync
-    /// stream. That step now broadcasts <c>RPCA_Revive</c> instead - see its own remarks -
-    /// which is the half of this feature that actually unsticks the joined-late client
+    /// Split into ResolveSavedDeadUserIds/ApplySavedDeaths so who ends up dead is decided
+    /// up front, letting OwnInventoryRestore.RestoreAll skip those players and the death
+    /// land while the loading screen is still opaque, rather than visibly happening after
+    /// the player watches themselves stand up.
     ///
-    /// This class is the other half: once everyone is alive again, whoever the checkpoint
-    /// recorded as dead is put back into that state via <c>RPCA_SetDead</c>. Deliberately
-    /// NOT <c>RPCA_Die</c>: that also drops the character's whole inventory into the world,
-    /// which would be wrong twice over - a player who was dead at save time had already
-    /// dropped everything before the save, so their restored inventory is empty by
-    /// construction, and dropping "again" would only scatter phantom loot around the
-    /// campfire. Vanilla's own reconnect path does exactly the same thing for exactly the
-    /// same reason (<c>SetDeadAfterReconnect</c> -> <c>RPCA_SetDead</c>, no drop)
-    ///
-    /// Split in two on purpose (see <see cref="ResolveSavedDeadUserIds"/> /
-    /// <see cref="ApplySavedDeaths"/>): who ends up dead is decided UP FRONT, before the
-    /// per-player restore runs, so <see cref="OwnInventoryRestore.RestoreAll"/> can skip
-    /// those players entirely (there is nothing worth putting back onto a corpse), and the
-    /// death itself lands while the loading screen is still fully opaque on every machine.
-    /// Session-reported: doing it at the very end instead meant the player watched
-    /// themselves get restored, stand up, and only THEN visibly drop dead
-    ///
-    /// A player with NO file in the loaded save event is always restored alive. That is the
-    /// joined-late case by definition (they weren't in the run when it was saved), and it is
-    /// also the safe default for every other reason a file can be missing
+    /// A player with no file in the loaded save event is always restored alive.
     /// </summary>
     public static class DeathStateRestore
     {
         /// <summary>
-        /// Host-side, co-op only. Works out - up front, before any per-player restore has
-        /// run - which currently-connected players the loaded checkpoint recorded as dead,
-        /// as a set of userIds. Always empty offline, on a client, or when the answer would
-        /// be "everybody" (see the guard below), so callers can treat a non-empty result as
-        /// "these players are being restored as a corpse, skip restoring anything onto them"
+        /// Host-side, co-op only. Works out up front which currently-connected players the
+        /// loaded checkpoint recorded as dead. Always empty offline, on a client, or when
+        /// the answer would be "everybody" (see guard below).
         /// </summary>
         public static HashSet<string> ResolveSavedDeadUserIds(SaveSelection selection, ManualLogSource log)
         {
@@ -76,11 +51,8 @@ namespace PEAKQuickResume
                     else aliveAfter++;
                 }
 
-                // Vanilla's own Character.CheckIfAllPlayersDead ends the run outright the
-                // moment every character reads as dead. Restoring a state that trips it
-                // would turn a load into an instant game over, so if this would leave
-                // nobody standing (a hand-edited save, or a checkpoint written in some
-                // state we didn't anticipate), leave everyone alive instead and say so
+                // Vanilla's CheckIfAllPlayersDead ends the run the moment everyone reads as
+                // dead; if restoring would leave nobody standing, leave everyone alive instead.
                 if (deadUserIds.Count > 0 && aliveAfter == 0)
                 {
                     log?.LogWarning($"DeathStateRestore: the loaded checkpoint has all {deadUserIds.Count} player(s) "
@@ -98,11 +70,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Host-side, co-op only. Marks everyone in <paramref name="deadUserIds"/> (from
-        /// <see cref="ResolveSavedDeadUserIds"/>) dead again. Expects to run once the
-        /// teleport and the per-player restore have settled but while the loading screen is
-        /// still fully opaque everywhere - so the player is already a spectator by the time
-        /// anything is revealed, instead of visibly dropping dead in front of themselves
+        /// Host-side, co-op only. Marks everyone in deadUserIds dead again. Runs once the
+        /// teleport and per-player restore have settled, while the loading screen is still
+        /// opaque.
         /// </summary>
         public static void ApplySavedDeaths(HashSet<string> deadUserIds, OwnLoadEntryPoints entryPoints, ManualLogSource log)
         {
@@ -115,30 +85,17 @@ namespace PEAKQuickResume
                     Character ch = player != null ? player.character : null;
                     if (ch == null) continue;
                     if (!deadUserIds.Contains(NetworkingUtilities.GetUserId(ch.player))) continue;
-                    if (ch.data.dead) continue; // already there (nothing revived them), leave it alone
+                    if (ch.data.dead) continue;
 
                     try
                     {
-                        // Tell the machine this death is about to land on that we did it on
-                        // purpose, BEFORE the death itself: TeleportWatchdog's post-load
-                        // watch window treats the local player dying right after a load as
-                        // one of the known bad-teleport symptoms ("knocked out / died
-                        // shortly after load") and would otherwise pop its "teleport bug
-                        // detected" hint on a player we deliberately restored as dead.
-                        // Standing the watch down is the right response either way - every
-                        // symptom it polls for (fall-through, never-teleported, warp loop)
-                        // is meaningless for a ghost, whose corpse vanilla itself drags
-                        // below the map. The suppression is sticky on the receiving side,
-                        // so it holds whichever side of that machine's own load-window
-                        // arming it lands on (see TeleportWatchdog.SuppressForRestoredDeath).
-                        // Only reaches players running Quick Resume, which is exactly
-                        // right: a vanilla client has no watchdog to suppress
+                        // Suppress the teleport watchdog first: it treats dying right after a
+                        // load as a bad-teleport symptom and would otherwise flag a death we
+                        // deliberately restored. Only reaches players running Quick Resume.
                         SuppressWatchdogFor(player, ch, entryPoints, log);
 
-                        // RpcTarget.All, on that character's OWN view: the owning client is
-                        // the only machine where being dead actually means anything (ghost
-                        // spawn, spectate camera), and the host writing ch.data.dead
-                        // locally would never reach it - see the class remarks
+                        // RpcTarget.All: only the owning client's machine reflects being dead
+                        // (ghost spawn, spectate camera); a local write on the host wouldn't.
                         ch.photonView.RPC("RPCA_SetDead", RpcTarget.All);
                         log.Trace($"DeathStateRestore: restored {ch.characterName} as dead (they were dead when this checkpoint was saved).");
                     }
@@ -155,20 +112,10 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Host-side, co-op only. The counterpart to <see cref="ApplySavedDeaths"/>: makes
-        /// sure everyone the checkpoint did NOT record as dead is actually alive, run right
-        /// before the deaths that ARE wanted get applied.
-        ///
-        /// <c>OwnTeleportSequence.ReviveDeadPlayers</c> runs near the TOP of the sequence so
-        /// that everything after it operates on living characters, and
-        /// <c>TeleportClientsToHost</c> revives again immediately before warping (a dead
-        /// character cannot be warped at all - see there). This is the last of the three:
-        /// it catches anyone who died in the window AFTER their warp landed but before the
-        /// screen comes back - a fall during the restore, a late joined-late arrival kill -
-        /// so nobody is revealed as a corpse the checkpoint never recorded as dead.
-        ///
-        /// Cheap when there is nothing to do, which is the normal case: it only acts on a
-        /// character that is actually dead or passed out
+        /// Host-side, co-op only. Counterpart to ApplySavedDeaths: makes sure everyone the
+        /// checkpoint did NOT record as dead is actually alive. Catches anyone who died in
+        /// the window after their warp landed but before the screen comes back (a fall
+        /// during restore, a late-arrival kill), run before ApplySavedDeaths.
         /// </summary>
         public static void EnsureUnsavedPlayersAlive(HashSet<string> deadUserIds, ManualLogSource log)
         {
@@ -181,22 +128,16 @@ namespace PEAKQuickResume
                     Character ch = player != null ? player.character : null;
                     if (ch == null || ch.photonView == null) continue;
 
-                    // Whoever the checkpoint says should be dead is ApplySavedDeaths' job
                     if (deadUserIds != null && deadUserIds.Contains(NetworkingUtilities.GetUserId(ch.player))) continue;
 
-                    // ONLY data.dead. By this point in the sequence the wake-up effect has
-                    // deliberately collapsed everyone into the passed-out pose
-                    // (OwnWakeUpEffect.Collapse, just above the call site), so treating
-                    // passedOut as "needs reviving" here would revive every single player -
-                    // cancelling the wake-up animation and, because ReviveCharacter clears
-                    // afflictions and thorns, wiping the state we just finished restoring
+                    // Only data.dead: by this point the wake-up effect has collapsed everyone
+                    // into the passed-out pose, so treating passedOut as "needs reviving" would
+                    // revive every player and wipe the state just restored (ReviveCharacter
+                    // clears afflictions/thorns).
                     if (!ch.data.dead) continue;
 
                     try
                     {
-                        // Same RPC (and same reasoning) as ReviveDeadPlayers: the owning
-                        // client is the only machine where being dead means anything, and a
-                        // local write on the host would never reach them
                         ch.photonView.RPC(ReviveRpcName, RpcTarget.All, false);
                         log?.LogInfo($"DeathStateRestore: {ch.characterName} died during the load and this "
                             + "checkpoint records no death for them - revived so they come back alive.");
@@ -213,16 +154,10 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Character's revive <c>[PunRPC]</c>. PEAK 2.0.a renamed this from
-        /// <c>RPCA_Revive</c> to <c>ReviveCharacter</c> - see
-        /// <c>OwnTeleportSequence.ReviveRpcName</c>, which documents the rename in full
-        /// </summary>
+        /// <summary>Character's revive [PunRPC]; PEAK 2.0.a renamed this from RPCA_Revive to ReviveCharacter.</summary>
         private const string ReviveRpcName = "ReviveCharacter";
 
-        // Lifts the teleport watchdog on whichever machine owns this character - locally when
-        // that's us (the host restoring its own saved death), otherwise via our own targeted
-        // RPC. See the call site for why
+        // Lifts the teleport watchdog on whichever machine owns this character.
         private static void SuppressWatchdogFor(Player player, Character ch, OwnLoadEntryPoints entryPoints, ManualLogSource log)
         {
             try
@@ -243,14 +178,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// Reads just <see cref="OwnSaveData.isDead"/> out of this player's OWN file within
-        /// the loaded save event (same per-player file resolution as
-        /// <see cref="OwnInventoryRestore.RestoreAll"/> - never the host's file, never a
-        /// near-miss from another event). Anything that isn't a clear, readable "was dead"
-        /// answers false: no file for this player, an unreadable file, or a save written
-        /// before this field existed all mean the player stays alive
-        /// </summary>
+        /// <summary>Reads OwnSaveData.isDead from this player's own file. Anything unreadable or missing defaults to alive.</summary>
         private static bool WasSavedDead(SaveSelection selection, string userId, ManualLogSource log)
         {
             if (!selection.TryGetPlayerFile(userId, out string path))

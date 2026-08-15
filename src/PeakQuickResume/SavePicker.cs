@@ -10,25 +10,11 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// The in-game F7 save picker: an overlay listing every archived checkpoint for the
-    /// CURRENT network category (offline saves when solo, coop saves when in coop), newest
-    /// first. Arrow keys move the highlight (holding one repeats it), Delete removes a save
-    /// (two-step), Escape closes. The resume key itself (open / close, or confirm-load when
-    /// <see cref="PluginConfig.ResumeKeyLoadsInsteadOfClosing"/> is enabled) is driven by
-    /// <see cref="Plugin"/> so a single key press never both opens and confirms
-    ///
-    /// The newest save is preselected, so "press F7, press Enter" loads the latest
-    /// checkpoint (or "press F7, press F7 again" when
-    /// <see cref="PluginConfig.ResumeKeyLoadsInsteadOfClosing"/> is enabled)
-    ///
-    /// Rendered as a real UGUI Canvas (built once, lazily, then just toggled/updated)
-    /// rather than IMGUI, both for a look that sits closer to the game's own menus (real
-    /// TMP font pulled from the game's own loaded fonts, same trick the checkpoint mod
-    /// uses for its loading screen) and because a Canvas that's only touched on state
-    /// changes is cheaper than IMGUI's every-frame relayout while open
-    ///
-    /// The row list only ever shows <see cref="MaxVisibleRows"/> rows at once and scrolls
-    /// to keep the selection in view, rather than growing the panel to fit an arbitrarily
-    /// large archive
+    /// current network category, newest first. Arrow keys move the highlight, Delete removes
+    /// a save (two-step), Escape closes. Rendered as a real UGUI Canvas (built once, lazily,
+    /// then toggled/updated) rather than IMGUI, for a closer game-native look and cheaper
+    /// per-frame cost. Shows at most <see cref="MaxVisibleRows"/> rows, scrolling to keep the
+    /// selection in view.
     /// </summary>
     public class SavePicker : MonoBehaviour
     {
@@ -44,10 +30,7 @@ namespace PEAKQuickResume
         private int _pendingDeleteIndex = -1;
         private float _pendingDeleteDeadline;
 
-        // A one-off transient warning (e.g. "unstar to delete"), shown in the same
-        // warn-line slot as the delete-confirm prompt above. The two never compete for
-        // long: OnDeletePressed only ever sets one of them per press, and either one
-        // being freshly set replaces whatever the other was showing
+        // A one-off transient warning (e.g. "unstar to delete"), shown in the same slot as the delete-confirm prompt.
         private string _transientWarnText;
         private float _transientWarnDeadline;
 
@@ -69,10 +52,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Open the picker for the given category. <paramref name="preferred"/>, if set,
-        /// selects the newest save of that difficulty (used mid-run so the default matches
-        /// the run you're in); otherwise the newest save overall is selected
-        /// Returns false (and does not open) when there are no saves for this category
+        /// Opens the picker for the given category. If <paramref name="preferred"/> is set,
+        /// selects the newest save of that difficulty; otherwise the newest overall. Returns
+        /// false without opening if there are no saves for this category.
         /// </summary>
         public bool Open(bool offline, SaveTarget? preferred)
         {
@@ -102,12 +84,8 @@ namespace PEAKQuickResume
             ClearPendingDelete();
             IsOpen = true;
 
-            // The very first time the picker is ever opened in a session, building the
-            // real menu (baking every procedural sprite/texture from scratch) is heavy
-            // enough to cause a visible hitch. Rather than the player pressing the key
-            // and staring at nothing for a beat, show a cheap "Loading..." indicator
-            // immediately and build the real menu a frame later; every subsequent open
-            // this session skips straight to the instant path below
+            // First open this session: building the real menu is heavy enough to hitch, so
+            // show a cheap loading indicator and build the real menu a frame later.
             if (!_uiWarmedUp)
             {
                 EnsureLoadingUi();
@@ -127,19 +105,12 @@ namespace PEAKQuickResume
             return true;
         }
 
-        // Builds the real menu (heavy, first time) and swaps the loading indicator out
-        // for it. Delayed by one frame so the loading text actually gets a chance to
-        // render before the heavy synchronous build work runs
+        // Delayed one frame so the loading text gets a chance to render before the heavy build.
         private IEnumerator WarmUpThenShow()
         {
             yield return null;
-            // skipDimFade: the loading indicator's own dim is already at full DimColor,
-            // deactivating it and activating the real root happen in this same frame
-            // (no yield between them), so the real root's dim starts already-opaque
-            // too, same color, same alpha, nothing to visually distinguish the swap.
-            // Fading it in from 0 here (like a normal open) would instead cause the
-            // dim to flash away to nothing for a frame and then re-fade in, since
-            // deactivating the loading root removes the ONLY dim currently showing
+            // skipDimFade: the loading indicator's dim is already opaque and swaps out in the
+            // same frame, so fading from 0 here would flash the dim away and back.
             ShowRealMenu(skipDimFade: true);
             _loadingRoot?.SetActive(false);
             _uiWarmedUp = true;
@@ -150,11 +121,7 @@ namespace PEAKQuickResume
         {
             EnsureUi();
             ScrollToSelection();
-            // Activate BEFORE rebuilding: the footer badges size themselves via
-            // ContentSizeFitter + a forced layout rebuild, and Unity can't correctly
-            // measure TMP text (or run layout at all) on a still-inactive hierarchy, the
-            // first-open badges would be measured wrong and only "snap" correct on the
-            // next rebuild (e.g. the first arrow-key press)
+            // Activate before rebuilding: Unity can't measure TMP text/layout on an inactive hierarchy.
             _root?.SetActive(true);
             RebuildUi();
             if (skipDimFade)
@@ -163,9 +130,6 @@ namespace PEAKQuickResume
                 _dimFadeElapsed = DimFadeDuration;
                 return;
             }
-            // Dim fades in from fully transparent each time the picker opens (rather
-            // than snapping straight to DimColor), easier on the eyes than an instant
-            // dark overlay slamming in
             if (_dimImage != null) _dimImage.color = new Color(DimColor.r, DimColor.g, DimColor.b, 0f);
             _dimFadeElapsed = 0f;
         }
@@ -191,10 +155,7 @@ namespace PEAKQuickResume
                 _dimImage.color = new Color(DimColor.r, DimColor.g, DimColor.b, DimColor.a * t);
             }
 
-            // Navigation (the resume key + Enter load live in Plugin). Holding an
-            // arrow repeats it after an initial delay, like any normal menu list. Holding
-            // Shift jumps by JumpStep entries instead of 1, both on the initial press and
-            // on every repeat while held
+            // Navigation (the resume key + Enter load live in Plugin). Shift jumps by JumpStep instead of 1.
             int step = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) ? JumpStep : 1;
             if (Input.GetKeyDown(KeyCode.UpArrow)) { Move(-step); _nextRepeatTime = Time.unscaledTime + RepeatInitialDelay; }
             else if (Input.GetKeyDown(KeyCode.DownArrow)) { Move(step); _nextRepeatTime = Time.unscaledTime + RepeatInitialDelay; }
@@ -223,13 +184,8 @@ namespace PEAKQuickResume
                 RefreshWarn();
             }
 
-            // Jagged-edge animation: cycle through the 3 pre-built frames on a fixed
-            // interval. Every frame is already a real, complete Sprite generated once
-            // and cached (see PanelSprite/RowCapSelSprite), so ticking this is just
-            // swapping which already-built texture two Images point at, not any kind
-            // of per-frame regeneration. Skipped entirely in minimal mode (see
-            // PluginConfig.MinimalPickerUi): the flat sprites baked for that mode are
-            // identical every frame, so there is nothing to animate
+            // Jagged-edge animation: cycles through 3 pre-built cached sprites. Skipped in
+            // minimal mode (PluginConfig.MinimalPickerUi), whose flat sprites never change.
             if (!MinimalUi)
             {
                 _jagFrameTimer += Time.unscaledDeltaTime;
@@ -279,10 +235,8 @@ namespace PEAKQuickResume
             var target = Selected;
             if (target == null) return;
 
-            // Starred saves can't be deleted at all, must be unstarred first (see
-            // OnStarPressed) - shown as a transient warning instead of arming the
-            // normal two-step delete confirm, which would otherwise silently no-op on
-            // the second press (SaveArchive.Delete refuses starred saves defensively)
+            // Starred saves must be unstarred first (see OnStarPressed); show a transient
+            // warning instead of arming the delete confirm, which would just no-op.
             if (target.Starred)
             {
                 ClearPendingDelete();
@@ -310,11 +264,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Toggles the highlighted save's starred state (persisted immediately, see
-        // SaveArchive.SetStarred) and re-sorts in place: starred saves float to the top
-        // (newest first), same ordering SaveArchive.List() itself produces. Re-sorting
-        // the already-loaded list rather than re-calling List() avoids a redundant
-        // disk sync + re-parse of every archive file just to reflect one toggle
+        // Toggles the highlighted save's starred state and re-sorts in place, avoiding a redundant disk re-scan.
         private void OnStarPressed()
         {
             var target = Selected;
@@ -340,13 +290,7 @@ namespace PEAKQuickResume
             if (seconds <= 0f) return "";
             var t = TimeSpan.FromSeconds(seconds);
             string played = SavePickerLocalization.Get(PickerText.Played);
-            // Past 10h, drop the minutes: this is the last column, so its own width
-            // factors into the row-overflow budget same as everything else, and an
-            // unbounded "{hours}h {minutes}m" would grow without limit on a long-lived
-            // save (unlike the difficulty column, there's no truncating an hour count).
-            // Hours-only past this point is a one-character-wider-per-decade growth
-            // instead, which the packed-column fallback (see ComputeColumnLayout) can
-            // always absorb
+            // Past 10h, drop the minutes so this column's width stays bounded (see ComputeColumnLayout).
             if (t.TotalHours >= 10) return $"{(int)t.TotalHours}h {played}";
             return t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m {played}" : $"{t.Minutes}m {played}";
         }
@@ -355,13 +299,9 @@ namespace PEAKQuickResume
 
         private const int MaxVisibleRows = 10;
         private const float RowHeight = 40f;
-        // internal: reused by HelpScreen (the F1 screen) so it matches this panel's
-        // proportions exactly rather than approximating them
-        internal const float PanelPadding = 20f; // vertical margin (title/footer/etc.)
-        // Wider than PanelPadding: with the border grown to 11px thick (see
-        // PanelBorderThickness), the old horizontal margin left only ~1px between the
-        // selected row's edge and the border, they read as touching. Only the
-        // horizontal margin needs this, vertical spacing is untouched
+        internal const float PanelPadding = 20f; // vertical margin; internal so HelpScreen matches this panel's proportions
+        // Wider than PanelPadding: at PanelBorderThickness=11px the old margin left the
+        // selected row's edge nearly touching the border.
         internal const float PanelPaddingHorizontal = 30f;
         internal const float TitleHeight = 42f;
         private const float ScrollHintHeight = 18f;
@@ -370,69 +310,41 @@ namespace PEAKQuickResume
         internal const float FooterHeight = 34f;
         internal const float PanelWidth = 900f;
 
-        // Row "column" layout: fields (difficulty / biome / date / playtime) are lined
-        // up at fixed x-positions computed from the widest value each field takes across
-        // every archived save, not just the visible page, so the alignment doesn't jitter
-        // while scrolling. RowTextInset matches the 10f margin the row text used to have
-        // on each side; RowColumnGap is the horizontal gap between adjacent columns. If
-        // the 4-column layout doesn't fit the available row width (long biome/campfire
-        // names, verbose languages, ...) the two middle fields (biome, date) collapse
-        // into a single packed field instead of being clipped - see ComputeColumnLayout
+        // Row columns (difficulty/biome/date/playtime) are lined up at fixed x-positions
+        // computed from the widest value across every archived save, so alignment doesn't
+        // jitter while scrolling. If the 4-column layout doesn't fit, biome+date collapse
+        // into one packed field (see ComputeColumnLayout).
         private const float RowTextInset = 10f;
         private const float RowColumnGap = 24f;
         private const string RowPackedMidSeparator = "   ";
-        // Reserved on the right of every row (starred or not) so the last column never
-        // sits where the star icon would be - keeps the right edge consistent instead of
-        // the text shifting over only when a row happens to be starred. RowStarIconSize
-        // is declared further down (with the star icon itself); const-to-const forward
-        // references are resolved at compile time so the declaration order doesn't matter
+        // Reserved on the right of every row so the last column doesn't shift when a row is starred.
         private const float RowStarReserve = RowStarIconSize + 10f;
 
-        // Native widescreen support (same technique as the compass mod's PreviewMenu):
-        // the canvas is scaled so it always measures exactly this many units tall
-        // regardless of the monitor's actual resolution or aspect ratio (see the
-        // CanvasScaler setup in EnsureUi/EnsureLoadingUi, matchWidthOrHeight = 1f).
-        // Only the AVAILABLE WIDTH changes with aspect - wider (21:9, 32:9) monitors
-        // just get more of it, narrower ones less - so panel height math against a
-        // raw Screen.height never applies here, only width needs the live aspect ratio
+        // Native widescreen support: the canvas is scaled to a constant reference height
+        // (see CanvasScaler, matchWidthOrHeight = 1f) so only available width changes with aspect.
         internal const float ReferenceHeight = 1080f;
         internal static float CanvasWidthUnits => (float)Screen.width / Screen.height * ReferenceHeight;
 
-        // Palette pulled from the game's own UI (boarding pass / map rotation panels):
-        // a vivid blue panel with a heavy near-black outline, rather than a dark navy
-        // debug-overlay look. internal: HelpScreen (the F1 screen) reuses this exact
-        // palette so it reads as the same menu system, not a different-looking one
+        // Palette pulled from the game's own UI (boarding pass / map rotation panels).
+        // internal: HelpScreen reuses this exact palette.
         internal static readonly Color DimColor = new Color(0f, 0f, 0f, 0.78f);
         internal static readonly Color PanelFillColor = new Color(0x34 / 255f, 0x54 / 255f, 0xD1 / 255f); // #3454D1
         internal static readonly Color PanelBorderColor = new Color(0x21 / 255f, 0x31 / 255f, 0x7E / 255f); // #21317E
-        // Everything else that was using the panel's border color (the key badges)
-        // keeps the ORIGINAL shade, only the main panel's own outline changes
         internal static readonly Color BadgeBorderColor = new Color(0x0A / 255f, 0x0D / 255f, 0x1A / 255f); // #0A0D1A
         internal static readonly Color TitleColor = new Color(0.98f, 0.99f, 1f);
         private static readonly Color RowColor = new Color(0.93f, 0.95f, 1f);
-        // Every other row gets a subtle darkening tint over the panel blue (zebra
-        // striping, like the game's own Map Rotation table)
-        private static readonly Color RowStripeColor = new Color(0f, 0f, 0f, 0.14f);
-        // The selected row is a solid bar (not a translucent tint) with dark text, the
-        // same "bright highlight, dark text" contrast the game's own menus use rather
-        // than just recoloring the row text
-        private static readonly Color RowSelBarColor = new Color(1f, 0.82f, 0.22f, 0.97f);
+        private static readonly Color RowStripeColor = new Color(0f, 0f, 0f, 0.14f); // zebra striping
+        private static readonly Color RowSelBarColor = new Color(1f, 0.82f, 0.22f, 0.97f); // solid bar, not a tint
         private static readonly Color RowSelTextColor = new Color(0.16f, 0.12f, 0.03f);
         internal static readonly Color FooterColor = new Color(0.85f, 0.9f, 1f);
         private static readonly Color WarnColor = new Color(1f, 0.6f, 0.55f);
         private static readonly Color ScrollHintColor = new Color(0.8f, 0.87f, 1f);
-        // Chips sit a shade darker than the panel so they read as distinct controls,
-        // with the same near-black border style as the panel itself
         internal static readonly Color KeyChipFillColor = new Color(0.10f, 0.16f, 0.44f);
         internal static readonly Color KeyTextColor = new Color(1f, 0.95f, 0.72f);
-        // A richer amber than the selected-row bar's own pale gold (RowSelBarColor), so
-        // a starred AND selected row's icon still reads distinctly against that bar,
-        // helped along by the same heavy dark outline the badges use
-        private static readonly Color StarFillColor = new Color(0.97f, 0.62f, 0.10f);
+        private static readonly Color StarFillColor = new Color(0.97f, 0.62f, 0.10f); // richer amber than RowSelBarColor
 
-        // One badge per footer hint: a small rounded-rect background (real UGUI Image,
-        // not a TMP <mark> tag, which can't do rounded corners and baseline-centers its
-        // background oddly) behind a centered key label, followed by a plain-text label
+        // One badge per footer hint: a rounded-rect Image (not a TMP <mark> tag, which
+        // can't do rounded corners) behind a centered key label, then a plain-text label.
         private class FooterEntry
         {
             public TextMeshProUGUI KeyText;
@@ -440,25 +352,19 @@ namespace PEAKQuickResume
         }
 
         internal const float PanelCornerRadius = 26f;
-        // Was 7f; the extra thickness grows OUTWARD (see PanelOuterMargin, added to the
-        // overall panel size in RebuildUi) rather than eating into the fill/content, so
-        // the row list and its padding don't get any tighter for a thicker border
+        // Was 7f; the extra thickness grows outward (PanelOuterMargin) rather than eating into content.
         internal const float PanelBorderThickness = 11f;
         internal const float PanelOuterMargin = PanelBorderThickness - 7f;
         private const float RowCapRadius = 14f;
         private const float RowStarIconSize = 22f;
-        // How far the SELECTED row's bar sticks out past the normal row width on each
-        // side, since it's a solid (non-translucent) highlight, popping it out a little
-        // reads as more emphasized than just a same-width color swap
-        private const float RowSelOverflow = 8f;
+        private const float RowSelOverflow = 8f; // selected row's bar sticks out this much past normal width
 
         private GameObject _root;
         private Image _dimImage;
         private float _dimFadeElapsed;
         private const float DimFadeDuration = 0.25f;
 
-        // First-open loading indicator (item 2): shown instead of the real menu only
-        // once per session, while the (heavy, one-time) real menu is being built
+        // Shown instead of the real menu only once per session, while it's being built.
         private GameObject _loadingRoot;
         private bool _uiWarmedUp;
         private bool _warmingUp;
@@ -475,24 +381,16 @@ namespace PEAKQuickResume
         private TextMeshProUGUI _scrollDownHint;
         private readonly List<FooterEntry> _footerEntries = new List<FooterEntry>();
         private readonly List<Image> _rowHighlightPool = new List<Image>();
-        // Row text is split into per-field "columns" (difficulty / biome / date /
-        // playtime) so they stack into readable, anchored positions instead of one
-        // free-flowing string. See ComputeColumnLayout/RebuildUi for how the actual
-        // x-positions are derived (and degrade to a packed fallback when they don't fit)
+        // Row text is split into per-field pools so columns stay anchored; see ComputeColumnLayout/RebuildUi.
         private readonly List<TextMeshProUGUI> _rowDiffPool = new List<TextMeshProUGUI>();
         private readonly List<TextMeshProUGUI> _rowMidPool = new List<TextMeshProUGUI>();
         private readonly List<TextMeshProUGUI> _rowDatePool = new List<TextMeshProUGUI>();
         private readonly List<TextMeshProUGUI> _rowPlayPool = new List<TextMeshProUGUI>();
         private readonly List<Image> _rowStarPool = new List<Image>();
-        // The selected row's gold/jagged/grained look is drawn by ONE dedicated overlay
-        // (behind the row list, repositioned to whichever row is currently selected),
-        // not by whichever pooled row Image happens to be selected, and its sprite
-        // bakes fill+grain+jag together with no Mask involved at all (see
-        // MakeFullCapSpriteWithGrain). A Mask that gets toggled active/repositioned
-        // every time selection moves, tried twice now (once per pooled row, once on
-        // this same shared overlay), is what was actually causing "only row 0 ever
-        // shows it correctly": Unity's stencil-buffer bookkeeping for that combination
-        // doesn't reliably clean up
+        // The selected row's look is drawn by one dedicated overlay repositioned on
+        // selection change (see MakeFullCapSpriteWithGrain), not a per-row Mask: a Mask
+        // toggled/repositioned per selection was found to only render correctly on row 0,
+        // Unity's stencil-buffer bookkeeping doesn't reliably clean up.
         private GameObject _selOverlay;
         private RectTransform _selOverlayRect;
         private Image _selOverlayImage;
@@ -502,18 +400,9 @@ namespace PEAKQuickResume
         private static Sprite _rowCapSprite;
         private static Texture2D _grainTexturePanel;
 
-        // Deliberately minimal: a dim background + one line of TMP text, no procedural
-        // sprite baking at all, so this is essentially free to build/show on the very
-        // frame the key is pressed (unlike EnsureUi/RebuildUi, the actual expensive part)
-        // Native widescreen support: pins the canvas to a constant 1080 reference-pixel
-        // height (see ReferenceHeight/CanvasWidthUnits) instead of the default width/
-        // height blend. At the blend's default (0.5), extra width on a 21:9/32:9
-        // monitor drags the canvas's effective VERTICAL reference-pixel count down
-        // with it, shrinking the canvas below this panel's own height and letting
-        // rows - including the selected (yellow) one - render partly or fully off
-        // screen with no way to scroll into view. Matching height alone means only
-        // the available WIDTH changes with aspect, and it only ever gains on
-        // anything 16:9 or wider, never loses
+        // Pins the canvas to a constant 1080 reference-pixel height (see ReferenceHeight)
+        // instead of the default width/height blend, which on ultrawide monitors would
+        // shrink the canvas below the panel's own height and clip rows off-screen.
         internal static void ApplyWidescreenScaler(Canvas canvas)
         {
             var scaler = canvas.gameObject.AddComponent<CanvasScaler>();
@@ -579,50 +468,26 @@ namespace PEAKQuickResume
                 var panelGo = new GameObject("Panel", typeof(RectTransform));
                 panelGo.transform.SetParent(_root.transform, false);
                 _panelFillImage = panelGo.AddComponent<Image>();
-                // Rounded corners + a heavy near-black outline baked straight into the
-                // sprite (not a separate GameObject behind it, that only ever gave a
-                // plain rectangular ring), matching the boarding pass / map rotation
-                // panels' look. Colors live in the texture itself, so the Image needs no
-                // tint (white = "use the sprite's own baked colors as-is")
-                //
-                // Type.Simple (one full baked texture, stretched as a single piece),
-                // NOT Sliced: 9-slicing stretches the straight-edge strips along their
-                // long axis to fill the shape, same problem already fixed for the
-                // selected row, diluting the edge jag there down to nothing everywhere
-                // except the (correctly unstretched) corners. The panel had the exact
-                // same bug, just less obviously since its corners looked fine on their
-                // own and drew attention away from the flat straight edges. The sprite
-                // itself is assigned in RebuildUi (baked at the panel's actual current
-                // size, see PanelSprite(width, height)), not here, since that size
-                // isn't known yet on the very first build
+                // Rounded corners + outline baked into the sprite itself. Type.Simple, not
+                // Sliced: 9-slicing stretches the straight edges and dilutes the jag effect
+                // there (same bug already fixed for the selected row). Sprite assigned in
+                // RebuildUi once the panel's actual size is known (see PanelSprite).
                 _panelFillImage.type = Image.Type.Simple;
                 _panelFillImage.color = Color.white;
                 _panelRect = (RectTransform)panelGo.transform;
                 _panelRect.anchorMin = _panelRect.anchorMax = new Vector2(0.5f, 0.5f);
                 _panelRect.pivot = new Vector2(0.5f, 0.5f);
 
-                // A separate, invisible masking child, inset by the border thickness so
-                // it covers exactly the FILL area (not the border ring), with its own
-                // matching-but-smaller-radius rounded shape. Putting Mask directly on
-                // the panel's own visible Image (tried previously) made Unity swap that
-                // Image onto its stencil-only mask material, which stopped the border
-                // itself from rendering, hence a second dedicated, invisible mask host
-                // instead: the panel's own Image is never touched by Mask at all, so its
-                // border always renders exactly as authored, and the grain (a child of
-                // THIS object, not the panel) is clipped to just the interior
+                // Separate invisible masking child inset by the border thickness. Putting
+                // Mask directly on the panel's own Image (tried previously) swapped it onto
+                // a stencil-only material and stopped the border from rendering.
                 var maskGo = new GameObject("GrainMask", typeof(RectTransform));
                 maskGo.transform.SetParent(panelGo.transform, false);
                 var maskImage = maskGo.AddComponent<Image>();
                 maskImage.sprite = PanelInnerMaskSprite();
                 maskImage.type = Image.Type.Sliced;
-                // Mask reads its shape from this Image's RENDERED alpha (texture alpha
-                // x tint alpha), not just the sprite's own shape, a Color.clear tint
-                // here was tried first ("shape only, don't actually draw it") and
-                // instead zeroed the effective coverage everywhere, so the mask clipped
-                // ALL children away completely, not just outside the rounded corners.
-                // Full-alpha white + showMaskGraphic=false is the correct combination:
-                // that flag hides the graphic's own output while leaving its alpha
-                // shape intact for the stencil test
+                // Full-alpha white + showMaskGraphic=false: a Color.clear tint (tried first)
+                // zeroed the stencil coverage entirely instead of just hiding the graphic.
                 maskImage.color = Color.white;
                 var mask = maskGo.AddComponent<Mask>();
                 mask.showMaskGraphic = false;
@@ -635,15 +500,8 @@ namespace PEAKQuickResume
                 var grainGo = new GameObject("Grain", typeof(RectTransform));
                 grainGo.transform.SetParent(maskGo.transform, false);
                 var grain = grainGo.AddComponent<Image>();
-                // Type.Simple (just stretch this one texture to fill the rect), NOT
-                // Tiled: getting Tiled's on-screen tile size right meant predicting the
-                // canvas's actual effective scale via sprite pixelsPerUnit x
-                // pixelsPerUnitMultiplier, and three rounds of guessing that number
-                // (1, then 16) landed nowhere close, the true scale clearly isn't what
-                // a plain "1 unit = 1 pixel" assumption says it is. Simple sidesteps
-                // that entirely: the grain size is just "how many texels wide is the
-                // texture", directly controlled by PanelGrainTexture()'s own
-                // resolution, no guessing about canvas/PPU scale required at all
+                // Type.Simple, not Tiled: Tiled's on-screen tile size depends on the
+                // canvas's effective PPU scale, which proved unpredictable to guess.
                 grain.sprite = Sprite.Create(PanelGrainTexture(), new Rect(0, 0, GrainTextureSize, GrainTextureSize), new Vector2(0.5f, 0.5f), 100f);
                 grain.type = Image.Type.Simple;
                 grain.color = Color.white; // grain shade is baked into the texture itself (alpha applied in RebuildUi)
@@ -719,21 +577,15 @@ namespace PEAKQuickResume
 
         private RowFields GetRowFields(ArchivedSave e)
         {
-            // CampfireName (despite its name) is the deepest campfire/segment actually
-            // reached, not BiomesSummary - see the comment on SaveArchive.CampfireLabel
+            // CampfireName is the deepest campfire/segment reached, not BiomesSummary; see SaveArchive.CampfireLabel.
             string biome = string.IsNullOrEmpty(e.CampfireName) ? "—" : SaveArchive.CampfireLabel(e.CampfireName);
             string date = string.IsNullOrEmpty(e.SaveDate) ? e.SortTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : e.SaveDate;
-            // A stale save (written under an older game version - map pool very likely
-            // rotated since) swaps the usual "Xh Ym played" text for the version it was
-            // actually written under instead, formatted the same "vX.Y.z" way as the
-            // game's own top-left corner version label. No new UI element, no extra
-            // column width to budget for any language - deliberately reuses this slot
-            // instead of adding an icon precisely so it can't overflow the row layout
+            // A stale save swaps the playtime text for its game version, reusing this slot
+            // rather than adding a column/icon that could overflow the row layout.
             string playtime = e.IsStaleVersion
                 ? (string.IsNullOrEmpty(e.DisplayGameVersion) ? GameVersionCompat.NoVersionDisplay : GameVersionCompat.Display(e.DisplayGameVersion))
                 : FormatPlaytime(e.Playtime);
-            // Co-op: show everyone who played this run, tacked onto the last column
-            // (rather than as its own column) since it's optional/co-op-only
+            // Co-op: tack the player list onto the last column since it's optional/co-op-only.
             if (!_offline && !string.IsNullOrEmpty(e.Players))
                 playtime += $"  ({e.Players})";
             return new RowFields(e.DifficultyLabel, biome, date, playtime);
@@ -753,14 +605,9 @@ namespace PEAKQuickResume
             }
         }
 
-        // Decides where the difficulty/biome/date columns start, and whether biome+date
-        // fit as two independently-aligned columns at all. Widths are measured across
-        // EVERY archived save (not just the visible page) so column positions stay put
-        // while scrolling. If the full 4-column layout would overflow the row (long
-        // biome/campfire names, a verbose language, ...) biome and date collapse into a
-        // single packed field instead of being clipped - the playtime column stays
-        // right-aligned either way, and the difficulty column never moves, so this is
-        // always enough slack to make everything fit (see the constants' comment)
+        // Decides column start x-positions, measured across every archived save (not just
+        // the visible page) so they stay put while scrolling. Biome+date collapse into one
+        // packed field if the full 4-column layout would overflow the row.
         private ColumnLayout ComputeColumnLayout(float availableWidth)
         {
             var measure = _rowDiffPool.Count > 0 ? _rowDiffPool[0] : null;
@@ -794,11 +641,8 @@ namespace PEAKQuickResume
             try
             {
                 int visibleRows = Mathf.Min(_entries.Count, MaxVisibleRows);
-                // Width against the SCALED canvas's own width (which grows with aspect
-                // ratio, see CanvasWidthUnits), not raw Screen.width - the canvas no
-                // longer measures 1:1 with physical screen pixels once the widescreen
-                // scaler is applied. Height stays against the constant ReferenceHeight
-                // for the same reason (the canvas is always exactly that tall)
+                // Width against the scaled canvas width (CanvasWidthUnits), not raw
+                // Screen.width, since the widescreen scaler breaks 1:1 pixel measurement.
                 float w = Mathf.Min(PanelWidth, CanvasWidthUnits - 80f) + 2f * PanelOuterMargin;
                 float chrome = PanelPadding * 2f + TitleHeight + FooterHeight + WarnHeight
                     + 2f * ScrollHintHeight + 4f * ScrollHintGap;
@@ -808,15 +652,9 @@ namespace PEAKQuickResume
                 _panelRect.sizeDelta = new Vector2(w, h);
                 _panelFillImage.sprite = PanelSprite(Mathf.RoundToInt(w), Mathf.RoundToInt(h), _jagFrame, minimalUi);
 
-                // Panel opacity is user-configurable (see PluginConfig.PanelOpacity) so
-                // players can see through the menu's background if they want to. Read
-                // fresh every rebuild (not just on open) so a change via Configuration
-                // Manager while the picker happens to be open takes effect immediately.
-                // The grain overlay is faded the same amount as the fill/border it sits
-                // on top of (it's baked fully opaque, see PanelGrainTexture, so without
-                // this it would keep hiding whatever the fill's own transparency reveals).
-                // In minimal mode (see PluginConfig.MinimalPickerUi) the grain overlay is
-                // hidden entirely, leaving a plain flat-colored panel
+                // Read fresh every rebuild so a live Configuration Manager change applies
+                // immediately. Grain overlay fades along with the fill (it's baked fully
+                // opaque, see PanelGrainTexture) and is hidden entirely in minimal mode.
                 float panelOpacity = _cfg != null ? Mathf.Clamp01(_cfg.PanelOpacity.Value) : 1f;
                 _panelFillImage.color = new Color(1f, 1f, 1f, panelOpacity);
                 if (_grainImage != null)
@@ -825,11 +663,8 @@ namespace PEAKQuickResume
                     _grainImage.color = new Color(1f, 1f, 1f, panelOpacity);
                 }
 
-                // Widened by RowSelOverflow on each side vs. PanelPadding: this is the
-                // clipping bound for the row list, and the selected row's bar is
-                // deliberately drawn out to fill it (see the per-row loop below), while
-                // normal rows stay inset back to the "real" PanelPaddingHorizontal column so they
-                // still line up with the header/footer
+                // Widened by RowSelOverflow so the selected row's bar can be drawn out to
+                // fill the clipping bound; normal rows stay inset to PanelPaddingHorizontal.
                 float rowMaskPadding = PanelPaddingHorizontal - RowSelOverflow;
                 _rowsContainer.anchorMin = Vector2.zero;
                 _rowsContainer.anchorMax = Vector2.one;
@@ -841,11 +676,8 @@ namespace PEAKQuickResume
                 _titleText.text = $"Quick Resume  {SavePickerLocalization.Get(PickerText.LoadSave)}  "
                     + $"({(_offline ? SavePickerLocalization.Get(PickerText.Solo) : SavePickerLocalization.Get(PickerText.Coop))})";
 
-                // Same fix as RefreshFooter's badge sizing: a freshly (re)built TMP
-                // text's preferred size is unreliable until its mesh has actually been
-                // generated at least once, which left the title icons visibly
-                // misplaced on first open until any input forced a later rebuild.
-                // Forcing the mesh + a layout pass here corrects it the same frame
+                // Same fix as RefreshFooter's badge sizing: a fresh TMP text's preferred
+                // size is unreliable until its mesh is generated at least once.
                 if (_titleRow != null)
                 {
                     Canvas.ForceUpdateCanvases();
@@ -912,22 +744,15 @@ namespace PEAKQuickResume
 
                     star.gameObject.SetActive(e.Starred);
 
-                    // Zebra striping by ABSOLUTE entry index (not pool slot), so the
-                    // stripe pattern stays stable as the list scrolls instead of flipping
-                    // every time the window slides by one row. The "plain" rows are left
-                    // exactly transparent (not a matching flat color), so the panel's own
-                    // background (incl. its grain texture) shows straight through them.
-                    // The SELECTED row is also left transparent here: its background is
-                    // _selOverlay, drawn behind it, this Image must stay out of the way
+                    // Striped by absolute entry index (not pool slot) so the pattern stays
+                    // stable while scrolling. Plain/selected rows stay transparent so the
+                    // panel background (or _selOverlay for the selected row) shows through.
                     bool striped = entryIndex % 2 == 0;
                     highlight.color = (!sel && striped) ? RowStripeColor : Color.clear;
                     highlight.sprite = (!sel && striped) ? RowCapSprite() : null;
                     highlight.type = (!sel && striped) ? Image.Type.Sliced : Image.Type.Simple;
 
-                    // Rows always stay inset to the "real" PanelPaddingHorizontal
-                    // column; the bulge-past-that-column look for the selection lives
-                    // entirely on _selOverlay now (full rowsContainer width, see
-                    // BuildSelectionOverlay), not on whichever pooled row is selected
+                    // Rows stay inset to PanelPaddingHorizontal; the selection bulge lives on _selOverlay.
                     var rowRect = (RectTransform)highlight.transform;
                     Vector2 om = rowRect.offsetMin; om.x = RowSelOverflow; rowRect.offsetMin = om;
                     Vector2 ox = rowRect.offsetMax; ox.x = -RowSelOverflow; rowRect.offsetMax = ox;
@@ -940,10 +765,7 @@ namespace PEAKQuickResume
                 }
 
                 _selOverlay.SetActive(selectionVisible);
-                // Refreshed every rebuild (not just on the animation tick) so toggling
-                // minimal-ui via Configuration Manager while the picker is open takes
-                // effect immediately, same as panelOpacity above
-                ApplySelOverlaySprite(minimalUi);
+                ApplySelOverlaySprite(minimalUi); // refreshed every rebuild so a live minimal-ui toggle applies immediately
 
                 RefreshFooter();
                 RefreshWarn();
@@ -954,9 +776,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // Cheap refresh for just the footer row: reflects the CURRENT resume key (in
-        // case it was rebound) and whether it loads or closes while the picker is open,
-        // so it never shows a key that no longer does what it says
+        // Cheap refresh for the footer row so it never shows a key that's been rebound.
         private void RefreshFooter()
         {
             if (_footerRow == null || _footerEntries.Count < 5) return;
@@ -973,15 +793,9 @@ namespace PEAKQuickResume
             SetFooterEntry(_footerEntries[3], "Del", SavePickerLocalization.Get(PickerText.Delete));
             SetFooterEntry(_footerEntries[4], closeKeys, SavePickerLocalization.Get(PickerText.Close));
 
-            // Badge widths are driven by ContentSizeFitter off the key text's own
-            // preferred size, force an immediate layout pass so a changed key (e.g. the
-            // resume key got rebound to something longer than "F7") resizes correctly
-            // this same frame instead of one frame late. A freshly created TMP text's
-            // preferred size is unreliable until its mesh has actually been generated at
-            // least once (a known TMP quirk), which is why the very first open of a
-            // session showed the whole row mis-packed until any input forced a rebuild.
-            // Canvas.ForceUpdateCanvases() generates that first mesh immediately so the
-            // layout pass right after it sees correct sizes from frame one
+            // Badge widths follow ContentSizeFitter; force a layout pass so a rebound key
+            // resizes correctly this frame. Canvas.ForceUpdateCanvases() works around a TMP
+            // quirk where a fresh text's preferred size is unreliable until its mesh exists.
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(_footerRow);
         }
@@ -992,31 +806,20 @@ namespace PEAKQuickResume
             entry.LabelText.text = label;
         }
 
-        // Builds the row of "[key badge] label" pairs (↑/↓ Select, Enter Load, Del
-        // Delete, F7/Esc Close). A real rounded-rect Image behind each key, not a TMP
-        // <mark> tag (no rounded corners, and its background doesn't vertically center
-        // against the text the way a normal layout does)
+        // Builds the row of "[key badge] label" pairs, using a real rounded-rect Image
+        // behind each key rather than a TMP <mark> tag (no rounded corners).
         private const float TitleIconSize = 30f;
         private const float TitleIconSpacing = 10f;
-        // The flame sprite's own art has more headroom above the flame than below it
-        // (the tip tapers to a point near the top of its bounding box), so placing it
-        // dead-center in its box reads as sitting slightly HIGH next to the title
-        // text's own baseline-centered glyphs. Nudged down by a few px to correct that
+        // The flame sprite's art has more headroom above than below, so dead-center placement reads slightly high.
         private const float TitleIconVerticalNudge = 3f;
         private static Sprite _campfireIconSprite;
 
-        // Sampled directly from the game's own "DarumaDropOne-Regular SDF Outline"
-        // material (screenshotted title text outline pixels came out ~(59, 58, 55)),
-        // a warm dark gray rather than pure black - used here so the campfire icons'
-        // own outline reads as the exact same "chrome" color as the text beside them
+        // Sampled from the game's title text outline material (~59,58,55, warm dark gray, not pure black).
         internal static readonly Color ChromeOutlineColor = new Color(59f / 255f, 58f / 255f, 55f / 255f);
 
-        // Same "Quick Resume" title, now bracketed by the game's own campfire icon
-        // (the small flame the vanilla HUD shows on StaminaBar next to the stamina bar
-        // while the no-hunger buff is active) on both sides. A HorizontalLayoutGroup +
-        // ContentSizeFitter on the text (same technique BuildFooterEntry already uses)
-        // rather than fixed-position Images: that keeps icon+text+icon centered as one
-        // compact group regardless of how wide the localized title text ends up being
+        // Title bracketed by the game's own campfire icon on both sides. Uses a
+        // HorizontalLayoutGroup + ContentSizeFitter so icon+text+icon stay centered as one
+        // group regardless of the localized title text's width.
         private void BuildTitleRow(Transform parent)
         {
             var rowGo = new GameObject("TitleRow", typeof(RectTransform));
@@ -1048,43 +851,25 @@ namespace PEAKQuickResume
             AddTitleIcon(rowGo.transform, iconSprite);
         }
 
-        // How much bigger each backing silhouette copy (see AddTitleIcon) is drawn
-        // than the real icon on top of it. Kept modest on its own - most of the
-        // visible ring comes from the diagonal offset between the two copies below,
-        // not from this alone (a single copy at a scale big enough to read on its own
-        // was the "one big blob" attempt that came before this one)
+        // How much bigger each backing silhouette copy (see AddTitleIcon) is drawn than the real icon.
         private const float TitleIconOutlineScale = 1.12f;
-        // How far apart (in opposite diagonal directions) the two backing copies sit,
-        // in px. Big enough that their offset does real work toward the ring's
-        // thickness, small enough the two copies still overlap enough almost
-        // everywhere around the shape that no gap or second silhouette becomes visible
+        // Diagonal offset between the two backing copies, px.
         private const float TitleIconOutlineOffset = 1.1f;
 
         private void AddTitleIcon(Transform parent, Sprite iconSprite)
         {
             if (iconSprite == null) return;
 
-            // A slot GameObject (sized/spaced by the row's HorizontalLayoutGroup) with
-            // the actual images as its children, rather than living directly on the
-            // layout-managed slot: the row's layout group re-centers/repositions its
-            // direct children on every rebuild (RebuildUi runs on every open/move),
-            // which would silently undo any manual offset placed on it. The vertical
-            // nudge below lives on these nested, layout-untouched children instead
+            // Images live as children of this slot, not directly on it, since the row's
+            // layout group would undo any manual offset placed on a direct child.
             var slotGo = new GameObject("IconSlot", typeof(RectTransform));
             slotGo.transform.SetParent(parent, false);
             ((RectTransform)slotGo.transform).sizeDelta = new Vector2(TitleIconSize, TitleIconSize);
 
-            // Outline, take three. UGUI's built-in Outline component draws 4 diagonal
-            // offset copies at once, which needed a big offset to read next to the
-            // title's own heavy SDF outline and split into 2 distinct ghost flames
-            // instead of a ring. A SINGLE scaled-up silhouette copy (the attempt right
-            // before this one) avoided the ghosting but needed to be scaled up so much
-            // to be noticeable that it read as one big blob rather than a slim border.
-            // Splitting the difference: two silhouette copies, each just slightly
-            // scaled up AND offset in opposite diagonal directions. Neither the scale
-            // nor the offset alone has to do all the work, so both can stay small - the
-            // two copies' silhouettes overlap almost everywhere except right at the
-            // icon's own edge, which is exactly where the combined ring shows through
+            // Outline via two slightly scaled-up, oppositely-offset silhouette copies.
+            // UGUI's built-in Outline component ghosted into two distinct flames; a single
+            // scaled copy alone had to be too big to read as a border. Splitting the scale
+            // and offset between two copies keeps both small.
             AddIconSilhouette(slotGo.transform, iconSprite, new Vector2(TitleIconOutlineOffset, TitleIconOutlineOffset));
             AddIconSilhouette(slotGo.transform, iconSprite, new Vector2(-TitleIconOutlineOffset, -TitleIconOutlineOffset));
 
@@ -1101,20 +886,14 @@ namespace PEAKQuickResume
             iconRect.offsetMax = Vector2.zero;
             iconRect.anchoredPosition = new Vector2(0f, -TitleIconVerticalNudge);
 
-            // Drop shadow, same direction and roughly the same visual weight as the
-            // title text's own borrowed SDF material (its underlay reads as a solid,
-            // fairly opaque dark patch bulking out the glyphs' bottom-right side, not
-            // a faint soft blur) - down-and-right, same ChromeOutlineColor, high alpha
+            // Drop shadow matching the title text's own SDF material weight (solid, not a soft blur).
             var shadow = iconGo.AddComponent<UnityEngine.UI.Shadow>();
             shadow.effectColor = new Color(ChromeOutlineColor.r, ChromeOutlineColor.g, ChromeOutlineColor.b, 0.85f);
             shadow.effectDistance = new Vector2(2.5f, -2.5f);
             shadow.useGraphicAlpha = true;
         }
 
-        // One flat ChromeOutlineColor copy of the icon sprite, slightly scaled up and
-        // offset from center, stretched full over its parent slot. Two of these at
-        // opposite offsets (see AddTitleIcon) are what actually forms the ring; see
-        // that method's comment for why two small nudges beat one big one
+        // One flat-colored, scaled-up, offset copy of the icon; two of these form the outline ring (see AddTitleIcon).
         private static void AddIconSilhouette(Transform parent, Sprite iconSprite, Vector2 offset)
         {
             var go = new GameObject("IconOutline", typeof(RectTransform));
@@ -1133,14 +912,9 @@ namespace PEAKQuickResume
             rect.localScale = new Vector3(TitleIconOutlineScale, TitleIconOutlineScale, 1f);
         }
 
-        // The campfire icon isn't a bundled asset, it's pulled from the game's own
-        // vanilla HUD (StaminaBar.campfire, the small icon shown while the no-hunger
-        // buff is active), same "reuse the game's own art" approach FindGameFont()
-        // uses for the title font. Cached once found (Sprite references stay valid for
-        // the rest of the session, same reasoning as the cached TMP font); if no
-        // StaminaBar exists yet (e.g. the very first open happens before any level's
-        // HUD has ever loaded), this just tries again next open instead of giving up
-        // permanently, the title row simply shows text-only until then
+        // Pulled from the game's own HUD (StaminaBar.campfire), same reuse trick as
+        // FindGameFont(). If no StaminaBar exists yet, retries next open instead of giving
+        // up; the title just shows text-only until then.
         private static Sprite FindCampfireIcon()
         {
             if (_campfireIconSprite != null) return _campfireIconSprite;
@@ -1195,8 +969,7 @@ namespace PEAKQuickResume
             entryFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             entryFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            // Badge: a rounded-rect Image sized to its own key text via a nested
-            // HorizontalLayoutGroup (acting as internal padding) + ContentSizeFitter
+            // Badge sized to its key text via a nested HorizontalLayoutGroup (as padding) + ContentSizeFitter.
             var badgeGo = new GameObject("Badge", typeof(RectTransform));
             badgeGo.transform.SetParent(entryGo.transform, false);
             var badgeImage = badgeGo.AddComponent<Image>();
@@ -1228,18 +1001,12 @@ namespace PEAKQuickResume
 
         private static Sprite _starSprite;
 
-        // The starred-row indicator. The game itself has no star/favorite icon
-        // anywhere to reuse (unlike FindCampfireIcon's HUD-icon trick), so this is
-        // baked the same procedural way as every other shape in this file: a plain
-        // analytic distance-field rasterization, cached once
+        // No star icon exists in the game to reuse, so this is baked procedurally like the other shapes.
         internal static Sprite StarSprite() => _starSprite ??=
             MakeStarSprite(size: 24, fill: StarFillColor, border: BadgeBorderColor, borderThickness: 1.6f);
 
-        // A filled 5-point star via an exact closed-form signed distance function
-        // (Inigo Quilez's sdStar5), not a rasterized polygon: at this icon's small size
-        // a polygon approach would need its own point-in-polygon + per-edge nearest-
-        // distance pass just to anti-alias the concave notches between points cleanly,
-        // the closed-form distance gives that for free
+        // Filled 5-point star via a closed-form SDF (Inigo Quilez's sdStar5), which
+        // anti-aliases the concave notches for free at this icon's small size.
         private static Sprite MakeStarSprite(int size, Color fill, Color border, float borderThickness)
         {
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
@@ -1275,8 +1042,7 @@ namespace PEAKQuickResume
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
         }
 
-        // Exact signed distance to a regular 5-pointed star: outer vertex radius r,
-        // rf = inner/outer vertex radius ratio. Positive outside, negative inside
+        // Signed distance to a regular 5-pointed star: r = outer vertex radius, rf = inner/outer ratio.
         private static float SdStar5(Vector2 p, float r, float rf)
         {
             var k1 = new Vector2(0.809016994375f, -0.587785252292f);
@@ -1291,88 +1057,43 @@ namespace PEAKQuickResume
             return (p - ba * h).magnitude * Mathf.Sign(p.y * ba.x - p.x * ba.y);
         }
 
-        // Alpha-only shape matching the panel's FILL area (inset by the border
-        // thickness, so its own corner radius is correspondingly smaller, nested just
-        // inside the border ring), used as an invisible Mask host for the grain overlay
+        // Alpha-only shape matching the panel's fill area (inset by border thickness),
+        // used as an invisible Mask host for the grain overlay.
         internal static Sprite PanelInnerMaskSprite() => _panelInnerMaskSprite ??=
             MakeCapSprite(Mathf.Max(1f, PanelCornerRadius - PanelBorderThickness));
 
-        // Jag is on for the panel's own outline (both where it meets the fill AND
-        // where it meets outside the panel, "inward and outward") and the selected
-        // row's edge, off for badges, which stay clean-edged. One shared "torn paper"
-        // scale for all of them, not per-element tuning, so it reads as the same
-        // material everywhere.
-        //
-        // The previous attempt pushed jagFreq to 5.5 with 3 fbm octaves at lacunarity
-        // 2.3, meaning the octaves sampled Perlin at ~5.5, ~12.6, ~29 cycles PER
-        // TEXTURE PIXEL. That's nowhere close to a resolvable signal (need well under
-        // 1 cycle/pixel), so it wasn't "more frequent jags", it was noise so far past
-        // the sampling limit it comes back out as near-random static, which a modest
-        // amplitude just washes out to invisible, "reverted the whole mechanic" was a
-        // fair read of the actual result. Kept comfortably under that limit this time,
-        // and dropped to 2 octaves (so even the highest octave, freq*lacunarity, still
-        // resolves cleanly) rather than 3
-        // Tuned against a live HTML/JS tool with native (unstretched, exact pixels) and
-        // as-displayed (stretched, matching how Unity actually renders it) previews
-        // side by side, after the earlier frequency was found to be past the noise's
-        // actual sampling limit (see below)
-        // "Scale" here means both dial together: a LARGER-looking notch is a lower
-        // frequency (fewer, bigger bumps) paired with a bigger amplitude (each one
-        // actually displaces further), not just one or the other, scaling only one
-        // just makes it look diluted/sparse rather than bigger
+        // Jag is on for the panel outline and selected-row edge, off for badges. One
+        // shared "torn paper" scale for all of them. Frequency must stay well under
+        // 1 cycle/pixel or the noise reads as random static instead of jagged (a past
+        // attempt at freq=5.5 with 3 octaves washed out to invisible).
         private const float EdgeJagAmplitude = 5.0f;
         private const float EdgeJagFrequency = 1.2f;
         private const int EdgeJagOctaves = 2;
         private const float EdgeJagPersistence = 0.5f;
         private const float EdgeJagLacunarity = 2.44f;
-        // NOT boosted anymore: at 2.2x on top of the shared amplitude=5.0, the row's
-        // jag amplitude (11.0) was actually LARGER relative to its own radius (14) than
-        // the panel's is relative to ITS radius (26), amplitude/radius ratio ~0.79 vs.
-        // ~0.19, several times more aggressive. That's what was actually distorting the
-        // row's corners (and, since amplitude/frequency scaled together, likely made
-        // the panel's own corners worse too): the notch size was comparable to the
-        // whole corner, not textured, structurally broken. 1.0 keeps the row at the
-        // same ratio as the panel instead of a wildly different one
+        // Kept at 1.0 (not boosted) to match the panel's own amplitude/radius ratio;
+        // a higher multiplier made the row's small corner radius look structurally broken.
         private const float RowJagAmplitudeMultiplier = 1.0f;
 
-        // The jagged edges gently animate while a panel is open: 3 pre-seeded variants
-        // of the same shape, cycled 1-2-3-1-2-3... on a fixed interval, rather than
-        // re-rolling the noise continuously (which would mean regenerating a full
-        // texture every frame, the whole reason this is baked ahead of time at all
-        // instead of computed in a shader). Each variant is only ever generated once
-        // and then just reused for the rest of the session, swapping Image.sprite
-        // between 3 already-built textures each interval is effectively free.
-        // internal: HelpScreen (the F1 screen) reuses these same timing constants for
-        // its own independent jag animation
+        // 3 pre-seeded variants cycled on a fixed interval, avoiding a full texture
+        // regeneration per frame. internal: HelpScreen reuses these same timing constants.
         internal const int JagFrameCount = 3;
         internal const float JagFrameInterval = 0.5f;
         private static readonly float[] JagFrameSeedOffsets = { 0f, 173.2f, 401.7f };
         private int _jagFrame;
         private float _jagFrameTimer;
 
-        // Keyed by (width, height): SavePicker and HelpScreen are almost always
-        // different sizes from each other (and SavePicker's own size varies with row
-        // count), a single "most recently baked size" cache (the previous approach)
-        // meant switching between them invalidated and rebaked the OTHER one's frames
-        // every single time, a stutter every open instead of only the first ever open
-        // per size. Never evicted: at most a handful of distinct sizes ever occur in a
-        // session (this panel's few row-count buckets, HelpScreen's one content size),
-        // trivial memory for the lifetime of the process
+        // Keyed by (width, height): SavePicker and HelpScreen are usually different sizes,
+        // so a single "most recent" cache would rebake on every switch. Never evicted; the
+        // handful of distinct sizes per session is trivial memory.
         private static readonly Dictionary<(int width, int height), Sprite[]> _panelSpriteCache = new();
 
-        // Flat/minimal variant (see PluginConfig.MinimalPickerUi): edgeJag = 0, so
-        // every "frame" would bake identical anyway - a single cached sprite per size,
-        // no per-frame array needed
+        // Minimal mode bakes edgeJag=0, identical every frame, so no per-frame array needed.
         private static readonly Dictionary<(int width, int height), Sprite> _panelSpriteFlatCache = new();
 
-        // Baking at the panel's EXACT current width/height (not a fixed guess) rather
-        // matters here: with Type.Simple the WHOLE texture stretches as one piece, and
-        // the panel's height varies a lot (from ~2 rows to MaxVisibleRows, or whatever
-        // HelpScreen's content needs). Baking at a fixed guessed height and letting a
-        // much shorter actual panel squeeze it non-uniformly turned the round corners
-        // into visibly flattened ellipses ("corners got skinnier"). Re-baking on demand
-        // (cheap to skip via the cache above whenever this exact size was already seen)
-        // keeps the corner radius and the jag scale correct at whatever size is needed
+        // Baked at the panel's exact width/height, not a fixed guess: with Type.Simple the
+        // whole texture stretches as one piece, and baking at the wrong height flattens the
+        // round corners into ellipses.
         internal static Sprite PanelSprite(int width, int height, int frame, bool minimal)
         {
             if (minimal)
@@ -1402,13 +1123,8 @@ namespace PEAKQuickResume
             return frames[frame];
         }
 
-        // Same shape/jag math as MakeRoundedSprite, but bakes the WHOLE width x height
-        // shape directly with no 9-slice border metadata (meant for Image.Type.Simple):
-        // 9-slicing stretches the straight-edge strips along their long axis to fill
-        // the shape, which is exactly what was diluting the jag on the panel's own
-        // straight edges down to nothing, only the (correctly unstretched) corners
-        // ever showed it clearly. seedOffset shifts the noise sample so each animation
-        // frame is a distinctly different (but same-looking-style) shape
+        // Same shape/jag math as MakeRoundedSprite but bakes the whole shape directly (no
+        // 9-slicing, which diluted the jag on straight edges). seedOffset varies each animation frame.
         private static Sprite MakeFullPanelSprite(int width, int height, float radius, float borderThickness,
             Color fill, Color border, float edgeJag, float jagFreq, float seedOffset)
         {
@@ -1417,12 +1133,7 @@ namespace PEAKQuickResume
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear,
             };
-            // SetPixels32 + one Apply(), not SetPixel() in the loop: SetPixel's
-            // per-call overhead (bounds/format checks on every single pixel) dominates
-            // at these resolutions, building the array in managed memory first and
-            // uploading it once is the standard several-times-over speedup for
-            // procedural textures this size. Same change applied to every generator
-            // below, it's the main lever for the open-picker stutter
+            // SetPixels32 + one Apply(), not per-pixel SetPixel(), for a several-times speedup.
             var pixels = new Color32[width * height];
             for (int y = 0; y < height; y++)
             {
@@ -1447,17 +1158,10 @@ namespace PEAKQuickResume
             return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        // A 9-sliceable rounded-rect texture with a solid border baked straight into
-        // its pixels (not a tint, so a border color and a DIFFERENT fill color can
-        // coexist in one Image without a second GameObject behind it). Reused for both
-        // the main panel and the footer key badges so they share one consistent "rounded
-        // + outlined" style, just at different scales
-        //
-        // edgeJag (texture pixels) roughens BOTH transitions with noise instead of a
-        // perfectly smooth arc/line: the outer silhouette (where the shape meets
-        // whatever's behind it) and the inner one (where the border meets the fill),
-        // each sampled with its own noise offset so the two edges don't wobble in
-        // lockstep, a "crumpled paper" look rather than a clean vector outline
+        // A 9-sliceable rounded-rect texture with the border baked into its pixels (not a
+        // tint), reused for the main panel and footer badges at different scales.
+        // edgeJag roughens both the outer silhouette and inner border/fill transition with
+        // independently-offset noise, for a "crumpled paper" rather than clean vector look.
         private static Sprite MakeRoundedSprite(int size, float radius, float borderThickness, Color fill, Color border,
             float edgeJag = 0f, float jagFreq = 0.4f)
         {
@@ -1472,11 +1176,8 @@ namespace PEAKQuickResume
                 for (int x = 0; x < size; x++)
                 {
                     float fx = x + 0.5f, fy = y + 0.5f;
-                    // fbm (multi-octave), not a single Perlin sample: one smooth
-                    // octave only ever gives slow, rounded "dents in metal" undulation.
-                    // Stacking finer octaves on top is what breaks the edge up into the
-                    // small, irregular, sharp-ish notches an actual torn/crumpled paper
-                    // edge has
+                    // fbm, not a single Perlin sample: stacked octaves give the small,
+                    // irregular notches a torn/crumpled paper edge has.
                     float jagOuter = edgeJag > 0f ? (Fbm(fx * jagFreq + 11.3f, fy * jagFreq + 11.3f, EdgeJagOctaves, EdgeJagPersistence, EdgeJagLacunarity) - 0.5f) * edgeJag : 0f;
                     float jagInner = edgeJag > 0f ? (Fbm(fx * jagFreq + 77.1f, fy * jagFreq + 41.9f, EdgeJagOctaves, EdgeJagPersistence, EdgeJagLacunarity) - 0.5f) * edgeJag : 0f;
                     float cx = Mathf.Clamp(fx, radius, size - radius);
@@ -1497,26 +1198,13 @@ namespace PEAKQuickResume
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, b);
         }
 
-        // ONLY the selected row ever gets the jagged edge: striped rows go back to a
-        // plain, clean-cornered, no-jag 9-sliced sprite (RowCapSprite, below), a single
-        // cheap cached shape reused for however many striped rows are visible. Jag on
-        // every row wasn't worth what it cost (barely noticeable at that scale, and up
-        // to MaxVisibleRows extra full-size texture bakes the first time the picker
-        // opens), and it's not needed for correctness either: this one shared sprite
-        // for the selection works at ANY pool slot/scroll position already, since
-        // which row gets it is decided by `sel` (entryIndex == _selected) each
-        // rebuild, not by which GameObject/position it happens to render at, a Sprite
-        // asset has no notion of "where" it's currently displayed
+        // Only the selected row gets the jagged edge; striped rows share one plain,
+        // clean-cornered, no-jag sprite. Jag on every row wasn't worth the extra bakes.
         private static Sprite RowCapSprite() => _rowCapSprite ??= MakeCapSprite(RowCapRadius);
 
-        // Baked at roughly the row's own wide/short proportions (not square like
-        // MakeCapSprite's shapes), close to PanelWidth/RowHeight so the actual row
-        // rarely needs to stretch this by more than a small amount, keeping the corner
-        // radius from visibly distorting into an ellipse and the jag frequency close
-        // to what it actually looks like baked. Used with Image.Type.Simple, see the
-        // comment where this is assigned for why: a 9-sliced texture can't show jag on
-        // the long straight edges at all, only Simple (the whole texture, stretched as
-        // one piece, no separately-stretched edge strips) keeps it visible everywhere
+        // Baked near actual row proportions (not square) so it rarely needs to stretch,
+        // keeping the corner radius and jag frequency accurate. Used with Image.Type.Simple
+        // since 9-slicing can't show jag on long straight edges.
         private const int RowSelSpriteWidth = 900;
         private const int RowSelSpriteHeight = 44;
         private static readonly Sprite[] _rowCapSelSpriteFrames = new Sprite[JagFrameCount];
@@ -1533,11 +1221,7 @@ namespace PEAKQuickResume
             return _rowCapSelSpriteFrames[frame];
         }
 
-        // Flat/minimal variant (see PluginConfig.MinimalPickerUi): rather than baking a
-        // whole separate grain-free/jag-free texture, this just reuses the same plain
-        // clean-cornered, no-jag cap sprite the zebra-striped rows already use
-        // (RowCapSprite), 9-sliced and tinted with the selection's own color - the exact
-        // same "flat" treatment already applied to every other row
+        // Minimal mode reuses the same clean-cornered cap sprite the zebra-striped rows use, tinted.
         private void ApplySelOverlaySprite(bool minimal)
         {
             if (_selOverlayImage == null) return;
@@ -1555,15 +1239,9 @@ namespace PEAKQuickResume
             }
         }
 
-        // Bakes the WHOLE width x height shape directly (no 9-slice border metadata,
-        // meant for Image.Type.Simple) so edge detail like the jag noise survives
-        // being scaled as a single piece. The grain is baked straight into this same
-        // texture's RGB (same envelope/SmoothStepEdge technique as
-        // GenerateGrainTexture, just reusing the SAME first-pass min/max-normalized
-        // envelope this method already needs for the alpha shape's own edge jag would
-        // be a further optimization, not done here since this only ever runs once and
-        // is cached), rather than a separate grain Image clipped by a Mask, so this
-        // needs no Mask at all, see the comment on _selOverlay for why
+        // Bakes the whole shape directly (Image.Type.Simple) so jag noise survives
+        // scaling, with grain baked into the same texture's RGB (see GenerateGrainTexture)
+        // instead of a separate Image clipped by a Mask; see _selOverlay for why.
         private static Sprite MakeFullCapSpriteWithGrain(int width, int height, float radius, float edgeJag, float jagFreq,
             float phaseX, float phaseY, Color baseColor)
         {
@@ -1578,8 +1256,7 @@ namespace PEAKQuickResume
                 Mathf.Clamp01(baseColor.r * GrainLightMul), Mathf.Clamp01(baseColor.g * GrainLightMul), Mathf.Clamp01(baseColor.b * GrainLightMul));
 
             // First pass: grain envelope min/max, same reasoning as GenerateGrainTexture.
-            // Flat array, not float[,]: a 2D array's per-access bounds/stride math is
-            // meaningfully slower than plain index arithmetic at this pixel count
+            // Flat array, not float[,], for faster indexing at this pixel count.
             var envelopes = new float[width * height];
             float minEnvelope = float.MaxValue, maxEnvelope = float.MinValue;
             for (int y = 0; y < height; y++)
@@ -1620,10 +1297,8 @@ namespace PEAKQuickResume
             return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        // An alpha-only rounded-corner mask (plain white, tinted per row via Image.color
-        // for zebra/selection), all 4 corners always rounded. Every filled row now gets
-        // this regardless of its position in the list, they read as individual rounded
-        // chips rather than one continuous strip with edge-only rounding
+        // Alpha-only rounded-corner mask, tinted per row via Image.color. All 4 corners
+        // always rounded, so rows read as individual chips, not one edge-rounded strip.
         private static Sprite MakeCapSprite(float radius, float edgeJag = 0f, float jagFreq = 0.4f)
         {
             const int size = 48;
@@ -1653,32 +1328,20 @@ namespace PEAKQuickResume
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, b);
         }
 
-        // A tileable grain texture, baked OPAQUE as lighter/darker variants of the
-        // panel's OWN color (not a neutral gray blended on top): a gray overlay, even
-        // one matched to the panel's brightness, still desaturates it on every blend,
-        // there's no alpha value where "a bit of neutral gray" doesn't mute the blue.
-        // Varying the panel's own hue up/down and drawing it fully opaque sidesteps
-        // blending entirely, average color is exactly the panel's own, no shift, while
-        // still being clearly visible since the light/dark swing isn't diluted by alpha
-        // Stretched (not tiled) over the panel, so this directly controls grain
-        // fineness: the panel is roughly PanelWidth px wide, so this many texels
-        // across works out to a few screen pixels per fleck
-        // Higher resolution than earlier attempts: stretched (Type.Simple) over an
-        // ~860px-wide panel, this keeps the magnification low enough that the fine
-        // grain stays crisp-ish rather than blurring into soft blobs
+        // Baked opaque as lighter/darker variants of the panel's own color (not a neutral
+        // gray blend, which would desaturate it) so the average color stays unshifted.
+        // Stretched (Type.Simple) over the panel; higher resolution keeps grain crisp
+        // rather than blurring into soft blobs.
         internal const int GrainTextureSize = 368;
 
-        // Tuned interactively against a live HTML/JS port of this exact algorithm
-        // (sliders for every constant below, side by side with the boarding pass
-        // reference image) rather than by round-tripping full game builds
+        // Tuned interactively against a live HTML/JS port of this algorithm, side by side
+        // with the boarding pass reference image.
         private const float GrainSeed = 1337f;
         private const float GrainEnvelopeFreq = 14.0f;
         private const int GrainOctaves = 6;
         private const float GrainPersistence = 0.76f;
         private const float GrainLacunarity = 2.98f;
-        // Min > Max is intentional: SmoothStepEdge's denominator gets clamped to a
-        // tiny epsilon in that case, collapsing the transition into a near-hard
-        // binary cutoff rather than a gradient, that's what "sharp" edges needed
+        // Min > Max is intentional: collapses SmoothStepEdge's transition into a near-hard binary cutoff.
         private const float GrainSharpenMin = 0.61f;
         private const float GrainSharpenMax = 0.00f;
         private const float GrainLightMul = 1.03f;
@@ -1704,25 +1367,13 @@ namespace PEAKQuickResume
                 Mathf.Clamp01(baseColor.g * GrainLightMul),
                 Mathf.Clamp01(baseColor.b * GrainLightMul));
 
-            // The fractal noise field itself IS the cloud shape (not a per-pixel
-            // jitter modulator, that read as TV static no matter how it was tuned):
-            // SmoothStep pins most of it flat to one of the two tones above, a solid-
-            // colored blob interior like the reference, with only a narrow band right
-            // at each blob's edge actually in transition. Stacking several octaves
-            // (fbm) is what makes that edge jagged/irregular rather than a smooth
-            // round arc, a single Perlin layer can only ever produce round blobs
+            // The fbm noise field itself is the cloud shape; SmoothStep pins most of it
+            // flat to one of the two tones, with fbm's stacked octaves giving jagged
+            // (not round) edges at the transition band.
             //
-            // First pass: compute every pixel's envelope value and track its actual
-            // min/max. Unity's Mathf.PerlinNoise and the JS Perlin implementation used
-            // to tune GrainSharpenMin/Max against a live preview don't necessarily
-            // produce numerically identical output ranges for the same octave/
-            // frequency settings, especially after stacking several octaves, small
-            // per-octave differences compound. A fixed 0..1 assumption can land the
-            // real range entirely outside that narrow sharpen band, giving a
-            // perfectly flat, texture-less result (SmoothStepEdge saturates to a
-            // constant 0 or 1 everywhere), which happened on an earlier attempt.
-            // Normalizing against the ACTUAL observed range keeps the thresholds
-            // meaningful regardless of those implementation details
+            // First pass: track actual min/max, since Unity's Mathf.PerlinNoise doesn't
+            // necessarily match the JS implementation used to tune GrainSharpenMin/Max,
+            // and a fixed 0..1 assumption could saturate SmoothStepEdge to a flat result.
             var envelopes = new float[width * height];
             float minEnvelope = float.MaxValue, maxEnvelope = float.MinValue;
             for (int y = 0; y < height; y++)
@@ -1756,9 +1407,8 @@ namespace PEAKQuickResume
             return tex;
         }
 
-        // Stacks several octaves of Perlin noise at rising frequency and falling
-        // amplitude (fractal Brownian motion). See GenerateGrainTexture() for why this
-        // matters: it's what gives the cloud shapes irregular, organic edges
+        // Fractal Brownian motion: stacks octaves of Perlin noise at rising frequency,
+        // falling amplitude, for organic irregular edges (see GenerateGrainTexture).
         private static float Fbm(float x, float y, int octaves, float persistence, float lacunarity)
         {
             float total = 0f, amplitude = 1f, frequency = 1f, max = 0f;
@@ -1772,22 +1422,16 @@ namespace PEAKQuickResume
             return total / max;
         }
 
-        // The classic GLSL smoothstep(edge0, edge1, x): clamps x between the two
-        // edges and returns a smoothed 0..1 based on where it fell. NOT the same as
-        // Mathf.SmoothStep(from, to, t), which interpolates BETWEEN from/to using a
-        // smoothed t and never actually thresholds x against them at all, using that
-        // here (an earlier mistake) meant every "sharpen" attempt was really just
-        // blending between two nearly-identical constants, not thresholding anything
+        // GLSL-style smoothstep(edge0, edge1, x). NOT Mathf.SmoothStep(from, to, t), which
+        // interpolates between from/to rather than thresholding x against them.
         private static float SmoothStepEdge(float edge0, float edge1, float x)
         {
             float t = Mathf.Clamp01((x - edge0) / Mathf.Max(0.0001f, edge1 - edge0));
             return t * t * (3f - 2f * t);
         }
 
-        // Cheap refresh for just the warn line (delete-confirm armed/expired, or a
-        // transient message like "unstar to delete"), no full rebuild. Delete-confirm
-        // takes priority if somehow both are active at once (shouldn't happen, they're
-        // set by mutually-exclusive branches of OnDeletePressed)
+        // Cheap refresh for just the warn line, no full rebuild. Delete-confirm takes
+        // priority over a transient message if somehow both are active.
         private void RefreshWarn()
         {
             if (_warnText == null) return;
@@ -1798,10 +1442,8 @@ namespace PEAKQuickResume
             else if (showTransient) _warnText.text = _transientWarnText;
         }
 
-        // Built ONCE as the first child of rowsContainer (so it always renders behind
-        // every pooled row, including that row's own text on top of it), then just
-        // repositioned/toggled each rebuild to sit over whichever row is selected. See
-        // the field comment on _selOverlay for why this replaced per-row Mask toggling
+        // Built once as the first child of rowsContainer (renders behind every pooled row),
+        // then repositioned/toggled each rebuild. See _selOverlay's field comment.
         private void BuildSelectionOverlay(Transform rowsContainer)
         {
             _selOverlay = new GameObject("SelectionOverlay", typeof(RectTransform));
@@ -1814,18 +1456,8 @@ namespace PEAKQuickResume
             _selOverlayRect.offsetMin = new Vector2(0f, _selOverlayRect.offsetMin.y);
             _selOverlayRect.offsetMax = new Vector2(0f, _selOverlayRect.offsetMax.y);
 
-            // ONE Image, ONE sprite that bakes fill+grain+jag together (see
-            // RowCapSelSprite/MakeFullCapSpriteWithGrain), no Mask and no separate
-            // grain child at all. A Mask here (tried twice: once per-row, once on this
-            // same shared overlay) is what was actually causing "only ever shows
-            // correctly at row 0": this object gets SetActive(false)/(true) and
-            // repositioned every time selection moves, and Unity's stencil-buffer
-            // bookkeeping for a Mask component that's toggled and moved like that
-            // doesn't reliably clean up, leaving a stale clip footprint behind at
-            // wherever it was FIRST positioned (row 0, since that's the default
-            // selection on open) that then bled into whatever rendered there after.
-            // Baking the grain directly into the sprite's own texture needs no
-            // clipping at all, so there's no Mask left to misbehave
+            // One Image, one sprite baking fill+grain+jag together (see RowCapSelSprite),
+            // no Mask: a toggled/repositioned Mask was found to only render correctly at row 0.
             _selOverlayImage = _selOverlay.AddComponent<Image>();
             ApplySelOverlaySprite(MinimalUi);
 
@@ -1846,17 +1478,12 @@ namespace PEAKQuickResume
                 rowRect.sizeDelta = new Vector2(0f, RowHeight);
                 rowRect.anchoredPosition = new Vector2(0f, -(i * RowHeight));
 
-                // No Mask/grain here anymore, that's the shared _selOverlay's job now,
-                // this Image is only ever plain-striped or fully transparent
+                // No Mask/grain here; that's the shared _selOverlay's job.
                 var hl = rowGo.AddComponent<Image>();
                 hl.color = Color.clear;
 
-                // 4 "columns" (difficulty / biome / date / playtime), each its own TMP
-                // field so they can be independently x-positioned. All stretch full
-                // height and to the row's right inset; only offsetMin.x (the left start)
-                // differs, and is set per-rebuild by RebuildUi/ComputeColumnLayout.
-                // There's no per-field Mask, so a generous rect never clips anything -
-                // only the shared rowsContainer's RectMask2D can ever clip text
+                // 4 columns, each its own TMP field so they can be independently x-positioned
+                // by RebuildUi/ComputeColumnLayout.
                 var diff = MakeText(rowGo.transform, "ColDiff", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineLeft);
                 StretchColumn(diff, RowTextInset);
 
@@ -1866,10 +1493,7 @@ namespace PEAKQuickResume
                 var date = MakeText(rowGo.transform, "ColDate", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineLeft);
                 StretchColumn(date, RowTextInset);
 
-                // Last column: right-aligned, but inset further than the others by
-                // RowStarReserve so it never sits where the star icon goes - reserved on
-                // EVERY row (not just starred ones) so the right edge stays consistent
-                // instead of text shifting over only when a row happens to be starred
+                // Last column: right-aligned, inset by RowStarReserve on every row so the right edge stays consistent.
                 var play = MakeText(rowGo.transform, "ColPlay", 21, FontStyles.Normal, RowColor, TextAlignmentOptions.MidlineRight);
                 StretchColumn(play, RowTextInset, RowTextInset + RowStarReserve);
 
@@ -1927,18 +1551,8 @@ namespace PEAKQuickResume
             rt.offsetMax = Vector2.zero;
         }
 
-        // Same font-lookup trick the checkpoint mod uses for its own loading screen: use
-        // whichever of the game's own TMP fonts is already loaded, so our panel reads as
-        // part of the game's own UI rather than a generic debug overlay. No custom font
-        // is bundled; if none of these are found (a very different game build), TMP's own
-        // default font asset is used instead of throwing
-        //
-        // Same preference order as the checkpoint mod's own loading screen, so this
-        // panel actually matches the game's own signature font rather than a generic
-        // system sans. Legibility at this font's Regular weight (there's no real Bold
-        // face loaded for it, so we never ask TMP to fake one, see FontStyles usage
-        // above) is fine once the text is sized and spaced generously, which is why
-        // this panel runs noticeably larger type than a typical debug overlay would
+        // Uses whichever of the game's own already-loaded TMP fonts is available, so the
+        // panel reads as part of the game's UI. Falls back to TMP's default if none found.
         private static readonly string[] PreferredFontNames =
         {
             "DarumaDropOne-Regular SDF", "Pangolin-Regular SDF", "Montserrat-Medium SDF", "LiberationSans SDF",
@@ -1959,18 +1573,10 @@ namespace PEAKQuickResume
 
         private static Material _chromeOutlineMaterial;
 
-        // Borrows the game's own pre-baked outline+shadow TMP material (whichever
-        // already-instantiated native UI text happens to be using it) instead of
-        // hand-tuning our own outline/underlay values, same "reuse the game's own art"
-        // approach FindGameFont()/FindCampfireIcon() already use. Not cached as
-        // "not found" if the search comes up empty (retried on demand, like
-        // FindCampfireIcon), since the native UI may not have created any instances of
-        // it yet the first time this is called (e.g. right after a level loads)
-        //
-        // Deliberately used ONLY for this panel's own chrome labels (loading text,
-        // the title, and the footer's action-description labels) - never for the
-        // archived-save row text, help-screen body text, or the key badge text
-        // itself, which all keep their original flat (no outline) style
+        // Borrows the game's own pre-baked outline+shadow TMP material instead of hand-
+        // tuning our own. Retried on demand (not cached as "not found") since the native
+        // UI may not have created an instance yet. Used only for chrome labels (loading
+        // text, title, footer labels), never row text or key badges.
         internal static Material FindChromeOutlineMaterial()
         {
             if (_chromeOutlineMaterial != null) return _chromeOutlineMaterial;
@@ -1991,9 +1597,7 @@ namespace PEAKQuickResume
             return _chromeOutlineMaterial;
         }
 
-        // Applies the borrowed outline+shadow material to one of this panel's chrome
-        // labels (see FindChromeOutlineMaterial), a no-op if the material hasn't been
-        // found yet this session
+        // No-op if the material hasn't been found yet this session. See FindChromeOutlineMaterial.
         internal static void ApplyChromeTextStyle(TextMeshProUGUI tmp)
         {
             var mat = FindChromeOutlineMaterial();

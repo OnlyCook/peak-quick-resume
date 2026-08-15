@@ -8,20 +8,13 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own port of the checkpoint mod's post-load environment resets: fog
-    /// (<c>ResetFogAfterLoad</c>, decompile 2563-2599), lava
-    /// (<c>ResetLavaAfterLoad</c>, 2601-2627), and the Peak flare spawn
-    /// (<c>SpawnFlaresAtPeak</c>, 2218-2237). All ported field-for-field; called from
-    /// <see cref="OwnTeleportSequence"/> as coroutines on its own MonoBehaviour.
-    /// <c>ResetCampfire</c> (originally decompile 2239-2261) was dropped in v2.0.0 -
-    /// it only mattered for the checkpoint mod's own non-fresh-reload model; our own
-    /// resume flow already starts a brand new session on every load, so there's never
-    /// a stale lit campfire left over for it to extinguish (see the removed
-    /// "campfire-reset" config setting's own history)
+    /// Post-load environment resets (fog, lava, Peak flare spawn) called from
+    /// <see cref="OwnTeleportSequence"/> as coroutines. <c>ResetCampfire</c> was dropped:
+    /// our resume flow always starts a fresh session, so there's never a stale lit
+    /// campfire to extinguish.
     /// </summary>
     public static class OwnEnvironmentReset
     {
-        /// <summary>Mirrors ResetFogAfterLoad exactly (decompile 2563-2599)</summary>
         public static IEnumerator ResetFogAfterLoad(int index, Segment segment, ManualLogSource log, bool extendedTime = false)
         {
             OrbFogHandler fog = OrbFogHandler.Instance;
@@ -48,7 +41,6 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>Mirrors ResetLavaAfterLoad exactly (decompile 2601-2627)</summary>
         public static void ResetLavaAfterLoad(ManualLogSource log)
         {
             LavaRising lava = UnityEngine.Object.FindFirstObjectByType<LavaRising>();
@@ -77,7 +69,6 @@ namespace PEAKQuickResume
             log.Trace("OwnEnvironmentReset: lava fully reset.");
         }
 
-        /// <summary>Mirrors SpawnFlaresAtPeak exactly (decompile 2218-2237)</summary>
         public static IEnumerator SpawnFlaresAtPeak()
         {
             Vector3 basePos = new Vector3(19f, 1228.1f, 2240f);

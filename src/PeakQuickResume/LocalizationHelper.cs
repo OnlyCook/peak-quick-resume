@@ -1,11 +1,10 @@
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Shared lookup used by <see cref="SavePickerLocalization"/> and
-    /// <see cref="MessagesLocalization"/> (and mirrors <see cref="PauseMenuLocalization"/>'s
-    /// own copy of the same rule): array order matches LocalizedText.Language's declaration
-    /// order, the current language selects the entry, empty/missing entries fall back to
-    /// English (index 0) exactly like the game's own LocalizedText.GetText does
+    /// Shared lookup used by SavePickerLocalization/MessagesLocalization (mirrors
+    /// PauseMenuLocalization's copy of the same rule): array order matches
+    /// LocalizedText.Language's declaration order, empty/missing entries fall back to
+    /// English (index 0).
     /// </summary>
     internal static class LocalizationHelper
     {

@@ -6,31 +6,15 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Watches the local player after our own teleport (<see cref="OwnTeleportSequence"/>)
-    /// for the known bad-teleport symptoms (see ROADMAP.md Phase 6):
-    ///   - never teleported at all (client stays wherever it was, checked once
-    ///     immediately once the load finishes)
-    ///   - falling through the world (drifted far below the intended target)
-    ///   - died shortly after the load (catches an out-of-bounds/void kill that can
-    ///     happen faster than the fall-distance threshold below)
-    ///   - warp-loop glitching, detected by counting repeat <c>WarpPlayerRPC</c>
-    ///     calls for the local player AFTER the load already reported itself done
-    ///     (this is NOT inferred from position/velocity sampling, which turned out
-    ///     unreliable: a teleport RPC snaps position directly rather than producing a
-    ///     smooth, sign-flipping velocity, and repeated corrections keep resetting any
-    ///     "peak height" baseline before a rolling-peak fall check could ever accumulate)
+    /// Watches the local player after our own teleport for known bad-teleport symptoms
+    /// (see ROADMAP.md Phase 6): never teleported at all, falling through the world, dying
+    /// shortly after load, or warp-loop glitching (detected via repeat <c>WarpPlayerRPC</c>
+    /// calls, not position/velocity sampling, which proved unreliable against snap-teleports).
     ///
-    /// Always flags, logs, and shows the on-screen hint first, then (steps 4-5, both
-    /// gated on that same flag, never unconditional) <see cref="RevertFallDamageRoutine"/>
-    /// refunds any Injury gained in the following window and <see cref="PositionRecoveryRoutine"/>
-    /// forces the player back to the real target if they still haven't settled there by then.
-    ///
-    /// Our own teleport (<see cref="OwnTeleportSequence.TeleportClientsToHost"/>) is bounded
-    /// and finishes before this watch window even arms, and hands us the real target up front
-    /// (<see cref="SetKnownTarget"/>) so even a total-miss "never teleported" can self-heal via
-    /// position recovery. There is deliberately NO blanket "cancel every warp for a while"
-    /// mitigation: that only ever existed to strangle the old external checkpoint mod's
-    /// uncontrolled re-warp loop, which this mod no longer uses - see ROADMAP.md Phase 6
+    /// Always logs + shows an on-screen hint first; <see cref="RevertFallDamageRoutine"/> and
+    /// <see cref="PositionRecoveryRoutine"/> are gated auto-fixes that only engage after a flag.
+    /// <see cref="SetKnownTarget"/> hands us the real target up front so even a total miss can
+    /// self-heal via position recovery.
     /// </summary>
     public class TeleportWatchdog : MonoBehaviour
     {
@@ -42,33 +26,19 @@ namespace PEAKQuickResume
         private bool _loadInProgress;
 
         // Repeat-warp bookkeeping for the post-load glitch check, see OnLocalWarp. Kept
-        // updated even after a glitch is flagged (not just while _watching), so steps
-        // 4-5's recovery coroutines can tell whether something is still actively
-        // re-warping the local player at their check time
+        // updated even after a glitch is flagged so recovery coroutines can tell if warping is still ongoing.
         private readonly List<float> _postLoadWarpTimes = new List<float>();
         private bool _watching;
 
-        // The real teleport target for whichever watch window is currently active (or
-        // most recently was), used by FlagBadTeleport as the default recovery target
-        // for steps 4-5 when a call site doesn't have a more specific position to hand it
+        // Real teleport target for the current/most recent watch window; FlagBadTeleport's default recovery target.
         private Vector3 _currentTargetPos;
 
-        // Ground-truth teleport target handed in by our OWN teleport sequence
-        // (OwnTeleportSequence.SetKnownTarget) the moment it computes where it's warping
-        // the player, cleared at the start of every load. Unlike _pendingTargetPos (which
-        // is only ever set by actually OBSERVING a WarpPlayerRPC land), this is known up
-        // front, so on the native path it lets the "never teleported" case - where no warp
-        // RPC ever arrives - still recover the player to the real target instead of only
-        // showing a hint. The external checkpoint-mod (F6) path never sets it (we don't
-        // drive that teleport), so there it stays null and the old head-only fallback stands
+        // Ground-truth target from OwnTeleportSequence.SetKnownTarget, known up front (unlike
+        // _pendingTargetPos, which requires observing a landed WarpPlayerRPC), so a total-miss
+        // "never teleported" can still recover. Stays null on the external checkpoint-mod (F6) path.
         private Vector3? _knownTarget;
 
-        /// <summary>
-        /// The ground-truth teleport target for the current load, if our own teleport
-        /// sequence recorded one (see <see cref="SetKnownTarget"/>). Read by the host's
-        /// own load path to forward it to clients over <c>RPC_Loadingscreen</c> so a
-        /// client that never received a warp can still recover to the right spot
-        /// </summary>
+        /// <summary>Ground-truth target for the current load, if recorded (see <see cref="SetKnownTarget"/>).</summary>
         public Vector3? KnownTarget => _knownTarget;
 
         /// <summary>Set once when the current/most recent watch window flags a bad teleport; null otherwise</summary>
@@ -81,41 +51,24 @@ namespace PEAKQuickResume
             _messageOverlay = messageOverlay;
         }
 
-        /// <summary>
-        /// Called from <see cref="OwnTeleportSequence"/> (host, direct) and via
-        /// <c>RPC_Loadingscreen</c> (every client) the moment our own load begins. Marks a
-        /// load as in progress and clears any stale pending/known target, so
-        /// <see cref="OnLocalWarp"/> below only ever attributes warps that happen during an
-        /// actual load to it
-        /// </summary>
+        /// <summary>Marks a load as in progress and clears any stale pending/known target.</summary>
         public void BeginLoadWindow()
         {
             _loadInProgress = true;
             _pendingTargetPos = null;
             _knownTarget = null;
-            // A fresh load watches normally again - see SuppressForRestoredDeath
             _suppressedForRestoredDeath = false;
         }
 
-        // Set when THIS machine's own character is deliberately being restored as dead by a
-        // checkpoint load (see DeathStateRestore) - see SuppressForRestoredDeath below
+        // Set when this machine's own character is deliberately restored as dead by a checkpoint load (see DeathStateRestore).
         private bool _suppressedForRestoredDeath;
 
         /// <summary>
-        /// Called on the machine whose own character a checkpoint load is deliberately
-        /// restoring as dead (host: directly; a client: via <c>RPC_SuppressWatchdogForRestoredDeath</c>).
-        /// Every symptom this class watches for is meaningless on a spectating ghost - the
-        /// corpse is dragged below the map by vanilla's own FixedUpdate, so it reads as a
-        /// fall-through, and the death itself reads as "knocked out / died shortly after
-        /// load" - so the whole watch is dropped for the rest of this load
-        ///
-        /// Deliberately STICKY (a flag, not just a <see cref="LiftWatch"/> call): the death
-        /// is applied by the host while the loading screen is still up, which can land
-        /// either side of this machine's own <see cref="ArmPendingWatch"/>. Arriving first,
-        /// a plain LiftWatch would clear <see cref="_pendingTargetPos"/> and the arming that
-        /// followed would then flag "never teleported" on a player who was warped perfectly
-        /// well. The flag is cleared by the next <see cref="BeginLoadWindow"/>, so it only
-        /// ever covers the load that set it
+        /// Called when a checkpoint load is deliberately restoring this machine's character
+        /// as dead. Every watched symptom is meaningless on a spectating ghost, so the whole
+        /// watch is dropped for this load. Deliberately sticky (a flag, not just LiftWatch):
+        /// the host applies the death while the loading screen is still up, which can race
+        /// this machine's own <see cref="ArmPendingWatch"/> either direction.
         /// </summary>
         public void SuppressForRestoredDeath()
         {
@@ -124,30 +77,15 @@ namespace PEAKQuickResume
             LiftWatch();
         }
 
-        /// <summary>
-        /// Called from <see cref="OwnTeleportSequence"/> the moment it computes where it's
-        /// about to warp the player, recording the real target up front (see the
-        /// <see cref="_knownTarget"/> field comment). Host-only in practice - clients learn
-        /// their target by receiving the warp, or via the RPC-forwarded copy on a total miss
-        /// </summary>
+        /// <summary>Records the real target up front. Host-only in practice; see <see cref="_knownTarget"/>.</summary>
         public void SetKnownTarget(Vector3 target) => _knownTarget = target;
 
         /// <summary>
-        /// Called from <see cref="TeleportWatchdogPatch"/>'s postfix on the vanilla
-        /// <c>Character.WarpPlayerRPC</c) every time the local player is warped, for
-        /// ANY reason, at ANY time - this method decides what (if anything) that means
-        ///
-        /// While a load is in progress (<see cref="BeginLoadWindow"/>): records it as
-        /// the pending teleport target, does NOT start watching yet, more warps (or
-        /// none at all, on the failure case that exists for) may still follow before
-        /// the load is actually done. The watch window itself starts later, from
-        /// <see cref="ArmPendingWatch"/>
-        ///
-        /// While a watch window is active (after a load already reported itself
-        /// done): counts it as a "repeat correction", the checkpoint mod re-issuing
-        /// its warp because the previous one didn't land right, this is the actual
-        /// up/down glitch the player sees. Enough repeats in a short span flags a
-        /// warp-loop glitch immediately
+        /// Called from <see cref="TeleportWatchdogPatch"/>'s postfix whenever the local player
+        /// is warped, for any reason. During a load, just records the pending target (the
+        /// watch window starts later, from <see cref="ArmPendingWatch"/>). Once a watch window
+        /// is active, counts it as a repeat correction; enough repeats in a short span flags a
+        /// warp-loop glitch immediately.
         /// </summary>
         public void OnLocalWarp(Vector3 position)
         {
@@ -157,9 +95,6 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Recorded regardless of _watching (see the field comment above) so a
-            // still-running position-recovery coroutine from an already-flagged glitch
-            // can see whether something is still actively re-warping the local player
             _postLoadWarpTimes.Add(Time.time);
             const float repeatWindow = 5f;
             _postLoadWarpTimes.RemoveAll(t => Time.time - t > repeatWindow);
@@ -175,26 +110,16 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Called once our own load reports itself done (host: end of
-        /// <see cref="OwnInventoryRestore.RestoreAll"/>; every client: via
-        /// <c>RPC_Loadingscreen</c>). Starts the watch window using whichever teleport
-        /// target was last recorded via <see cref="OnLocalWarp"/> - or, if none was ever
-        /// recorded, flags immediately: the load reported itself done without this player
-        /// ever receiving a single warp RPC, which is itself proof of a bad teleport (this
-        /// is exactly the case a slower host's client hit: no glitching, no falling, simply
-        /// never moved)
-        ///
-        /// <paramref name="knownTargetOverride"/> lets a client that arms via RPC carry the
-        /// host's real teleport target across the wire (see <see cref="_knownTarget"/>), so a
-        /// total-miss "never teleported" on a client can still recover to the right spot
+        /// Called once our own load reports itself done. Starts the watch window using the
+        /// last-recorded teleport target, or flags immediately if none was ever recorded
+        /// (proof of a bad teleport: the load finished without this player ever receiving a
+        /// warp RPC). <paramref name="knownTargetOverride"/> lets a client that arms via RPC
+        /// carry the host's real target across the wire.
         /// </summary>
         public void ArmPendingWatch(Vector3? knownTargetOverride = null)
         {
             _loadInProgress = false;
 
-            // This load is deliberately restoring us as dead - don't watch, and in
-            // particular don't read a cleared _pendingTargetPos as "never teleported"
-            // (see SuppressForRestoredDeath for why this can arrive either way round)
             if (_suppressedForRestoredDeath)
             {
                 _pendingTargetPos = null;
@@ -205,9 +130,6 @@ namespace PEAKQuickResume
 
             if (_pendingTargetPos == null)
             {
-                // Prefer the ground-truth target our own sequence recorded so position
-                // recovery in FlagBadTeleport can actually put the player where they belong;
-                // fall back to their current head only when even that is somehow unknown
                 Vector3 pos = _knownTarget
                     ?? (Character.localCharacter != null ? Character.localCharacter.Head : Vector3.zero);
                 string recoverNote = _knownTarget.HasValue
@@ -223,14 +145,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Stops any watch window in progress (or pending) without flagging anything.
-        /// Called right before OUR OWN code intentionally moves the player away from a
-        /// just-loaded position (e.g. RestartOrchestrator/ResumeOrchestrator returning to
-        /// the Airport, or Plugin.RequestReturnToAirport), since that legitimate move
-        /// looks identical to "never teleported"/"fall-through"/warp-loop symptoms to a
-        /// watch window still running from a PRIOR load - our own load path already resets
-        /// this via BeginLoadWindow/ArmPendingWatch, but a plain scene return we drive
-        /// ourselves never goes through that
+        /// Stops any watch window without flagging anything. Called before our own code
+        /// intentionally moves the player, since that legitimate move looks identical to a
+        /// watched symptom to a window still running from a prior load.
         /// </summary>
         public void LiftWatch()
         {
@@ -256,8 +173,7 @@ namespace PEAKQuickResume
 
         private IEnumerator WatchRoutine(Vector3 targetPos)
         {
-            // Give the teleport RPC(s) a moment to actually land before we start
-            // sampling, otherwise the pre-teleport position poisons the baseline
+            // Give the teleport RPC(s) a moment to land before sampling, or the pre-teleport position poisons the baseline.
             yield return new WaitForSeconds(1f);
 
             var c = Character.localCharacter;
@@ -271,10 +187,8 @@ namespace PEAKQuickResume
             float fallThreshold = _cfg.FallDistanceThreshold.Value;
             float neverTeleportedThreshold = _cfg.NeverTeleportedDistanceThreshold.Value;
 
-            // --- never teleported at all --- checked once, immediately: nothing to
-            // sample over time when the player simply never moved. Backstops the
-            // "no warp RPC at all" check in ArmPendingWatch for the case where a warp
-            // DID fire but landed nowhere near the actual target
+            // Checked once, immediately: backstops ArmPendingWatch's "no warp RPC" check
+            // for the case where a warp DID fire but landed nowhere near the target.
             float distFromTarget = Vector3.Distance(c.Head, targetPos);
             if (distFromTarget >= neverTeleportedThreshold)
             {
@@ -330,28 +244,18 @@ namespace PEAKQuickResume
         {
             _log.LogWarning($"TeleportWatchdog: flagged bad teleport ({kind}). {detail}");
 
-            // Falls back to _currentTargetPos (the real intended teleport target, set in
-            // BeginWatch) rather than the character's current position, so steps 4-5
-            // below know where "correct" actually is - a targetPosOverride is only ever
-            // passed when even that isn't known (the "no warp RPC at all" case, where
-            // there's genuinely nothing better to fall back on than "wherever we are")
+            // Falls back to _currentTargetPos rather than current position; targetPosOverride
+            // is only passed when even that isn't known (the "no warp RPC at all" case).
             Vector3 target = targetPosOverride ?? _currentTargetPos;
             LastFlaggedTeleport = (Time.time, target);
 
-            // The log line above is authoritative regardless of what's on screen, but
-            // try to actually show it too. The message overlay is a single shared
-            // text+timer, so a later ShowMessage call (e.g. a "Save loaded" message that
-            // arrives late on a slow host) can stomp ours right after we show it.
-            // Re-showing a couple more times over the next several seconds gives the
-            // player a real shot at actually seeing it even if the first attempt loses
-            // that race (harmless if it doesn't: it's the same message either way)
+            // The overlay is a single shared text+timer that a later message can stomp, so
+            // re-show a couple more times to give the player a real shot at seeing it.
             StartCoroutine(ShowMessageResiliently());
 
             if (_running != null) { StopCoroutine(_running); _running = null; }
             _watching = false;
 
-            // Phase 6 steps 4-5: auto-fixes, only ever engaged off a flag raised above,
-            // never unconditionally on every teleport
             if (_cfg != null && _cfg.EnableFallDamageRevert.Value)
                 StartCoroutine(RevertFallDamageRoutine());
             if (_cfg != null && _cfg.EnablePositionRecovery.Value)
@@ -359,13 +263,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Step 4: snapshots Injury right when a bad teleport is flagged, waits
-        /// <see cref="PluginConfig.DamageRevertDelaySeconds"/>, then refunds any net
-        /// increase since (once). Deliberately a net-delta comparison, not a hook into
-        /// whatever specifically caused the damage - simplest way to catch fall damage
-        /// from being repeatedly warped mid-air before landing (see ROADMAP.md Phase 6
-        /// step 4 for the accepted trade-off: any other damage taken in the same short
-        /// window gets refunded too)
+        /// Snapshots Injury when flagged, waits, then refunds any net increase since (once).
+        /// A net-delta comparison rather than hooking the specific cause; simplest way to
+        /// catch fall damage from repeated mid-air warps (see ROADMAP.md Phase 6 step 4).
         /// </summary>
         private IEnumerator RevertFallDamageRoutine()
         {
@@ -390,14 +290,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Step 5: waits <see cref="PluginConfig.PositionRecoveryDelaySeconds"/> after a
-        /// flag, then forces the local player directly to <paramref name="targetPos"/>
-        /// if still further than <see cref="PluginConfig.PositionRecoveryDistanceThreshold"/>
-        /// away - the last-resort backstop that puts the player where the save intended if
-        /// our own bounded teleport somehow didn't land them there. Calls the vanilla
-        /// <c>WarpPlayerRPC</c> directly (not through Photon) since this only ever needs to
-        /// move the LOCAL player's own view of themselves; harmless no-op if by this point
-        /// the player already settled near the target on their own
+        /// Last-resort backstop: after a delay, forces the local player directly to
+        /// <paramref name="targetPos"/> if still too far away. Calls vanilla's
+        /// <c>WarpPlayerRPC</c> directly since this only needs to move the local view.
         /// </summary>
         private IEnumerator PositionRecoveryRoutine(Vector3 targetPos)
         {

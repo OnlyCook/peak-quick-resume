@@ -7,19 +7,11 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Drives the whole "quick resume" sequence as a single coroutine that survives
-    /// scene loads (it lives on a DontDestroyOnLoad object). The sequence:
-    ///
-    ///   1. Capture the target ascent (difficulty) of the run we just left
-    ///   2. If not already at the Airport, go there (EndScreen -> ReturnToAirport)
-    ///   3. At the Airport: tell the checkpoint mod which ascent to load, confirm a
-    ///      save exists, then start a fresh run of that ascent (kiosk.StartGame)
-    ///      The checkpoint mod's MapBaker.GetLevel patch forces the SAVED scene
-    ///   4. Once the level scene + local character are ready, trigger the checkpoint
-    ///      restore (its offline/coop load), settling any state first
-    ///
-    /// Each stage has a timeout; anything unexpected aborts loudly rather than
-    /// leaving the player in a half-loaded state
+    /// Drives the whole "quick resume" sequence as a single coroutine that survives scene
+    /// loads (lives on a DontDestroyOnLoad object): return to Airport if needed, start a
+    /// fresh run of the saved ascent (forced onto the saved scene via
+    /// MapBakerLevelOverridePatch), then trigger the checkpoint restore once the level and
+    /// local character are ready. Each stage has a timeout; anything unexpected aborts loudly.
     /// </summary>
     public class ResumeOrchestrator : MonoBehaviour
     {
@@ -31,8 +23,7 @@ namespace PEAKQuickResume
         private bool _running;
         private bool _lastWaitOk;
 
-        // When set, resume this specific archived save. Null = auto (current run /
-        // latest on disk)
+        // When set, resume this specific archived save. Null = auto (current run / latest on disk).
         private ArchivedSave _chosen;
 
         public bool IsRunning => _running;
@@ -51,18 +42,12 @@ namespace PEAKQuickResume
         public void RequestResume() => RequestResume(null);
 
         /// <summary>
-        /// Kick off the resume sequence. When <paramref name="chosen"/> is set, that
-        /// specific archived checkpoint is the one loaded, so an OLDER checkpoint can be
-        /// resumed on demand. Nothing on disk is modified to make that happen - the
-        /// chosen save's files are simply the ones read (see <see cref="SaveSelection"/>)
+        /// When <paramref name="chosen"/> is set, that specific archived checkpoint is loaded
+        /// instead of the latest; nothing on disk is modified, only which files get read.
         /// </summary>
         public void RequestResume(ArchivedSave chosen)
         {
-            // Route through the shared cooldown/queue first (see OrchestrationLock's
-            // remarks): if a resume/restart/return-to-airport JUST finished, this queues
-            // rather than running immediately, replacing any previously queued request.
-            // The whole guard chain below is re-evaluated fresh whenever this actually
-            // runs (now, or after the queued wait), not stale-checked up front
+            // Routes through the shared cooldown/queue; see OrchestrationLock.
             OrchestrationLock.RunOrQueue("resume", () => RequestResumeNow(chosen), _log);
         }
 
@@ -96,10 +81,6 @@ namespace PEAKQuickResume
                 return;
             }
 
-            // Acquire the shared lock right before actually starting - see
-            // OrchestrationLock's remarks. Everything above is a plain validation guard
-            // that never touched game state, so there was nothing to release on those
-            // early-return paths
             if (!OrchestrationLock.TryAcquire(LockOwner))
             {
                 _log.Trace("Cannot resume: a restart is already in progress; ignoring request.");
@@ -115,29 +96,17 @@ namespace PEAKQuickResume
         {
             _running = true;
 
-            // Lift any watch window still running from a prior load right away: the
-            // Airport-return/fresh-run-start below is US legitimately moving the player,
-            // not the checkpoint mod's own teleport, and would otherwise look like a bad
-            // teleport to a watch window that's still active from that prior load (see
-            // TeleportWatchdog.LiftWatch)
+            // Avoids false-positiving a watch window still active from a prior load; see TeleportWatchdog.
             _watchdog?.LiftWatch();
-
-            // Before ANY scene transition below (Airport return, then the fresh run): a
-            // session that started from the main menu's "Continue Run" still has vanilla's
-            // quicksave-resume latch set, which wedges the Airport load on a loading screen
-            // that never clears - see RunLauncher.ClearVanillaQuicksaveResume
             RunLauncher.ClearVanillaQuicksaveResume(_log);
 
             float timeout = Mathf.Max(1f, _cfg.StepTimeout.Value);
             _log.LogInfo("=== Quick Resume: sequence START ===");
-            // No HeightClimbed credit for the altitude swings a resume goes through
-            // (airport -> fresh spawn -> warp target) - see HeightAchievementGuard
+            // No HeightClimbed credit for the airport->spawn->warp altitude swings a resume causes.
             HeightAchievementGuard.Suppress("resume sequence");
             Msg(MessagesLocalization.Get(MsgKey.QuickResumeStarting), MsgInfo);
 
             // --- 1. Decide which run to resume (ascent or custom) ---
-            // If the player picked a specific save from the F7 menu, honour it; otherwise
-            // resolve from context (current run mid-run, or newest on disk at the Airport)
             SaveTarget target = _chosen != null ? _chosen.Target : ResolveTarget();
             int ascent = target.Ascent; // custom runs force ascent 0 in the game anyway
             _log.Trace($"[stage] Target={target} (ascent={ascent}, custom={target.IsCustom}, "
@@ -147,8 +116,7 @@ namespace PEAKQuickResume
             if (!RunLauncher.InAirport)
             {
                 _log.Trace("[stage] Not at Airport; requesting return to Airport.");
-                // Don't kick off a second airport load if one is already running
-                // (e.g. solo auto-returns to the Airport a few seconds after death)
+                // Avoid a second airport load if one is already running (e.g. solo auto-return after death).
                 if (!RunLauncher.IsLoading)
                 {
                     if (!RunLauncher.ReturnToAirport(_log)) { Fail("ReturnToAirport failed"); yield break; }
@@ -175,19 +143,13 @@ namespace PEAKQuickResume
             _log.Trace("[stage] Found check-in kiosk.");
 
             // --- 3. Point our own loader at the saved run & start it ---
-            // Resolve, once, exactly which files this load will read: the host's file for
-            // the level/world state and each connected player's own file for their own
-            // state. Nothing on disk is written or copied here - see SaveSelection
             bool offline = PhotonNetwork.OfflineMode;
             SaveSelection selection = _chosen != null
                 ? SaveArchive.BuildSelection(_chosen, _log)
                 : SaveArchive.TryGetLatestSelection(offline, target, _log);
 
-            // The picker only ever lists the category matching the current network mode,
-            // so this should be unreachable - but the whole load path branches on
-            // solo-vs-coop (segment activation, warps, RPCs), and running the solo branch
-            // in a networked session would leave every client behind, so refuse outright
-            // rather than proceed on a mismatch
+            // Should be unreachable (the picker only lists the current network mode's saves),
+            // but running the solo load path in a coop session would leave clients behind.
             if (selection != null && selection.Offline != offline)
             {
                 Fail($"The chosen save is a {(selection.Offline ? "solo" : "co-op")} save but we are "
@@ -204,14 +166,10 @@ namespace PEAKQuickResume
                 yield break;
             }
 
-            // The run the game starts is picked off RunSettings.IsCustomRun, so set that
-            // FIRST (both ways), otherwise a stale flag starts the wrong kind of run
+            // Set before starting: the run started is picked off RunSettings.IsCustomRun.
             if (!RunLauncher.TrySetCustomRun(target.IsCustom, _log))
             { Fail("Could not set custom-run flag before starting"); yield break; }
 
-            // Resolves entirely through our own port (our own MapBakerLevelOverridePatch
-            // always forces the saved island, so there's no separate "use saved island"
-            // toggle to set here - see its own remarks)
             if (!_ownLoadEntryPoints.TryPreStartSetSegment(selection))
             {
                 Fail($"No usable checkpoint save for {target} (TryPreStartSetSegment returned false)");
@@ -223,9 +181,8 @@ namespace PEAKQuickResume
             _log.Trace("[stage] Save confirmed for this difficulty; starting fresh run.");
             Msg(MessagesLocalization.Get(MsgKey.StartingFreshRun), MsgInfo);
 
-            // Coop: give other players time to finish loading the Airport before we fire
-            // the run-start. The run-start RPC lives on the kiosk (a scene object), so a
-            // client still loading the Airport wouldn't receive it
+            // Coop: give other players time to finish loading the Airport; the run-start RPC
+            // lives on the kiosk (a scene object) so a client still loading wouldn't receive it.
             if (!PhotonNetwork.OfflineMode)
             {
                 float coopWait = Mathf.Max(0f, _cfg.CoopAirportSettle.Value);
@@ -236,25 +193,16 @@ namespace PEAKQuickResume
                 }
             }
 
-            // Final guard right before the call that is sensitive to loading state
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "loading to finish before StartRun");
             if (!_lastWaitOk) { Fail("Timed out waiting for loading to clear before StartRun"); yield break; }
 
-            // Arm terrain-randomizer suppression on every peer (host included) BEFORE the
-            // level actually loads - MapHandler.InitializeMap (what TerrainRandomiserCompat
-            // patches) runs the instant the scene loads, on each peer's own machine, so this
-            // has to land before StartRun's networked scene load, not after it
+            // Must land before StartRun's networked scene load: MapHandler.InitializeMap
+            // (patched by TerrainRandomiserCompat) runs the instant each peer's scene loads.
             _ownLoadEntryPoints.Network?.ArmTerrainRandomizerSuppressionAll();
 
-
-            // Every client must have finished spawning into the Airport before we start the run.
-            // RunLauncher.IsLoading above only reports the HOST's loading screen; a client still
-            // spawning in has its own LoadingScreenHandler busy, and LoadingScreenHandler.Load
-            // REFUSES while that is true ("Tried to load while already loading!"), so the island
-            // load RPC we are about to send is silently dropped on their end and they are left
-            // standing in the previous level - session-reported as "the client stayed where they
-            // were, in another biome which wasn't loaded in". The host log showed the client's
-            // spawn requests still repeating on both sides of StartRun. See PlayerRegistration
+            // RunLauncher.IsLoading only reports the host's loading screen; a client still
+            // spawning in refuses LoadingScreenHandler.Load, silently dropping the island load
+            // RPC and leaving it stuck in the previous level. See PlayerRegistration.
             if (!PhotonNetwork.OfflineMode)
             {
                 yield return WaitFor(PlayerRegistration.AllRegistered,
@@ -264,16 +212,13 @@ namespace PEAKQuickResume
                         + "starting the run anyway. A client still loading may not follow into the new level.");
             }
 
-            // Drop any buffered RPCs from the run we are replacing - see
-            // RunLauncher.ClearBufferedRpcs (stale ghost inits are the known case)
             RunLauncher.ClearBufferedRpcs(_log);
 
             if (!RunLauncher.StartRun(ascent, _log)) { Fail("StartRun failed"); yield break; }
             _log.Trace("[stage] StartRun invoked; waiting for the level to load.");
 
             // --- 4. Wait for the level, then trigger the checkpoint load ---
-            // First wait to LEAVE the Airport so we don't mistake the current scene
-            // for the new level, then wait for the level scene itself
+            // Wait to leave the Airport first so the current scene isn't mistaken for the new level.
             yield return WaitFor(() => !RunLauncher.InAirport, timeout, "leaving the Airport");
             if (!_lastWaitOk) { Fail("Run did not start (still at the Airport after StartRun)"); yield break; }
 
@@ -281,7 +226,6 @@ namespace PEAKQuickResume
             if (!_lastWaitOk) { Fail("Timed out waiting for the level scene to load"); yield break; }
             _log.Trace($"[stage] Level scene loaded: '{RunLauncher.ActiveSceneName}'.");
 
-            // Wait for the level's own loading screen to finish and the character to exist
             yield return WaitFor(() => !RunLauncher.IsLoading, timeout, "level loading to finish");
             if (!_lastWaitOk) { Fail("Timed out waiting for the level loading screen to clear"); yield break; }
 
@@ -291,10 +235,8 @@ namespace PEAKQuickResume
 
             yield return new WaitForSeconds(Mathf.Max(0f, _cfg.SettleAfterLevel.Value));
 
-            // Coop: LoadPlayerCoop refuses ("Please wait until everybody is ready!")
-            // until every client has reported ready. Clients auto-report once they're
-            // in the level, so wait that out here instead of firing a doomed load - using
-            // OwnNetwork's own readiness gate (see OwnNetwork.CheckReadyStatusForPlayers)
+            // Coop: LoadPlayerCoop refuses until every client has reported ready; wait it out
+            // here instead of firing a doomed load. See OwnNetwork.CheckReadyStatusForPlayers.
             if (!PhotonNetwork.OfflineMode)
             {
                 if (_cfg.OwnEnableClientReadyStatusCheck.Value)
@@ -302,11 +244,8 @@ namespace PEAKQuickResume
                     _log.Trace("[stage] Coop: waiting for all clients to report ready...");
                     Msg(MessagesLocalization.Get(MsgKey.WaitingForPlayers), MsgInfo);
                     Func<bool> allReady = () => _ownLoadEntryPoints.Network.CheckReadyStatusForPlayers();
-                    // Own timeout, not the shared step-timeout: this is the one stage where a
-                    // slower/heavier-loading client machine genuinely needs real headroom (the
-                    // client's own ready RPC now retries for up to a minute - see
-                    // OwnNetwork.SendReadyStatusToMaster), whereas every other stage above is
-                    // local-only and should still fail fast if genuinely stuck
+                    // Own (longer) timeout: a slower client's ready RPC retries for up to a
+                    // minute (see OwnNetwork.SendReadyStatusToMaster).
                     float readyTimeout = Mathf.Max(1f, _cfg.CoopReadyTimeout.Value);
                     yield return WaitFor(allReady, readyTimeout, "all clients ready");
                     if (!_lastWaitOk)
@@ -319,18 +258,12 @@ namespace PEAKQuickResume
                 }
             }
 
-            // Loads go through our own restore path
             _log.Trace("[stage] Triggering our own restore.");
             if (!_ownLoadEntryPoints.TryLoadPlayer(selection)) { Fail("Load call failed"); yield break; }
 
-            // TryLoadPlayer is fire-and-forget (it starts OwnTeleportSequence's coroutine and
-            // returns immediately), so wait for the restore to actually finish before declaring
-            // success. Showing the message right after TryLoadPlayer returns would print it well
-            // before the player has even seen the loading screen appear. Session-requested change:
-            // wait on RestoreComplete (items/backpacks/afflictions actually in place), NOT the
-            // full TeleportInProgress flag - that also waits out the purely-cosmetic wake-up
-            // fade-out/stand-up beat, which is pure decoration by then. Don't hard-fail on a
-            // timeout here (the load itself already succeeded); just show the message anyway
+            // TryLoadPlayer is fire-and-forget; wait for RestoreComplete (not the full
+            // TeleportInProgress, which also covers the purely-cosmetic wake-up animation)
+            // before declaring success. Don't hard-fail on timeout, the load already succeeded.
             yield return WaitFor(() => _ownLoadEntryPoints.RestoreComplete, timeout, "restore to finish");
             if (!_lastWaitOk)
                 _log.LogWarning("[stage] Restore didn't report done in time; showing the completion message anyway.");
@@ -339,17 +272,10 @@ namespace PEAKQuickResume
             Msg(MessagesLocalization.Get(MsgKey.SaveLoadedWelcomeBack), MsgSuccess);
             _chosen = null;
 
-            // Keep the shared lock held until OwnTeleportSequence's own tail has actually
-            // finished (fade-out/stand-up, and critically TeleportClientsToHost's up-to-32s
-            // client-arrival confirmation), not just RestoreComplete above - releasing the
-            // lock here let a second Resume/Restart start while a client was still mid-warp,
-            // confirmed via a real session report (2026-07-25): OwnTeleportSequence is a
-            // reused singleton, so two concurrent RunSequence coroutines stomped the same
-            // instance fields and double-fired ClientPresentationOthers RPCs at the client,
-            // leaving its character null/un-teleported for 15+ seconds and eventually
-            // recovering to a stale, days-old cached position. The completion message above
-            // still shows promptly (unaffected, still gated on RestoreComplete only) - only
-            // the NEXT orchestration's ability to start is what waits here
+            // Hold the lock until OwnTeleportSequence's tail (incl. TeleportClientsToHost's
+            // up-to-32s client-arrival confirmation) finishes, not just RestoreComplete above.
+            // Releasing early let a second Resume/Restart start while a client was still
+            // mid-warp, stomping the same OwnTeleportSequence singleton instance.
             float teleportTailTimeout = Mathf.Max(timeout, 40f);
             yield return WaitFor(() => !_ownLoadEntryPoints.TeleportInProgress, teleportTailTimeout,
                 "teleport sequence to fully finish");
@@ -357,14 +283,9 @@ namespace PEAKQuickResume
                 _log.LogWarning("[stage] Teleport sequence still running after its own tail timeout; "
                     + "releasing the lock anyway to avoid a permanent stall.");
 
-            // Own timeline finishing isn't enough in coop: each client runs its own
-            // independently-timed wake-up/fade-out locally (RunClientPresentationExit),
-            // never acknowledged before this fix (see AllClientsPresentationDone's
-            // remarks). Wait for every client to actually confirm THEIRS is done too,
-            // before releasing the lock - a genuine session repro (2026-07-25) showed a
-            // Restart's GameOverHandler.LoadAirport() tearing the scene down while a
-            // client was still mid-way through its own local wake-up animation, even
-            // though the host's own OwnTeleportSequence had already fully finished
+            // Each client runs its own independently-timed local wake-up (RunClientPresentationExit);
+            // wait for every client to confirm theirs is done too before releasing the lock,
+            // or a Restart's LoadAirport() can tear the scene down mid-animation. See AllClientsPresentationDone.
             if (!PhotonNetwork.OfflineMode && _cfg.OwnWakeUpAnimationEnabled.Value)
             {
                 yield return WaitFor(() => _ownLoadEntryPoints.Network.AllClientsPresentationDone(),
@@ -374,16 +295,9 @@ namespace PEAKQuickResume
                         + "releasing the lock anyway to avoid a permanent stall.");
             }
 
-            // Arm the post-orchestration cooldown (coop only - see PostOrchestrationCooldown's
-            // remarks, a Photon scene-sync timing issue below this mod's own code, not
-            // relevant offline where there's no client to race). A genuinely FAILED resume
-            // (Fail() below) does NOT arm this - nothing actually changed, so there's
-            // nothing that needs settling
             if (!PhotonNetwork.OfflineMode)
                 OrchestrationLock.ArmCooldown(_cfg.PostOrchestrationCooldown.Value);
 
-            // Height credit resumes here, seeding this run's mark from where the player
-            // actually ended up - see HeightAchievementGuard
             HeightAchievementGuard.Release("resume sequence");
 
             _running = false;
@@ -398,13 +312,9 @@ namespace PEAKQuickResume
         private void Msg(string text, Color color) => _messageOverlay?.Show(text, color, 4f);
 
         /// <summary>
-        /// Which save should we load, a normal difficulty (ascent) or a custom run?
-        ///  - Mid-run / post-death inside a level: the run you were just in tells us
-        ///    everything, <c>Ascents.currentAscent</c> for the difficulty and
-        ///    <c>RunSettings.IsCustomRun</c> for whether it was a custom run
-        ///  - At the Airport: <c>currentAscent</c> is only the boarding-pass default (0)
-        ///    and the custom flag may be stale, so instead pick the newest save on disk
-        ///    ("choose the latest"), which also tells us if it was custom
+        /// Mid-run: use the current run's ascent/custom flag. At the Airport those flags are
+        /// stale (currentAscent resets to the boarding-pass default), so pick the newest save
+        /// on disk instead.
         /// </summary>
         private SaveTarget ResolveTarget()
         {

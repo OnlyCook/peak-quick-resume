@@ -3,14 +3,9 @@ using System.Collections.Generic;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Translations for the F7 save picker's UI text (<see cref="SavePicker"/>) and the
-    /// difficulty labels it (and <see cref="SaveArchive"/>) display. Same rules as
+    /// Translations for the F7 save picker's UI text and difficulty labels. Same rules as
     /// <see cref="PauseMenuLocalization"/>: indexed by <c>(int)LocalizedText.Language</c>,
-    /// covering every language the game itself ships, Traditional Chinese included; any entry
-    /// left blank falls back to English
-    ///
-    /// "PEAK" (the ascent-0 difficulty name) and "Quick Resume" are left untranslated
-    /// everywhere, same as a product/brand name
+    /// blank entries fall back to English. "PEAK" and "Quick Resume" stay untranslated.
     /// </summary>
     internal enum PickerText
     {

@@ -3,19 +3,10 @@ using System.Collections.Generic;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Translations for the custom pause-menu buttons injected by <see cref="PauseMenuPatch"/>.
-    /// The game's own <see cref="LocalizedText"/> table only has entries the developers wrote,
-    /// our button text doesn't exist in it, so we keep our own small table here instead
-    ///
-    /// Indexed by <c>(int)LocalizedText.Language</c>, covering every language the game itself
-    /// currently ships (per its own settings menu): English, French, Italian, German, Spanish
-    /// (Spain), Spanish (Latin America), Portuguese (Brazil), Russian, Ukrainian, Simplified
-    /// Chinese, Traditional Chinese, Japanese, Korean, Polish, Turkish. Any entry left blank
-    /// falls back to English, the same behavior as the game's own <c>LocalizedText.GetText</c>
-    /// for a missing translation
-    ///
-    /// "Board Flight" instead reuses the game's own official "BOARDFLIGHT" string (the same
-    /// text shown when interacting with the kiosk directly), so it's guaranteed to match
+    /// Translations for the custom pause-menu buttons injected by <see cref="PauseMenuPatch"/>,
+    /// since these strings don't exist in the game's own <see cref="LocalizedText"/> table.
+    /// Indexed by <c>(int)LocalizedText.Language</c>; a blank entry falls back to English.
+    /// "Board Flight" instead reuses the game's own official "BOARDFLIGHT" string.
     /// </summary>
     internal enum ButtonLabel
     {

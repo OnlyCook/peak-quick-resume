@@ -8,37 +8,19 @@ namespace PEAKQuickResume
 {
     /// <summary>
     /// Suppresses vanilla's "game has been updated, close the game to continue" modal
-    /// (single OK button whose only effect is <c>Application.Quit</c>) and replaces it
-    /// with our own non-blocking heads-up
+    /// and replaces it with a non-blocking heads-up. This check can fire hours into an
+    /// already-running session (e.g. at the Airport kiosk), and RunLauncher routes
+    /// players through the Airport mid-run as a pit stop for loading unfinished saves -
+    /// so the vanilla forced-quit there would brick an otherwise-recoverable save.
     ///
-    /// The vanilla check isn't scoped to boot: <c>NextLevelService.NextLevelData.SecondsLeft</c>
-    /// (decompiled Assembly-CSharp) re-queries <c>CloudAPI.CheckVersion</c> every time its
-    /// cached countdown expires, from wherever that property happens to be read - the
-    /// Airport kiosk's <c>Start()</c> among others - so this can fire hours into an
-    /// already-running session, not just at the title screen. In vanilla that's fine: you
-    /// only ever see the Airport after dying or winning a completed run, so being forced
-    /// to quit there costs nothing. This mod breaks that assumption - <see cref="RunLauncher"/>
-    /// sends players to the Airport as a mid-run pit stop purely to make loading an
-    /// unfinished save possible, so the SAME forced-quit at the SAME screen would brick an
-    /// otherwise-recoverable save. The Airport visit is our intermediate halt, not
-    /// vanilla's "run is over" checkpoint
+    /// Both known call sites funnel through Modal.OpenModal, so we patch that single
+    /// choke point and match on the modal's localized out-of-date title, leaving every
+    /// other modal (disconnect notices, kick messages) untouched.
     ///
-    /// The two known call sites both open the modal via <c>Zorro.UI.Modal.Modal.OpenModal</c>
-    /// with a <see cref="DefaultHeaderModalOption"/> whose Title is the localized
-    /// "VERSIONOUTOFDATE" (MainMenuPageHandler.Start) or "MODAL_OUTOFDATE_TITLE"
-    /// (NextLevelService.NextLevelData.SecondsLeft) key. Rather than chase each call site
-    /// individually (private nested types, anonymous delegates), we patch the single
-    /// choke point both funnel through and match on that title - anything else opened
-    /// through Modal.OpenModal (disconnect notices, kick messages, etc.) is untouched
-    ///
-    /// Understand what this trades away: the underlying game processes/servers may have
-    /// actually moved on (e.g. a map-pool rotation), so a save loaded after this point can
-    /// end up pointing at content that no longer matches what everyone else's client sees.
-    /// We accept that risk deliberately - it's still strictly better than the alternative
-    /// (unable to load the save at all) - and tell the player plainly so they can act on
-    /// it (finish up, don't update anyone's game mid-save). Players without this mod
-    /// installed still see the real modal and cannot get past it - nothing we can do about
-    /// that from here
+    /// Trade-off: a save loaded after this point may point at content that no longer
+    /// matches other clients (e.g. a map-pool rotation) - accepted deliberately since
+    /// it's still better than being unable to load the save at all; the player is told
+    /// plainly so they can act on it.
     /// </summary>
     public static class GameUpdateModalSuppressPatch
     {
@@ -84,8 +66,6 @@ namespace PEAKQuickResume
                 if (_messageOverlay != null && !_noticeShownThisSession)
                 {
                     _noticeShownThisSession = true;
-                    // Same duration as GameUpdatedSavesMayBeWrong (Plugin.cs) - both are
-                    // "don't touch the game/update right now" notices of equal importance
                     _messageOverlay.Show(
                         MessagesLocalization.Get(MsgKey.GameUpdateDialogSuppressed),
                         new Color(1f, 0.55f, 0.3f, 1f), 12f);

@@ -29,15 +29,9 @@ namespace PEAKQuickResume
     }
 
     /// <summary>
-    /// Finds which run to resume when the game doesn't tell us, specifically at the
-    /// Airport, where <c>Ascents.currentAscent</c> is just the boarding-pass default
-    /// (0), not the difficulty of the save you want
-    ///
-    /// Reads our own save store (<see cref="OwnSavePaths.ArchiveDir"/>) and picks the
-    /// most recent save event, matching the user's rule: "choose the latest". Recency
-    /// comes from the event stamp baked into each filename, NOT from the file's
-    /// modification time - so hand-editing a save can't reorder the store or make an
-    /// old checkpoint look like the newest one
+    /// Finds which run to resume at the Airport, where <c>Ascents.currentAscent</c> is just
+    /// the boarding-pass default (0). Picks the most recent save event by its filename stamp,
+    /// not file modification time, so hand-editing a save can't reorder the store.
     /// </summary>
     public static class SaveDiscovery
     {
@@ -69,9 +63,8 @@ namespace PEAKQuickResume
                     if (!OwnSavePaths.TrySplit(file, out string stem, out string stamp)) continue;
                     if (!TryParseStem(stem, offlineMode, out SaveTarget t)) continue;
 
-                    // Same fallback SaveArchive.ReadAll uses: a stamp that isn't a
-                    // parseable timestamp still identifies its event, it just can't order
-                    // the scan, so fall back to the file's own write time for that
+                    // Same fallback as SaveArchive.ReadAll: an unparseable stamp still
+                    // identifies its event, so fall back to write time just for ordering.
                     if (!DateTime.TryParseExact(stamp, OwnSavePaths.StampFormat, CultureInfo.InvariantCulture,
                             DateTimeStyles.None, out DateTime when))
                     {

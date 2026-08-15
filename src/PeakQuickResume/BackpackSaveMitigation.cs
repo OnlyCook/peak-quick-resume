@@ -9,27 +9,16 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Mitigates a player-facing (not a bug, but an easy trap) footgun: dropping your
-    /// backpack on the ground to rearrange items, then someone lights the campfire
-    /// before it's picked back up. "PEAK Checkpoint Save" only ever saves a player's
-    /// EQUIPPED backpack, so a dropped one on the ground is silently left out of the
-    /// save entirely - reloading that checkpoint later, it and everything in it is
-    /// just gone (the level itself is regenerated fresh, the physical dropped prop
-    /// doesn't exist to find again even if you knew where to look)
+    /// Mitigates a player footgun: since saves only capture a player's EQUIPPED
+    /// backpack, dropping it on the ground and then lighting the campfire before
+    /// picking it back up would silently lose it and its contents.
     ///
-    /// Approach: the host watches the single nearest-to-itself unlit campfire (there's
-    /// only ever one "next" unlit campfire in play at a time - if a buggy load somehow
-    /// produces two, the farther one can't be the real one anyway, so it's ignored) for
-    /// any backpack dropped within 50m of it, by ANY player. If that same campfire is
-    /// then lit while a tracked drop is still sitting on the ground, un-picked-up, and
-    /// its owner hasn't since equipped a different backpack, we inject it (contents and
-    /// all) into that owner's just-written save file as a phantom "equipped" backpack -
-    /// even though by then it no longer really is one - before our own archive step
-    /// copies that file. Tracking resets the moment a DIFFERENT campfire becomes the
-    /// nearest unlit one, or the watched one gets lit (whether or not anything needed
-    /// restoring), matching a fresh "next campfire" every time
-    ///
-    /// Host-only throughout (only the host ever writes save files); a no-op on clients
+    /// The host watches the single nearest unlit campfire for any backpack dropped
+    /// within 50m by any player. If that campfire is then lit while a tracked drop is
+    /// still on the ground and unclaimed, its contents are injected into the owner's
+    /// just-written save as a phantom "equipped" backpack before the archive step
+    /// copies the file. Tracking resets whenever a different campfire becomes nearest,
+    /// or the watched one is lit. Host-only; no-op on clients.
     /// </summary>
     public static class BackpackSaveMitigation
     {
@@ -44,31 +33,16 @@ namespace PEAKQuickResume
             public Backpack Backpack;
         }
 
-        // The single unlit campfire currently being watched, and the most recent
-        // backpack drop seen near it per player since we started watching it (cleared
-        // whenever a DIFFERENT campfire becomes the nearest unlit one, or this one gets
-        // lit - see remarks). Keyed by owner userId, NOT by backpack ViewID: a player
-        // can drop one backpack, pick up and drop a second before the fire lights, and
-        // only the latest of those is still meaningfully "their" dropped backpack. This
-        // class's own phantom-equip restore (and the exclusion it makes WorldItemRestore
-        // apply, see GetPendingBackpackViewIds) can only ever apply ONE backpack per
-        // user - a save's backpackItemStates field has room for exactly one. Keying by
-        // ViewID instead (tracking both drops) queued two PendingRestores for the same
-        // user; ApplyPendingRestores patched the save file twice, so the second silently
-        // clobbered the first in the JSON, while GetPendingBackpackViewIds still told
-        // WorldItemRestore both were "already handled" and excluded both from the normal
-        // ground-item save - the first backpack was excluded from everywhere and lost
-        // entirely. Keying by user makes the second drop replace the first in tracking,
-        // so the superseded backpack is no longer excluded and falls through to
-        // WorldItemRestore's ordinary ground-item capture instead
+        // Keyed by owner userId, not backpack ViewID: a save only has room for one
+        // equipped backpack per player, so if a player drops a second before the fire
+        // lights, the newer drop should replace the older in tracking (letting the
+        // superseded one fall through to WorldItemRestore's normal ground-item save)
+        // rather than both being queued and the JSON write clobbering one silently.
         private static Campfire _watchedCampfire;
         private static readonly Dictionary<string, TrackedDrop> _tracked = new Dictionary<string, TrackedDrop>();
 
-        // Restorations decided the instant a watched campfire lights, but not yet
-        // written to disk: our own autosave only runs AFTER Interact_CastFinished (and
-        // the Light_Rpc call it makes) fully returns, so there's no save file to patch
-        // yet at the point we make this decision. ApplyPendingRestores (called from
-        // OwnSaveCapture right after the files actually exist) is what applies these
+        // Decided the instant a watched campfire lights, but the save file doesn't exist
+        // yet at that point; ApplyPendingRestores (called from OwnSaveCapture once it does) applies these.
         private class PendingRestore
         {
             public string UserId;
@@ -76,13 +50,9 @@ namespace PEAKQuickResume
             public JArray BackpackItemStates;
             public int BackpackViewId;
 
-            // Which backpack variant was dropped (BackpackSlot.BackpackType as its raw
-            // enum value). Carried through so the phantom re-equip below puts back the
-            // same kind that was dropped - since 2.0.a a dropped "backpack" can just as
-            // well be a Fannypack/Jetpack/Rocketpack
+            // Which backpack variant was dropped, since 2.0.a it may be a Fannypack/Jetpack/Rocketpack too.
             public int BackpackType;
 
-            // The dropped backpack's own stats (fuel), see BuildBackpackOwnValues
             public JObject BackpackOwnValues;
         }
         private static readonly List<PendingRestore> _pending = new List<PendingRestore>();
@@ -106,8 +76,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // DropItemRpc runs on every machine (RpcTarget.All), but only the host needs to
-        // track any of this - IsHostMachine() makes this a no-op everywhere else
+        // DropItemRpc runs on every machine; IsHostMachine() makes this a no-op elsewhere.
         private static void OnDropItemRpc(byte slotID, Vector3 spawnPos, Character ___character)
         {
             try
@@ -121,8 +90,6 @@ namespace PEAKQuickResume
                 var backpack = FindNearestGroundBackpack(spawnPos);
                 if (backpack == null) return;
 
-                // A different nearest-unlit-campfire than whatever we were watching
-                // invalidates the old tracking (see class remarks)
                 if (_watchedCampfire != nearestUnlit)
                 {
                     _tracked.Clear();
@@ -141,9 +108,7 @@ namespace PEAKQuickResume
             }
         }
 
-        // updateSegment is only true for a REAL ignition (Interact_CastFinished's light
-        // branch, or DebugLight); the late-joiner state-sync call (CheckIfSyncNeeded)
-        // and LightWithoutReveal both pass false, and aren't campfires actually being lit
+        // updateSegment is only true for a real ignition; state-sync/reveal calls pass false.
         private static void OnLightRpc(Campfire __instance, bool updateSegment)
         {
             try
@@ -152,8 +117,6 @@ namespace PEAKQuickResume
 
                 if (_watchedCampfire != __instance)
                 {
-                    // Not the fire we were tracking drops around - nothing to restore,
-                    // but still reset so the next unlit campfire starts clean
                     _tracked.Clear();
                     _watchedCampfire = null;
                     return;
@@ -161,18 +124,15 @@ namespace PEAKQuickResume
 
                 foreach (var drop in _tracked.Values)
                 {
-                    if (drop.Backpack == null) continue; // destroyed/despawned since
-                    if (drop.Backpack.itemState != ItemState.Ground) continue; // picked up again
+                    if (drop.Backpack == null) continue;
+                    if (drop.Backpack.itemState != ItemState.Ground) continue;
                     if (Vector3.Distance(__instance.transform.position, drop.Backpack.transform.position) > WatchRadius) continue;
-                    if (PlayerAlreadyHasBackpack(drop.UserId)) continue; // equipped a different one by now
+                    if (PlayerAlreadyHasBackpack(drop.UserId)) continue;
 
                     if (!TryBuildBackpackItemStates(drop.Backpack, out var states) || states.Count == 0) continue;
 
-                    // Lighting a campfire only ever happens mid-run, so the currently
-                    // active run (whatever RunLauncher/Ascents report right now) IS the
-                    // one our own autosave is about to write to - this has to match at the
-                    // exact moment of the save, see SaveArchive.PatchSaveFile for why
-                    // guessing wrong here silently patches an unrelated save file instead
+                    // Must match the run our own autosave is about to write to, or this
+                    // silently patches an unrelated save file (see SaveArchive.PatchSaveFile).
                     SaveTarget target = RunLauncher.IsCustomRun ? SaveTarget.Custom() : SaveTarget.Normal(Ascents.currentAscent);
 
                     _pending.Add(new PendingRestore
@@ -199,14 +159,9 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Applies any pending backpack restorations queued by OnLightRpc to the save
-        /// file(s) <see cref="OwnSaveCapture"/> just wrote for save event
-        /// <paramref name="stamp"/>. Called from OwnSaveCapture right after the save is
-        /// written; a no-op when nothing is pending
-        ///
-        /// The file is addressed by its exact path (run target + owning userId + this
-        /// event's stamp), never searched for - a backpack restore landing in the wrong
-        /// save file would silently hand someone another run's items
+        /// Applies pending backpack restorations queued by OnLightRpc to the save file(s)
+        /// OwnSaveCapture just wrote for save event stamp. The file is addressed by its
+        /// exact path, never searched for, so a restore can't land in the wrong save.
         /// </summary>
         public static void ApplyPendingRestores(bool offline, string stamp, ManualLogSource log)
         {
@@ -217,9 +172,7 @@ namespace PEAKQuickResume
                 bool applied = SaveArchive.PatchSaveFile(path, json =>
                 {
                     json["hasBackpack"] = true;
-                    // Must be written alongside hasBackpack since 2.0.a, or the restore
-                    // would hand back a plain Backpack regardless of what was dropped
-                    // (see OwnSaveData.backpackType / BackpackTypeCompat.FromSave)
+                    // Must be written alongside hasBackpack since 2.0.a (see BackpackTypeCompat.FromSave).
                     json["backpackType"] = restore.BackpackType;
                     json["backpackItemStates"] = restore.BackpackItemStates;
                     if (restore.BackpackOwnValues != null)
@@ -235,14 +188,10 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// PhotonView IDs of every dropped Backpack currently queued for a phantom-
-        /// equip restore (see <see cref="ApplyPendingRestores"/>) - called from
-        /// <see cref="WorldItemRestore"/>'s capture, BEFORE this class's own
-        /// <see cref="ApplyPendingRestores"/> clears <c>_pending</c> (both run from
-        /// within the same OwnSaveCapture call, this one first), so WorldItemRestore's
-        /// generic ground-item sweep doesn't ALSO save the same physical backpack as a
-        /// plain world item - that would restore it twice: once equipped on the owner
-        /// (this class's job) and once dropped on the ground again (WorldItemRestore's)
+        /// PhotonView IDs of every dropped Backpack queued for a phantom-equip restore.
+        /// Called from WorldItemRestore's capture (before ApplyPendingRestores clears
+        /// _pending) so its ground-item sweep doesn't also save the same backpack, which
+        /// would restore it twice.
         /// </summary>
         public static HashSet<int> GetPendingBackpackViewIds()
         {
@@ -286,13 +235,7 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>
-        /// The dropped backpack's OWN stats (its fuel, for a Jetpack/Rocketpack), in the
-        /// same JSON shape as <c>OwnSaveData.backpackOwnValues</c>. Needed because a
-        /// mitigated backpack is re-equipped from the save rather than left on the ground,
-        /// so <see cref="WorldItemRestore"/> - which would otherwise have preserved this
-        /// as part of the whole world item - deliberately skips it (see BackpackViewId)
-        /// </summary>
+        /// <summary>The dropped backpack's own stats (fuel, for a Jetpack/Rocketpack), in OwnSaveData.backpackOwnValues' JSON shape.</summary>
         private static JObject BuildBackpackOwnValues(Backpack backpack)
         {
             try

@@ -15,51 +15,30 @@ namespace PEAKQuickResume
     }
 
     /// <summary>
-    /// Our own item "extra stat" (per-item-type key/value) IO helpers, ported
-    /// field-for-field from the original save format (decompile 3258-3480, 3417-3442,
-    /// plus the static fields at 869-893). All reflect into vanilla
-    /// <c>ItemInstanceData</c>/<c>DataEntryKey</c> directly - zero dependency on any
-    /// external mod's own instance or types
-    ///
-    /// Split by direction:
-    ///  - Read side (<see cref="TryGetEntryObject"/>/<see cref="TryReadEntryNumeric"/>/
-    ///    <see cref="TryConvertToFloat"/>) is only used when CAPTURING a save
-    ///    (M6, <c>SavePlayerOffline</c>/<c>SavePlayerCoop</c>) - unused until then
-    ///  - Write side (<see cref="TryGetKey"/>/<see cref="TrySetOrCreateEntry"/>/
-    ///    <see cref="TryWriteEntryNumeric"/>) is what M4's <c>OwnInventoryRestore</c>
-    ///    actually needs today, to restore saved per-item values back onto a freshly
-    ///    spawned item's <c>ItemInstanceData</c>
+    /// Per-item-type "extra stat" (key/value) IO helpers. Reflects directly into vanilla
+    /// <c>ItemInstanceData</c>/<c>DataEntryKey</c>. Read side is used when capturing a
+    /// save; write side is used by <c>OwnInventoryRestore</c> to restore saved values
+    /// onto a freshly spawned item.
     /// </summary>
     public static class OwnItemStateIO
     {
-        // Same fixed 13 key names the checkpoint mod's own SavePlayerOffline/Coop read
-        // (decompile: repeated inline per-key blocks, not derivable from any single
-        // enum/list on their side). Only consumed by the read side (M6)
         public static readonly string[] ItemStateKeyNames =
         {
             "ItemUses", "PetterItemUses", "UseRemainingPercentage", "CookedAmount", "Fuel",
             "Color", "Scale", "value__", "Used", "SpawnedBees", "ScreamTime", "FlareActive", "InstanceID",
         };
 
-        // Decompile line 891, verbatim - item ids for which ItemUses/UseRemainingPercentage
-        // are skipped when capturing a save (consumables that shouldn't remember partial-use
-        // state). Item names behind these ids aren't labeled in the decompile; treated as an
-        // opaque literal to copy verbatim, not a list to second-guess. Only consumed by the
-        // read side (M6)
+        // Item ids for which ItemUses/UseRemainingPercentage are skipped when capturing a
+        // save (consumables that shouldn't remember partial-use state).
         public static readonly int[] ExcludedItemIds = { 100, 58, 66, 2, 24, 104, 115, 17, 63, 64 };
 
-        // ItemInstanceData's own private dictionary field (decompile line 893)
         private static readonly FieldInfo IidDataField =
             typeof(ItemInstanceData).GetField("data", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         /// <summary>
-        /// Reads a live item's "extra stats" (CookedAmount, Fuel, Color, ...) in exactly
-        /// the shape the checkpoint mod's own save schema uses: key name -> (runtime type
-        /// name, numeric value). Used by <see cref="BackpackSaveMitigation"/> to build a
-        /// phantom backpack save entry that round-trips through either save/load path the
-        /// same as a normally-saved one would (Phase 8 M9: no longer needs the checkpoint
-        /// mod's own instance - same direct game-type reflection every other read/write
-        /// helper in this file already uses). Empty (never null) if unavailable
+        /// Reads a live item's "extra stats" (CookedAmount, Fuel, Color, ...) as key name ->
+        /// (runtime type name, numeric value). Used by <see cref="BackpackSaveMitigation"/>
+        /// to build a phantom backpack save entry. Empty (never null) if unavailable.
         /// </summary>
         public static Dictionary<string, OwnItemStateEntry> ReadItemStateValues(ItemInstanceData data, ushort itemId)
         {
@@ -79,7 +58,6 @@ namespace PEAKQuickResume
             return result;
         }
 
-        /// <summary>Mirrors TryGetEntryObject exactly (decompile 3258-3278)</summary>
         public static bool TryGetEntryObject(ItemInstanceData inst, DataEntryKey key, out object entryObj)
         {
             entryObj = null;
@@ -93,7 +71,6 @@ namespace PEAKQuickResume
             return entryObj != null;
         }
 
-        /// <summary>Mirrors TryReadEntryNumeric exactly (decompile 3280-3317)</summary>
         public static bool TryReadEntryNumeric(object entryObj, out float value)
         {
             value = 0f;
@@ -121,7 +98,6 @@ namespace PEAKQuickResume
             return false;
         }
 
-        /// <summary>Mirrors TrySetOrCreateEntry exactly (decompile 3319-3367)</summary>
         public static bool TrySetOrCreateEntry(ItemInstanceData inst, DataEntryKey key, string entryTypeName, float value, ManualLogSource log = null)
         {
             if (inst == null) return false;
@@ -150,7 +126,6 @@ namespace PEAKQuickResume
             return TryWriteEntryNumeric(entryObj, value);
         }
 
-        /// <summary>Mirrors TryConvertToFloat exactly (decompile 3369-3415)</summary>
         public static bool TryConvertToFloat(object v, out float value)
         {
             value = 0f;
@@ -172,7 +147,6 @@ namespace PEAKQuickResume
             catch { return false; }
         }
 
-        /// <summary>Mirrors TryGetKey exactly (decompile 3417-3442)</summary>
         public static bool TryGetKey(string name, out DataEntryKey key)
         {
             try
@@ -195,7 +169,6 @@ namespace PEAKQuickResume
             }
         }
 
-        /// <summary>Mirrors TryWriteEntryNumeric exactly (decompile 3444-3480)</summary>
         public static bool TryWriteEntryNumeric(object entryObj, float value)
         {
             if (entryObj == null) return false;

@@ -6,18 +6,10 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Our own copy of the checkpoint mod's temporary fall/lava-damage immunity
-    /// window used during a teleport (decompile 184-224, activated via
-    /// <c>RPC_RequestFalldamageProtection</c> -> <c>ActivateFallDamageProtection</c>,
-    /// lines 528-536, 956-959): three Harmony prefixes on vanilla types
-    /// (<c>CharacterMovement.CheckFallDamage</c>, <c>Lava.HitPlayer</c>, <c>Lava.Heat</c>)
-    /// that short-circuit while <see cref="Until"/> hasn't elapsed yet
-    ///
-    /// Ported as our own copy (a distinct static field, not reflecting into the
-    /// checkpoint mod's own <c>NoFallDamageUntil</c>) because it's real per-load
-    /// protective behavior <c>OwnTeleportSequence</c> needs to arm itself, not
-    /// something we can leave the checkpoint mod's instance to provide once we stop
-    /// calling into its RPC for our own restore path
+    /// Temporary fall/lava-damage immunity window during a teleport: three Harmony
+    /// prefixes on vanilla types that short-circuit while the timer hasn't elapsed.
+    /// Uses our own static field rather than the checkpoint mod's, since this needs
+    /// to be armed directly by <c>OwnTeleportSequence</c>.
     /// </summary>
     public static class OwnFallDamageProtection
     {

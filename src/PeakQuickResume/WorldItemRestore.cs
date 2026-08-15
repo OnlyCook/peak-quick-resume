@@ -8,56 +8,31 @@ using UnityEngine;
 namespace PEAKQuickResume
 {
     /// <summary>
-    /// Native save/restore for whatever's just lying free within 30m of the campfire -
-    /// backpacks (natural spawns or player drops), berries still sitting where they fell
-    /// off a bush, coconuts, campfire hotdogs/marshmallows, anything a player threw or
-    /// dropped nearby. Third of the "item/object restore around the campfire" mechanics,
-    /// and the most general one: unlike AncientStatueRestore/LuggageRestore, this isn't
-    /// tied to a specific container type - it's every loose <c>Item</c> in range
+    /// Native save/restore for whatever's lying free within 30m of the campfire (backpacks,
+    /// berries, coconuts, campfire food, anything dropped nearby) - every loose <c>Item</c>
+    /// in range, unlike the container-specific AncientStatueRestore/LuggageRestore.
     ///
-    /// Capture records each item's own observed position/rotation, same reasoning as
-    /// OwnSavedPositionedItem (items settle wherever gravity/jostling left them, not
-    /// necessarily anywhere meaningful to reconstruct after the fact). Restore always
-    /// respawns them frozen in place (SetKinematicRPC) rather than as live physics
-    /// objects - a deliberate simplification (maintainer's own call): no velocity/
-    /// trajectory is ever saved, so an item mid-flight when the campfire lit just stays
-    /// floating exactly where it was on reload. Acceptable; robustness (never corrupting
-    /// a save) matters far more here than a perfectly re-simulated throw
+    /// Restore always respawns items frozen in place (SetKinematicRPC), never as live
+    /// physics: no velocity/trajectory is saved, so robustness matters more than a
+    /// perfectly re-simulated throw.
     ///
-    /// Two things this class must NOT double-handle, both threaded through explicitly:
-    ///  - Whatever AncientStatueRestore/LuggageRestore already captured as a container's
-    ///    OWN held item(s) - <see cref="Capture"/> takes the same shared "claimed" set
-    ///    those two add to (see OwnSaveCapture's call order), so an item already counted
-    ///    as "the statue's held item" or "in this luggage box" is never ALSO saved here
-    ///    as a generic loose item (which would restore it twice)
-    ///  - A dropped backpack BackpackSaveMitigation is already queued to restore
-    ///    (equipped) onto its owner - see <see cref="BackpackSaveMitigation.GetPendingBackpackViewIds"/>.
-    ///    Without this exclusion, that same physical backpack would come back BOTH
-    ///    equipped on the player (that mitigation's job) AND dropped on the ground again
-    ///    (this class's job) - the exact footgun the maintainer asked to avoid
-    ///    reintroducing while keeping the existing mitigation as-is
+    /// Must not double-handle: items already claimed by AncientStatueRestore/LuggageRestore
+    /// (via the shared "claimed" set), or a dropped backpack BackpackSaveMitigation is
+    /// already queued to restore equipped onto its owner (would otherwise duplicate it).
     ///
-    /// Host-only throughout (world state, not per-player). Every step is wrapped and
-    /// non-fatal: this class never touches disk, so a failure here can only mean items
-    /// restore wrong (or not at all), never a corrupted save
+    /// Host-only. Every step is wrapped and non-fatal: this class never touches disk, so a
+    /// failure here can only mean items restore wrong, never a corrupted save.
     /// </summary>
     public static class WorldItemRestore
     {
         private const float SearchRadius = 30f;
 
-        // Hard cap, not a tuning knob - a campfire surrounded by an unusually large
-        // pile of loot (or a buggy/adversarial save file) shouldn't be able to make a
-        // load spawn an unbounded number of items. Applied to what we SAVE, not to the
-        // delete pass below (that always clears everything in range regardless, so a
-        // capped save doesn't leave naturally-regenerated leftovers behind uncleared)
+        // Hard cap, not a tuning knob: an unbounded pile of loot (or an adversarial save
+        // file) shouldn't be able to make a load spawn unlimited items. Applied to what we
+        // save, not the delete pass, which always clears everything in range regardless.
         private const int MaxItems = 50;
 
-        /// <summary>
-        /// Called from OwnSaveCapture right before writing OwnSaveData, AFTER
-        /// AncientStatueRestore.Capture and LuggageRestore.Capture have added their own
-        /// finds to <paramref name="claimed"/> - see class remarks for why sharing that
-        /// set matters
-        /// </summary>
+        /// <summary>Called from OwnSaveCapture after AncientStatueRestore/LuggageRestore have added their finds to <paramref name="claimed"/>.</summary>
         public static void Capture(Vector3 fallbackPos, HashSet<Item> claimed, ManualLogSource log, out List<OwnSavedPositionedItem> items)
         {
             items = new List<OwnSavedPositionedItem>();
@@ -97,8 +72,7 @@ namespace PEAKQuickResume
                     foreach (var kv in OwnItemStateIO.ReadItemStateValues(item.data, item.itemID))
                         positioned.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
 
-                    // A jetpack with no Fuel entry restores as a FULL tank unless the value
-                    // is written explicitly - see BackpackTypeCompat.EnsureFuelCaptured
+                    // A jetpack with no Fuel entry restores as a full tank unless written explicitly.
                     BackpackTypeCompat.EnsureFuelCaptured(item, item.data, positioned.values, log);
 
                     if (item is Backpack backpack)
@@ -121,17 +95,11 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Called once per load (host-only, world state), BEFORE AncientStatueRestore.Restore
-        /// and LuggageRestore.Restore in OwnTeleportSequence - this class's own delete
-        /// pass clears every loose item within range unconditionally, so it has to run
-        /// FIRST, before those two place anything, or it would immediately destroy what
-        /// they just restored. A no-op for saves predating this feature (data.worldItemStates
-        /// is null, not just empty - see remarks on that field in OwnSaveData)
-        ///
-        /// v2.0.0: split into two independently-toggleable categories (restore-grounded-items,
-        /// restore-grounded-backpacks). A category that's disabled is skipped on BOTH sides
-        /// (neither cleared nor restored) - so turning off backpack restore leaves whatever
-        /// naturally spawned there alone, rather than deleting it with nothing put back
+        /// Called once per load, host-only, BEFORE AncientStatueRestore.Restore and
+        /// LuggageRestore.Restore: this class's delete pass clears every loose item in range
+        /// unconditionally, so it must run first or it would destroy what those just placed.
+        /// No-op for saves predating this feature. Each of the two categories (items,
+        /// backpacks) is independently toggleable and skipped on both sides when disabled.
         /// </summary>
         public static void Restore(OwnSaveData data, Vector3 fallbackPos, PluginConfig cfg, ManualLogSource log)
         {
@@ -151,11 +119,7 @@ namespace PEAKQuickResume
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
 
-                // Clear out whatever naturally (re)spawned here on this fresh map
-                // regeneration - berries, coconuts, campfire food, naturally-placed
-                // backpacks, anything left behind - so restoring our own saved items
-                // below doesn't end up duplicating them. Only within whichever
-                // category(ies) are enabled - see class remarks
+                // Clear whatever naturally (re)spawned here so restoring our saved items doesn't duplicate it.
                 List<Item> stale = CampfireAreaHelpers.FindFreeItemsWithin(searchCenter, SearchRadius, includeBackpacks: true);
                 int destroyed = 0;
                 foreach (Item item in stale)
@@ -195,17 +159,13 @@ namespace PEAKQuickResume
                         continue;
                     }
 
-                    // Always frozen in place, never a live physics object - see class
-                    // remarks (no velocity/trajectory is ever saved, by design)
+                    // Always frozen in place, never a live physics object; no velocity/trajectory is ever saved.
                     if (spawned.TryGetComponent<PhotonView>(out PhotonView view))
                         view.RPC("SetKinematicRPC", RpcTarget.AllBuffered, true, spawnPos, spawnRot);
 
-                    // A dropped backpack's contents have to land in the SAME
-                    // ItemInstanceData push as its own values (both go out in one
-                    // SetItemInstanceDataRPC) - populating BackpackData onto the spawned
-                    // item's live .data separately, after the fact, would race the RPC
-                    // that assigns .data in the first place (see PushItemInstanceData)
-                    // and get silently discarded when it lands
+                    // A dropped backpack's contents must land in the SAME ItemInstanceData push
+                    // as its own values; populating BackpackData after the fact would race
+                    // PushItemInstanceData's RPC and get silently discarded.
                     if ((saved.values != null && saved.values.Count > 0) || (saved.backpackContents != null && saved.backpackContents.Count > 0))
                     {
                         ItemInstanceData instanceData = CampfireAreaHelpers.BuildItemInstanceData(saved.values, log);
