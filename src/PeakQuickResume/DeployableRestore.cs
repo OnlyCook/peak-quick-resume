@@ -50,13 +50,14 @@ namespace PEAKQuickResume
             try
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
-                List<PhotonView> found = FindPlayerPlaced(prefabNameNeedle, searchCenter);
+                float radius = NadirSearchRadius.ForCurrentSegment(SearchRadius);
+                List<PhotonView> found = FindPlayerPlaced(prefabNameNeedle, searchCenter, radius);
 
                 foreach (PhotonView pv in found)
                 {
                     if (states.Count >= MaxPerType)
                     {
-                        log?.LogWarning($"DeployableRestore.Capture({label}): hit the {MaxPerType}-item cap within {SearchRadius}m of {searchCenter}, stopping early.");
+                        log?.LogWarning($"DeployableRestore.Capture({label}): hit the {MaxPerType}-item cap within {radius}m of {searchCenter}, stopping early.");
                         break;
                     }
 
@@ -68,7 +69,7 @@ namespace PEAKQuickResume
                     });
                 }
 
-                log.Trace($"DeployableRestore.Capture({label}): found {found.Count} player-placed within {SearchRadius}m of {searchCenter}, saved {states.Count}.");
+                log.Trace($"DeployableRestore.Capture({label}): found {found.Count} player-placed within {radius}m of {searchCenter}, saved {states.Count}.");
             }
             catch (Exception e)
             {
@@ -113,7 +114,7 @@ namespace PEAKQuickResume
             }
         }
 
-        internal static List<PhotonView> FindPlayerPlaced(string nameNeedle, Vector3 center)
+        internal static List<PhotonView> FindPlayerPlaced(string nameNeedle, Vector3 center, float radius)
         {
             var result = new List<PhotonView>();
             foreach (PhotonView pv in UnityEngine.Object.FindObjectsByType<PhotonView>(FindObjectsSortMode.None))
@@ -125,7 +126,7 @@ namespace PEAKQuickResume
                 try { isRoomView = pv.IsRoomView; } catch { continue; }
                 if (isRoomView || pv.CreatorActorNr <= 0) continue;
 
-                if (Vector3.Distance(pv.transform.position, center) <= SearchRadius)
+                if (Vector3.Distance(pv.transform.position, center) <= radius)
                     result.Add(pv);
             }
             return result;

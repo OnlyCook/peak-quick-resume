@@ -32,9 +32,36 @@ namespace PEAKQuickResume
                     if (d <= CampfireSearchRadius && d < best) { best = d; nearest = c; }
                 }
                 if (nearest != null) return nearest.transform.position;
+
+                if (NadirSearchRadius.CurrentlyInNadir())
+                {
+                    Vector3 pillar = ResolveNearestSoulPillarPos(fallbackPos);
+                    if (pillar != fallbackPos) return pillar;
+                }
             }
             catch { /* fall through to the fallback below */ }
             return fallbackPos;
+        }
+
+        /// <summary>
+        /// Nadir's stand-in for a campfire: the scoutmaster's soul pillar, which is the point
+        /// a Nadir checkpoint is taken at and the anchor everything in that biome is measured
+        /// from. Resolving it here (rather than leaving the caller on the saving player's own
+        /// position) means capture and restore centre on the exact same fixed point, instead of
+        /// on wherever the player happened to be standing at the time. Returns
+        /// <paramref name="fallbackPos"/> unchanged outside Nadir, or if no pillar is in range.
+        /// </summary>
+        private static Vector3 ResolveNearestSoulPillarPos(Vector3 fallbackPos)
+        {
+            Peak.ScoutmasterSoulPillar nearest = null;
+            float best = float.MaxValue;
+            foreach (Peak.ScoutmasterSoulPillar p in UnityEngine.Object.FindObjectsByType<Peak.ScoutmasterSoulPillar>(FindObjectsSortMode.None))
+            {
+                if (p == null) continue;
+                float d = Vector3.Distance(p.transform.position, fallbackPos);
+                if (d <= NadirSearchRadius.Radius && d < best) { best = d; nearest = p; }
+            }
+            return nearest != null ? nearest.transform.position : fallbackPos;
         }
 
         /// <summary>

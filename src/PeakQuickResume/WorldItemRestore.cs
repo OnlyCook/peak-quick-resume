@@ -39,16 +39,17 @@ namespace PEAKQuickResume
             try
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
+                float radius = NadirSearchRadius.ForCurrentSegment(SearchRadius);
                 HashSet<int> pendingBackpackViewIds = BackpackSaveMitigation.GetPendingBackpackViewIds();
 
-                List<Item> candidates = CampfireAreaHelpers.FindFreeItemsWithin(searchCenter, SearchRadius, includeBackpacks: true, exclude: claimed);
+                List<Item> candidates = CampfireAreaHelpers.FindFreeItemsWithin(searchCenter, radius, includeBackpacks: true, exclude: claimed);
 
                 int skippedPendingBackpacks = 0;
                 foreach (Item item in candidates)
                 {
                     if (items.Count >= MaxItems)
                     {
-                        log?.LogWarning($"WorldItemRestore.Capture: hit the {MaxItems}-item cap within {SearchRadius}m of {searchCenter}, stopping early.");
+                        log?.LogWarning($"WorldItemRestore.Capture: hit the {MaxItems}-item cap within {radius}m of {searchCenter}, stopping early.");
                         break;
                     }
 
@@ -85,7 +86,7 @@ namespace PEAKQuickResume
                     claimed.Add(item);
                 }
 
-                log.Trace($"WorldItemRestore.Capture: found {candidates.Count} candidate(s) within {SearchRadius}m of {searchCenter}, "
+                log.Trace($"WorldItemRestore.Capture: found {candidates.Count} candidate(s) within {radius}m of {searchCenter}, "
                     + $"saved {items.Count} (skipped {skippedPendingBackpacks} pending backpack-mitigation restore(s)).");
             }
             catch (Exception e)
@@ -118,9 +119,10 @@ namespace PEAKQuickResume
             try
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
+                float radius = NadirSearchRadius.ForSavedSegment(SearchRadius, data);
 
                 // Clear whatever naturally (re)spawned here so restoring our saved items doesn't duplicate it.
-                List<Item> stale = CampfireAreaHelpers.FindFreeItemsWithin(searchCenter, SearchRadius, includeBackpacks: true);
+                List<Item> stale = CampfireAreaHelpers.FindFreeItemsWithin(searchCenter, radius, includeBackpacks: true);
                 int destroyed = 0;
                 foreach (Item item in stale)
                 {
@@ -138,7 +140,7 @@ namespace PEAKQuickResume
                         log?.LogWarning($"WorldItemRestore: failed to clear stale item '{item.name}' (non-fatal): {e.Message}");
                     }
                 }
-                log.Trace($"WorldItemRestore: cleared {destroyed} naturally-spawned item(s) within {SearchRadius}m of {searchCenter}.");
+                log.Trace($"WorldItemRestore: cleared {destroyed} naturally-spawned item(s) within {radius}m of {searchCenter}.");
                 int restored = 0;
                 foreach (OwnSavedPositionedItem saved in data.worldItemStates)
                 {
@@ -176,7 +178,7 @@ namespace PEAKQuickResume
 
                     restored++;
                 }
-                log.Trace($"WorldItemRestore: restored {restored}/{data.worldItemStates.Count} saved item(s) within {SearchRadius}m of {searchCenter}.");
+                log.Trace($"WorldItemRestore: restored {restored}/{data.worldItemStates.Count} saved item(s) within {radius}m of {searchCenter}.");
             }
             catch (Exception e)
             {

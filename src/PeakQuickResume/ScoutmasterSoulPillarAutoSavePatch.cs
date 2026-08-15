@@ -71,6 +71,20 @@ namespace PEAKQuickResume
         private static OwnNetwork _network;
         private static ManualLogSource _log;
         private static FieldInfo _brokenField;
+        private static float _suppressUntil = -1f;
+
+        /// <summary>
+        /// Called by <see cref="OwnTeleportSequence"/> immediately before it breaks the pillar
+        /// itself as part of restoring a Nadir checkpoint. Without this the restore's own break
+        /// would come straight back through this postfix and write a fresh save mid-load.
+        /// A time window rather than a flag so a delivery hiccup can't leave it stuck on; the
+        /// break is sent to RpcTarget.All, which PUN runs locally on the sender synchronously,
+        /// so the window only ever has to cover the send itself.
+        /// </summary>
+        internal static void SuppressNextBreak(float seconds) => _suppressUntil = UnityEngine.Time.time + seconds;
+
+        /// <summary>True if a pillar break happening right now is one we triggered ourselves.</summary>
+        internal static bool BreakIsSuppressed => _suppressUntil > UnityEngine.Time.time;
 
         private static bool ReadBroken(ScoutmasterSoulPillar pillar)
         {
@@ -96,6 +110,15 @@ namespace PEAKQuickResume
             {
                 // 1 = "a player started holding E", 2 = "they cancelled". Only 0 breaks the pillar.
                 if (type != 0) return;
+
+                // Our own pre-commune during a Nadir restore. Checked before the cooldowns are
+                // armed so a suppressed break leaves no trace at all.
+                if (BreakIsSuppressed)
+                {
+                    _log?.LogInfo("ScoutmasterSoulPillarAutoSavePatch: pillar broken by the restore's own "
+                        + "pre-commune, not by a player - no save written.");
+                    return;
+                }
 
                 // Already broken before this call, so this is a duplicate RPC (two players
                 // finishing the hold together) - vanilla no-oped it and so do we.

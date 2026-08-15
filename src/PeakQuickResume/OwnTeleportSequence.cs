@@ -244,6 +244,14 @@ namespace PEAKQuickResume
             // JumpToSegment has no equivalent parameter to SetSegmentOnSpawn's own segment sync.
             if (!offline) SyncLastRevivedSegment(finalSegment);
 
+            // Nadir's checkpoint is taken by communing with the scoutmaster's soul, so a save
+            // can only exist in a world where that already happened - re-run it here to put the
+            // world back the way the save found it. Fired this early, right after the jump, so
+            // the ~6s break cutscene plays out behind the loading screen rather than in the
+            // player's face after the reveal. See PreCommuneWithScoutmasterSoul.
+            if (finalSegment == Segment.Void && RunLauncher.IsHost)
+                PreCommuneWithScoutmasterSoul(savedPos);
+
             // Solo-only relight fix, folded in here - see class remarks
             if (offline)
             {
@@ -610,6 +618,107 @@ namespace PEAKQuickResume
                 ThornsAndTicksRestore.ClearThornsSilently(character, _log);
                 character.refs.afflictions.ClearAllAfflictions();
                 character.data.fallSeconds = 0f;
+            }
+        }
+
+        /// <summary>
+        /// Replays the commune on load: breaks the soul pillar the checkpoint was taken at, via
+        /// the same RPC a player's own 2s hold sends, so the restored world matches the saved
+        /// one - invisible walls down, ghost scoutmaster orbiting, rising souls under way.
+        ///
+        /// It also closes an exploit. Leaving the pillar intact would let anyone hand out
+        /// Nadir's story beat to a friend brought along on a loaded save, over and over, with
+        /// none of the climb. Breaking it up front means there is nothing left to re-commune
+        /// with. (Nothing on this path throws an achievement - checked: the break only fires
+        /// GlobalEvents.TriggerSoulFreed, whose only listeners are the invisible walls,
+        /// VoidBiome's soul-state field and the rising-souls hazard. Nadir's two badges come
+        /// from arriving in the biome and from winning the run, neither of which this touches -
+        /// so there is no unlock to skip here.)
+        ///
+        /// Host-only. Vanilla sends this from whichever machine finished the hold, and the
+        /// receiving logic is identical on every machine, so the host standing in for the
+        /// original interactor changes nothing but who the ghost picks first.
+        /// </summary>
+        private void PreCommuneWithScoutmasterSoul(Vector3 anchorPos)
+        {
+            try
+            {
+                Character host = Character.localCharacter;
+                if (host == null || host.photonView == null)
+                {
+                    _log?.LogWarning("OwnTeleportSequence: no local character to stand in for the interactor, so "
+                        + "Nadir's soul pillar is left unbroken. The invisible walls stay up until somebody communes.");
+                    return;
+                }
+
+                // Nearest to the checkpoint's own position, which is where the save was taken and
+                // therefore which pillar was communed with. Breaking exactly one matches vanilla:
+                // the walls listen to a global event, so one is enough to drop all of them, and
+                // breaking several would spawn several ghosts.
+                Peak.ScoutmasterSoulPillar pillar = null;
+                float best = float.MaxValue;
+                foreach (Peak.ScoutmasterSoulPillar p in UnityEngine.Object.FindObjectsByType<Peak.ScoutmasterSoulPillar>(FindObjectsSortMode.None))
+                {
+                    if (p == null || p.photonView == null) continue;
+                    float d = Vector3.Distance(p.transform.position, anchorPos);
+                    if (d < best) { best = d; pillar = p; }
+                }
+
+                if (pillar == null)
+                {
+                    _log?.LogWarning("OwnTeleportSequence: this is a Nadir checkpoint but no active "
+                        + "ScoutmasterSoulPillar was found to pre-commune with. Loading anyway; the invisible walls "
+                        + "will stay up until somebody communes in-game.");
+                    return;
+                }
+
+                ScoutmasterSoulPillarAutoSavePatch.SuppressNextBreak(10f);
+                pillar.photonView.RPC("RPC_Break", RpcTarget.All, 0, host.photonView);
+                _log?.LogInfo($"OwnTeleportSequence: pre-communed with the soul pillar {best:F1}m from the "
+                    + "checkpoint, restoring Nadir to its post-commune state.");
+
+                StartCoroutine(EnsureSoulFreed());
+            }
+            catch (Exception e)
+            {
+                _log?.LogError($"OwnTeleportSequence: pre-communing with Nadir's soul pillar failed (non-fatal, "
+                    + $"the walls will stay up until somebody communes in-game): {e}");
+            }
+        }
+
+        /// <summary>
+        /// Failsafe for the one step of vanilla's break routine that can die on us. Only the
+        /// master client runs the ghost-spawn block, and it dereferences the interactor's
+        /// Character several seconds after the fact - if that reference went stale in between,
+        /// the coroutine throws there and never reaches TriggerSoulFreed, leaving the host's
+        /// invisible walls up while every client's have dropped. Nadir's walls are what gate the
+        /// way out, so that would strand the host. Fires the event locally if it never arrived.
+        ///
+        /// Both listeners it re-fires are idempotent (the wall setter no-ops when unchanged,
+        /// LavaRising.StartWaiting guards on its own timer), so a false positive costs nothing.
+        /// SoulFreedStatus is a static the game only resets in VoidBiome.Deactivate - i.e. on
+        /// winning via Nadir - so on a second Nadir load in the same session it can still read 1
+        /// from the previous one and this check quietly passes. That only ever means the
+        /// failsafe doesn't run; the real break above is what actually does the work.
+        /// </summary>
+        private IEnumerator EnsureSoulFreed()
+        {
+            // Comfortably past the routine's own ~6s of staged waits.
+            yield return new WaitForSeconds(12f);
+
+            if (Peak.VoidBiome.SoulFreedStatus >= 0) yield break;
+
+            try
+            {
+                _log?.LogWarning("OwnTeleportSequence: the pre-commune never reported the soul as freed, so the "
+                    + "game's own break routine must have been cut short. Firing the soul-freed event directly to "
+                    + "make sure Nadir's invisible walls come down.");
+                GlobalEvents.TriggerSoulFreed(0);
+                GlobalEvents.TriggerSoulFreed(1);
+            }
+            catch (Exception e)
+            {
+                _log?.LogError($"OwnTeleportSequence: the soul-freed failsafe threw (non-fatal): {e}");
             }
         }
 

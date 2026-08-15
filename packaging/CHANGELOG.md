@@ -1,8 +1,8 @@
 ## 2.3.0
 
-- **Nadir can be saved now.** There is no campfire down there, so communing with the scoutmaster's soul writes the checkpoint instead - it saves exactly like lighting a campfire anywhere else, and shows up as NADIR in the save picker. Loading it starts the run, waits for everyone, jumps into Nadir and puts every player back at the statue with their items.
-
-
+- **Nadir can be saved now.** Communing with the scoutmaster's soul saves instead.
+  - Nadir saves everything within 80m of the soul statue instead of the usual 30m.
+  - Loading a Nadir save communes with the statue for you, so the barrier is already down and the scoutmaster's ghost is already following you.
 
 ## 2.2.2
 

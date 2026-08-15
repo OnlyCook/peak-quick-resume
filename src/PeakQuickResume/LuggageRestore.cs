@@ -40,10 +40,11 @@ namespace PEAKQuickResume
             try
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
-                List<Luggage> boxes = FindLuggageNear(searchCenter);
+                float radius = NadirSearchRadius.ForCurrentSegment(LuggageSearchRadius);
+                List<Luggage> boxes = FindLuggageNear(searchCenter, radius);
                 if (boxes.Count == 0)
                 {
-                    log.Trace($"LuggageRestore.Capture: no luggage found within {LuggageSearchRadius}m of {searchCenter}.");
+                    log.Trace($"LuggageRestore.Capture: no luggage found within {radius}m of {searchCenter}.");
                     return;
                 }
 
@@ -100,10 +101,11 @@ namespace PEAKQuickResume
             try
             {
                 Vector3 searchCenter = CampfireAreaHelpers.ResolveNearestCampfirePos(fallbackPos);
-                List<Luggage> boxes = FindLuggageNear(searchCenter);
+                float radius = NadirSearchRadius.ForSavedSegment(LuggageSearchRadius, data);
+                List<Luggage> boxes = FindLuggageNear(searchCenter, radius);
                 if (boxes.Count == 0)
                 {
-                    log?.LogWarning($"LuggageRestore: no luggage found within {LuggageSearchRadius}m of {searchCenter}, nothing to restore.");
+                    log?.LogWarning($"LuggageRestore: no luggage found within {radius}m of {searchCenter}, nothing to restore.");
                     return;
                 }
 
@@ -169,11 +171,11 @@ namespace PEAKQuickResume
         }
 
         // Excludes RespawnChest (the Ancient Statue) even though it's a Luggage subclass.
-        private static List<Luggage> FindLuggageNear(Vector3 center)
+        private static List<Luggage> FindLuggageNear(Vector3 center, float radius)
         {
             return UnityEngine.Object.FindObjectsByType<Luggage>(FindObjectsSortMode.None)
                 .Where(box => box != null && !(box is RespawnChest)
-                    && Vector3.Distance(box.transform.position, center) <= LuggageSearchRadius)
+                    && Vector3.Distance(box.transform.position, center) <= radius)
                 .OrderBy(box => Vector3.Distance(box.transform.position, center))
                 .ToList();
         }
