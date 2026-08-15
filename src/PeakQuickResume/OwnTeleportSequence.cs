@@ -203,6 +203,27 @@ namespace PEAKQuickResume
             Vector3 spawnPos = savedPos;
             spawnPos.y += 5f;
 
+            // Nadir is the one segment that can be missing from an otherwise valid level scene:
+            // vanilla's jump does SetUpVoidSegment() (which only logs when VoidBiome.instance is
+            // null) and then immediately dereferences that same instance, so a scene without it
+            // leaves the segment un-activated while the warps below still fire. Landing everyone
+            // on the saved Nadir coordinates inside a biome that was never instantiated means
+            // falling through the world with nothing to stand on, so retarget to where the run
+            // actually spawned instead. Should be unreachable on stock PEAK 2.0.a+ - the Void
+            // biome is baked into every level scene - but the failure mode is bad enough to guard.
+            if (finalSegment == Segment.Void && Peak.VoidBiome.instance == null)
+            {
+                Vector3 fallback = Character.localCharacter != null ? Character.localCharacter.Center : savedPos;
+                _log?.LogError("OwnTeleportSequence: this checkpoint is in Nadir, but this level scene has no "
+                    + $"VoidBiome to jump into. Skipping the segment jump and restoring at {fallback} instead, so "
+                    + "nobody is dropped into an area that was never instantiated.");
+                savedPos = fallback;
+                spawnPos = fallback;
+                spawnPos.y += 5f;
+                finalSegment = mh != null ? mh.GetCurrentSegment() : Segment.Beach;
+                index = (int)finalSegment;
+            }
+
             // MapHandler.SetSegmentOnSpawn only teleports the caller's own seat and never syncs
             // segment/biome activation over the network, so it's correct for solo but leaves
             // coop clients stuck in the old segment. JumpToSegment RPCs every player and syncs
@@ -276,7 +297,38 @@ namespace PEAKQuickResume
             if (RunLauncher.IsHost && _entryPoints.LoadedSaveFileThisRound)
                 OwnWorldLootReset.DestroyLeftoverHeldItems(_log);
 
-            if ((int)finalSegment == 5) index--;
+            // MapHandler stores Peak and Nadir one slot below their raw enum ordinal - its own
+            // JumpToSegmentLogic applies the same "index-- when >= 5" fixup. Peak (5) shares the
+            // Kiln's segment (4); Nadir (6) is appended by SetUpVoidSegment as the 6th element (5).
+            if ((int)finalSegment >= 5) index--;
+
+            // Nadir only. Its slot does not exist until the jump above ran SetUpVoidSegment, so
+            // the resolve near the top of this method always came back null on a cold load and
+            // silently skipped Nadir's own item spawners below. Re-resolved here, where the
+            // array has actually grown. Deliberately not extended to Peak: that resolves to null
+            // today too, and pointing it at the Kiln's segment would start respawning Kiln loot
+            // on a Peak load - a behaviour change with nothing to do with this.
+            if (finalSegment == Segment.Void && mh != null
+                && index >= 0 && mh.segments != null && index < mh.segments.Length)
+            {
+                targetSegment = mh.segments[index];
+            }
+
+            // Coop reaches Nadir through MapHandler.JumpToSegment, which moves the fog origin
+            // itself (past the last one, so vanilla just switches the fog sphere off). The solo
+            // branch above uses SetSegmentOnSpawn, which never touches fog, and would otherwise
+            // leave the sphere growing from whichever biome the run started in. Not folded into
+            // the ResetFogAfterLoad calls further down: those are for the fogged biomes (0-4)
+            // and do considerably more than this.
+            if (offline && finalSegment == Segment.Void)
+            {
+                try { OrbFogHandler.Instance?.SetFogOrigin(index); }
+                catch (Exception e)
+                {
+                    _log?.LogWarning($"OwnTeleportSequence: switching the fog sphere off for Nadir failed "
+                        + $"(cosmetic only, continuing): {e.Message}");
+                }
+            }
 
             yield return new WaitForSeconds(stepWait);
             OwnWorldLootReset.ResetWorldLoot(_log);

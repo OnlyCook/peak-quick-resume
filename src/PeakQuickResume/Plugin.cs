@@ -114,6 +114,8 @@ namespace PEAKQuickResume
             TerrainRandomiserCompat.Apply(harmony, Logger);
 
             CampfireAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, _ownNetwork, Logger);
+            // Nadir's equivalent of lighting a campfire - the Void biome has none.
+            ScoutmasterSoulPillarAutoSavePatch.Apply(harmony, _cfg, _ownLoadEntryPoints, _ownNetwork, Logger);
             BackpackSaveMitigation.Apply(harmony, Logger);
 
             // Debug aid only, not patched in unless debug logging is on.

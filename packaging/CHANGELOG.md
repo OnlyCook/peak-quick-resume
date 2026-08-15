@@ -1,3 +1,9 @@
+## 2.3.0
+
+- **Nadir can be saved now.** There is no campfire down there, so communing with the scoutmaster's soul writes the checkpoint instead - it saves exactly like lighting a campfire anywhere else, and shows up as NADIR in the save picker. Loading it starts the run, waits for everyone, jumps into Nadir and puts every player back at the statue with their items.
+
+
+
 ## 2.2.2
 
 - Fixed the Strange Gem disappearing from the scout statue behind the peak when loading a save taken in The Citadel.
