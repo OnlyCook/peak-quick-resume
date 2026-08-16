@@ -250,7 +250,7 @@ namespace PEAKQuickResume
             // the ~6s break cutscene plays out behind the loading screen rather than in the
             // player's face after the reveal. See PreCommuneWithScoutmasterSoul.
             if (finalSegment == Segment.Void && RunLauncher.IsHost)
-                PreCommuneWithScoutmasterSoul(savedPos);
+                PreCommuneWithScoutmasterSoul(data, savedPos);
 
             // Solo-only relight fix, folded in here - see class remarks
             if (offline)
@@ -635,18 +635,18 @@ namespace PEAKQuickResume
         /// from arriving in the biome and from winning the run, neither of which this touches -
         /// so there is no unlock to skip here.)
         ///
-        /// Host-only. Vanilla sends this from whichever machine finished the hold, and the
-        /// receiving logic is identical on every machine, so the host standing in for the
-        /// original interactor changes nothing but who the ghost picks first.
+        /// Host-only, but sent as the saved interactor rather than as the host: vanilla hands
+        /// that view to ScoutmasterGhostOrbiter.SetOrbitCharacter, so it decides which player
+        /// the ghost circles. Everything else about the break is identical whoever sends it.
         /// </summary>
-        private void PreCommuneWithScoutmasterSoul(Vector3 anchorPos)
+        private void PreCommuneWithScoutmasterSoul(OwnSaveData data, Vector3 anchorPos)
         {
             try
             {
-                Character host = Character.localCharacter;
-                if (host == null || host.photonView == null)
+                Character interactor = NadirCommuner.ResolveSavedCommuner(data, _log);
+                if (interactor == null || interactor.photonView == null)
                 {
-                    _log?.LogWarning("OwnTeleportSequence: no local character to stand in for the interactor, so "
+                    _log?.LogWarning("OwnTeleportSequence: no character available to stand in for the interactor, so "
                         + "Nadir's soul pillar is left unbroken. The invisible walls stay up until somebody communes.");
                     return;
                 }
@@ -673,11 +673,16 @@ namespace PEAKQuickResume
                 }
 
                 ScoutmasterSoulPillarAutoSavePatch.SuppressNextBreak(10f);
-                pillar.photonView.RPC("RPC_Break", RpcTarget.All, 0, host.photonView);
+                pillar.photonView.RPC("RPC_Break", RpcTarget.All, 0, interactor.photonView);
                 _log?.LogInfo($"OwnTeleportSequence: pre-communed with the soul pillar {best:F1}m from the "
-                    + "checkpoint, restoring Nadir to its post-commune state.");
+                    + $"checkpoint as {interactor.characterName}, restoring Nadir to its post-commune state.");
 
                 StartCoroutine(EnsureSoulFreed());
+
+                // A second load can start while the previous hold is still inside its ceiling,
+                // and the older one would then release the field in the middle of this restore.
+                if (_risingFieldHold != null) StopCoroutine(_risingFieldHold);
+                _risingFieldHold = StartCoroutine(HoldRisingFieldUntilEveryoneHasControl());
             }
             catch (Exception e)
             {
@@ -720,6 +725,84 @@ namespace PEAKQuickResume
             {
                 _log?.LogError($"OwnTeleportSequence: the soul-freed failsafe threw (non-fatal): {e}");
             }
+        }
+
+        /// <summary>
+        /// Absolute ceiling on the rising-field hold, measured from the pre-commune, so a stuck
+        /// or disconnected client can't cost Nadir its one mechanic. Comfortably past the host's
+        /// own worst case (a 32s client-warp hold plus fades) and past ResumeOrchestrator's 60s
+        /// tail timeout for the same client-presentation wait.
+        /// </summary>
+        private const float RisingFieldHoldCeilingSeconds = 90f;
+
+        private Coroutine _risingFieldHold;
+
+        /// <summary>
+        /// Keeps Nadir's rising field parked from the pre-commune until every player can
+        /// actually run from it, then starts its clock. The field deals roughly half a status
+        /// point per second, so a player revealed into an already-risen one is dead in seconds
+        /// with no way to react.
+        ///
+        /// The release condition is "everyone has control", not "everyone is connected":
+        /// <c>IsRunning</c> covers the host (false at the end of the sequence, and on a throw
+        /// too, since RunSequenceWrapper resets it either way), and
+        /// <c>AllClientsPresentationDone</c> covers the clients, each of which RPCs that after
+        /// its own wake-up animation finishes. Backstopped by
+        /// <see cref="RisingFieldHoldCeilingSeconds"/>.
+        /// </summary>
+        private IEnumerator HoldRisingFieldUntilEveryoneHasControl()
+        {
+            LavaRising field = NadirRisingField.Find(_log);
+            if (field == null)
+            {
+                _log?.LogWarning("OwnTeleportSequence: no Void-biome rising field found to hold, so Nadir's hazard "
+                    + "clock starts from the pre-commune. Anyone still loading may be revealed into it.");
+                yield break;
+            }
+
+            NadirRisingField.Park(field);
+            NadirRisingField.BroadcastParked(field, _log);
+            _log?.LogInfo("OwnTeleportSequence: Nadir's rising field parked until every player has control.");
+
+            // Clients only report their presentation exit when the wake-up presentation is the
+            // thing they were running; with it off they never send it, so waiting on it would
+            // just burn the ceiling. Solo has nobody to wait for either way.
+            bool waitForClients = !PhotonNetwork.OfflineMode && _cfg.OwnWakeUpAnimationEnabled.Value;
+            OwnNetwork network = _entryPoints?.Network;
+
+            float deadline = Time.realtimeSinceStartup + RisingFieldHoldCeilingSeconds;
+            bool timedOut = false;
+
+            while (true)
+            {
+                if (Time.realtimeSinceStartup >= deadline) { timedOut = true; break; }
+
+                bool hostBusy = IsRunning;
+                bool clientsBusy = false;
+                if (!hostBusy && waitForClients && network != null)
+                {
+                    try { clientsBusy = !network.AllClientsPresentationDone(); }
+                    catch { clientsBusy = false; }
+                }
+                if (!hostBusy && !clientsBusy) break;
+
+                // Re-applied every frame rather than set once: the break routine's own
+                // TriggerSoulFreed(1) lands several seconds after we sent the RPC, and would
+                // otherwise start the clock right through the hold.
+                NadirRisingField.Park(field);
+                yield return null;
+            }
+
+            // One last park, so the frame we release from is always a clean zero.
+            NadirRisingField.Park(field);
+            NadirRisingField.Release(field, _log);
+
+            if (timedOut)
+                _log?.LogWarning($"OwnTeleportSequence: gave up holding Nadir's rising field after "
+                    + $"{RisingFieldHoldCeilingSeconds:F0}s - somebody never finished loading, or the restore was "
+                    + "cut short. Starting the hazard anyway rather than leaving the biome without its one mechanic.");
+            else
+                _log?.LogInfo("OwnTeleportSequence: everyone has control, Nadir's rising field released.");
         }
 
         private void TryCloseLingeringEndScreen()

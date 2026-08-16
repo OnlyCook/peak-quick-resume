@@ -86,6 +86,16 @@ namespace PEAKQuickResume
         /// <summary>True if a pillar break happening right now is one we triggered ourselves.</summary>
         internal static bool BreakIsSuppressed => _suppressUntil > UnityEngine.Time.time;
 
+        /// <summary>
+        /// The character behind the interactor's PhotonView. A null here only costs the
+        /// commune-specific anchoring, which NadirCommuner degrades back to the host for.
+        /// </summary>
+        private static Character ResolveInteractor(PhotonView view)
+        {
+            try { return view != null ? view.GetComponent<Character>() : null; }
+            catch { return null; }
+        }
+
         private static bool ReadBroken(ScoutmasterSoulPillar pillar)
         {
             if (_brokenField == null || pillar == null) return false;
@@ -104,7 +114,12 @@ namespace PEAKQuickResume
             __state = ReadBroken(__instance);
         }
 
-        private static void Postfix(ScoutmasterSoulPillar __instance, int type, bool __state)
+        /// <summary>
+        /// <paramref name="view"/> is the interacting character's PhotonView, as
+        /// Interact_CastFinished sent it - the player who actually communed, even though the
+        /// host is the machine writing the file. Null on the type 1/2 telegraph pings.
+        /// </summary>
+        private static void Postfix(ScoutmasterSoulPillar __instance, int type, PhotonView view, bool __state)
         {
             try
             {
@@ -139,14 +154,25 @@ namespace PEAKQuickResume
                 _log?.LogInfo("ScoutmasterSoulPillarAutoSavePatch: scoutmaster's soul freed -> Nadir autosave triggered.");
                 AchievementProgressIO.LogSnapshot("soul-freed", _log);
 
-                if (PhotonNetwork.OfflineMode)
+                // Anchors this save on whoever communed rather than on the host, and records
+                // them so the restore can hand the ghost back to the same player. Cleared
+                // straight afterwards: nothing outside this one save may see it.
+                NadirCommuner.ArmPending(ResolveInteractor(view), _log);
+                try
                 {
-                    OwnSaveCapture.SavePlayerOffline(_cfg, _log, _network?.MessageOverlay);
+                    if (PhotonNetwork.OfflineMode)
+                    {
+                        OwnSaveCapture.SavePlayerOffline(_cfg, _log, _network?.MessageOverlay);
+                    }
+                    else
+                    {
+                        _network?.RecentlyLitCampfireOthers();
+                        OwnSaveCapture.SavePlayerCoop(_cfg, _log, _network);
+                    }
                 }
-                else
+                finally
                 {
-                    _network?.RecentlyLitCampfireOthers();
-                    OwnSaveCapture.SavePlayerCoop(_cfg, _log, _network);
+                    NadirCommuner.ClearPending();
                 }
             }
             catch (Exception e)

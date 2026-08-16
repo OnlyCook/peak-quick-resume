@@ -92,6 +92,12 @@ namespace PEAKQuickResume
         // back. A player with no file in the loaded save event is always restored alive.
         public bool isDead;
 
+        // Nadir only: who communed with the scoutmaster's soul to write this checkpoint (see
+        // NadirCommuner). The restore matches on the user id; the name is for logs. Null on
+        // every other checkpoint and on pre-2.3.0 Nadir saves, which fall back to the host.
+        public string nadirCommunerUserId;
+        public string nadirCommunerName;
+
         // UnityEngine.Application.version at the moment this file was written (e.g.
         // "1.65.a"). Lets SaveArchive/SavePicker flag a save as possibly stale after a
         // game update rotates the map pool (see GameVersionCompat).

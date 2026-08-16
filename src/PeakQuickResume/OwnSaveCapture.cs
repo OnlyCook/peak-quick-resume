@@ -178,6 +178,11 @@ namespace PEAKQuickResume
                         data.worldItemStates = worldItemStates;
                         data.portableStoves = portableStoves;
                         data.scoutCannons = scoutCannons;
+
+                        // Null on every non-Nadir checkpoint, which the restore reads as
+                        // "the host stands in for the interactor".
+                        data.nadirCommunerUserId = NadirCommuner.PendingUserId;
+                        data.nadirCommunerName = NadirCommuner.PendingName;
                     }
 
                     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -207,9 +212,15 @@ namespace PEAKQuickResume
         /// toward a fixed off-map death position, so a checkpoint written while the host was
         /// dead would otherwise anchor the whole save 5km off the map. A dead host's position
         /// is therefore never used: falls back to any living player, then the checkpoint's own campfire.
+        ///
+        /// Nadir is the exception to "the host's own head": its checkpoint is a commune, which
+        /// has none of a campfire's gather-the-party requirement, so the anchor is the communing
+        /// player instead. See <see cref="NadirCommuner"/>.
         /// </summary>
         private static Vector3 ResolveWorldAnchor(Player[] allPlayers, ManualLogSource log)
         {
+            if (NadirCommuner.TryGetPendingAnchor(out Vector3 communerHead)) return communerHead;
+
             Character local = Character.localCharacter;
             if (local != null && !local.data.dead) return local.Head;
 
@@ -355,6 +366,9 @@ namespace PEAKQuickResume
                     achievementProgress = achievementProgress,
                     portableStoves = portableStoves,
                     scoutCannons = scoutCannons,
+                    // Solo resolves the interactor locally and never reads these back.
+                    nadirCommunerUserId = NadirCommuner.PendingUserId,
+                    nadirCommunerName = NadirCommuner.PendingName,
                     gameVersion = GameVersionCompat.Current,
                 };
 
