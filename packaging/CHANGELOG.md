@@ -9,6 +9,8 @@
 - The Petrify status effect is now being saved/restored. Thanks to Jeremiah for pointing this out!
 - All campfire moral boost buffs (bonus stamina, remove some petrify/injury) are now being added to each player's save to not lose those after loading it the next time.
 
+Known issue: in The Citadel biome there may be some flares floating in the sky (Ascent 3 or lower). I know about this but I cannot verify currently whether my fix will also definitely work in The Kiln, so for the next week or so until The Kiln makes its way into the regular map pool again this will persist.
+
 ## 2.2.2
 
 - Fixed the Strange Gem disappearing from the scout statue behind the peak when loading a save taken in The Citadel (or The Kiln). Thanks to SgtDuke for letting me know!
