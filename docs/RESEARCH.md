@@ -446,12 +446,22 @@ The exact same reasoning applies to `ScoutmasterSoulPillar`, and the fix is the 
    element, index 5) — so even a "just use the right index" fix needs to use `mapHandler`'s
    internal index, not `(int)Segment.Void`. Cleanest fix: special-case `Segment.Void` to
    return the literal string `"NADIR"` directly, skipping `progressPoints` entirely.
-   Confirmed `"NADIR"` is a real top-level localization key (used in
+   Confirmed `"NADIR"` is the real progress-point title (used in
    `MountainProgressHandler.GetRichPresenceState`'s `switch (p.title)`), and
    `SaveArchive.TryGetOfficialCampfireTitle` already has a documented fallback for exactly
    this case — an internal name not in `CampfireLocKeys` gets tried as a raw
    `LocalizedText` key — so once `campfireName` is written as `"NADIR"`, the F7 picker
    should display it correctly with **no SaveArchive changes needed**.
+
+   **[CORRECTED 2026-08-16]** That last inference was wrong, and the picker did show a bare
+   `NADIR` in every language. Unlike every other area title, `"NADIR"` is **not** a key in
+   the localization table — Nadir is filed under `"AREA_VOID"`, whose English value happens
+   to be `"NADIR"` (Polish `OTCHŁAŃ`, Portuguese `COVÃO`). Verified by grepping the runtime
+   `Localization/SerializedTermsData` JSON out of the live 2.1.a `resources.assets`;
+   `AREA_VOID` is also the only `AREA_*` key in the whole table. So the raw-key fallback
+   missed its `ContainsKey` guard and `CampfireLabel` fell back to the stored name. Fixed by
+   mapping `"NADIR" → "AREA_VOID"` in `SaveArchive.CampfireLocKeys`, which leaves the saved
+   `campfireName` alone and so needs no migration of existing saves.
 2. **`OwnTeleportSequence.RunSequence` resolves `targetSegment` too early for Void.** Line
    ~199-201 does `mh.segments[(int)finalSegment]` *before* calling
    `MapHandler.JumpToSegment(finalSegment)` a few lines later. On a cold load where Nadir

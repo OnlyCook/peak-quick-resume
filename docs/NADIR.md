@@ -1,15 +1,15 @@
 # Nadir save-point — implementation handoff
 
-**Status: feature complete. Passes 1-4 confirmed working in co-op in-game on 2026-08-16,
-host and client logs both clean, all committed. Pass 5 (rising-field hardening, from a
-field-report of the hazard never starting) is uncommitted and untested.**
+**Status: feature complete. Passes 1-5 committed; 1-4 confirmed working in co-op in-game on
+2026-08-16, host and client logs both clean. Pass 6 (localizing the picker's "NADIR" label)
+is uncommitted and unseen on screen.**
 
 This doc exists so a fresh session (or a different model) can pick this up without
 re-deriving the research. Read "Handoff: state of play" immediately below first, then
 `docs/RESEARCH.md`'s "Nadir biome" section for the code-reference-heavy background. The
 middle of this file is the original research the implementation was built from, kept as-is
-apart from two corrections marked **[CORRECTED]**; "What was actually implemented" at the
-bottom is the record of what actually shipped, in three passes.
+apart from three corrections marked **[CORRECTED]**; "What was actually implemented" at the
+bottom is the record of what actually shipped, in six passes.
 
 ## Handoff: state of play (as of 2026-08-16, end of session)
 
@@ -21,16 +21,14 @@ bottom is the record of what actually shipped, in three passes.
 | 2 | 80m capture radius anchored on the pillar, pre-commune on load | `fe27aa9` *increase save area in nadir to 80m; pre-commune with statue* |
 | 3 | Rising-field hold until everyone has control | `0debc4f` *...hold the rising field until everyone has control* |
 | 4 | Commune ownership: anchor the save on the communing player, restore the ghost to them | `0debc4f` *nadir: anchor saves on the player who communed...* |
-| 5 | Rising field: 20s ceiling on stragglers, arming made failure-proof, field tuning logged | **uncommitted** |
+| 5 | Rising field: 20s ceiling on stragglers, arming made failure-proof, field tuning logged | `207c92d` *nadir: guarantee the rising field gets armed and started* |
+| 6 | `"NADIR"` localized in the F7 picker (`"NADIR" → "AREA_VOID"`) | **uncommitted** |
 
-Uncommitted working tree (pass 5 only):
+Uncommitted working tree (pass 6 only):
 
-- `src/PeakQuickResume/OwnTeleportSequence.cs` (rewritten
-  `HoldRisingFieldUntilEveryoneHasControl`, new `ConfirmRisingFieldStarted`,
-  `RisingFieldClientGraceSeconds`/`RisingFieldStartConfirmSeconds`, and the hold's
-  `StartCoroutine` moved out of `PreCommuneWithScoutmasterSoul` into `RunSequence`)
-- `src/PeakQuickResume/NadirRisingField.cs` (`Describe`, `IsArmed`)
-- `packaging/CHANGELOG.md`, `docs/NADIR.md`
+- `src/PeakQuickResume/SaveArchive.cs` (the `CampfireLocKeys` entry)
+- `src/PeakQuickResume/AreaNameCompat.cs` (comment correction only)
+- `docs/NADIR.md`, `docs/RESEARCH.md`
 
 Builds clean (`dotnet build src/PeakQuickResume/PeakQuickResume.csproj`).
 
@@ -80,9 +78,8 @@ Builds clean (`dotnet build src/PeakQuickResume/PeakQuickResume.csproj`).
   never actually run.
 - The pass-4 "communer left the session" fallback in co-op (the equivalent legacy-save path
   through the same fallback did run, so only the user-id lookup miss is untested).
-- Whether the F7 picker actually renders "NADIR" localized (inferred from
-  `SaveArchive.TryGetOfficialCampfireTitle`'s raw-key fallback plus `"NADIR"` appearing as a
-  `LocalizedText` key in `MountainProgressHandler.GetRichPresenceState`, never seen on screen).
+- ~~Whether the F7 picker actually renders "NADIR" localized~~ — **answered 2026-08-16: it
+  did not, and is now fixed.** See "Sixth pass" at the bottom.
 
 ### Next session: what to do
 
@@ -306,6 +303,12 @@ These are the concrete, scoped code changes. All in `src/PeakQuickResume/`.
    written as `"NADIR"`, the F7 picker should display it correctly **with no
    `SaveArchive.cs` changes needed**. Worth a quick in-game sanity check regardless.
 
+   **[CORRECTED]** The second half of that is wrong. `"NADIR"` is a real *progress-point
+   title*, and `GetRichPresenceState` switches on that title, but it is **not** a key in the
+   localization table: the table files the area under `"AREA_VOID"`. So the raw-key fallback
+   missed and the picker rendered the untranslated internal name. Fixed by mapping
+   `"NADIR" → "AREA_VOID"` in `CampfireLocKeys` — see "Sixth pass".
+
 2. **`OwnTeleportSequence.RunSequence` resolves `targetSegment` too early for Void**
    (~line 199-201):
    ```csharp
@@ -504,8 +507,8 @@ campfire patch, so the Nadir save point behaves identically to every other one.
 
 `if (segment == Segment.Void) return "NADIR";` at the top, before the `progressPoints`
 lookup — gap #1. Both `OwnSaveCapture` call sites go through here, so neither needed
-touching, and `SaveArchive.TryGetOfficialCampfireTitle`'s raw-key fallback turns `"NADIR"`
-into the localized picker label with no change there either (as predicted above). Vanilla
+touching. (The claim that `SaveArchive.TryGetOfficialCampfireTitle`'s raw-key fallback would
+then localize the picker label for free turned out to be **wrong** — see "Sixth pass".) Vanilla
 avoids indexing `progressPoints` by the Void ordinal for the same reason — see
 `CharacterSpawner`'s reconnect path, which skips `DisplaySegmentTitleAfterDelay` outright
 when the current segment is `Void`.
@@ -826,6 +829,37 @@ from the earlier log; `travelTime` is 620s, an order of magnitude off the class 
 never one to reproduce. If something ever does lose the field, the log says which stage:
 `Describe` proves it was found, the re-arm warning fires if something is actively clearing
 it, and the confirm error reports `armed=`/`fogEnabled=` for anything else.
+
+### Sixth pass, 2026-08-16 — localizing "NADIR" in the F7 picker
+
+Reported from testing: the picker's area column shows a bare `NADIR` regardless of language.
+
+**Why.** Every other area's progress-point `title` doubles as its localization key
+(`"SHORE"`, `"THE KILN"`, …), which is what `AreaNameCompat`'s design rests on and what
+`SaveArchive.TryGetOfficialCampfireTitle`'s raw-key fallback exploits. Nadir is the
+exception. Verified against the live 2.1.a `resources.assets` — the runtime table is the
+`Localization/SerializedTermsData` JSON, so the keys are greppable in the file — the Nadir
+row is:
+
+```
+"AREA_VOID":["NADIR","NADIR","IL NADIR","NADIR","NADIR","NADIR","COVÃO","НАДИР","НАДИР",
+             "天底","地深冥淵","天底","나락","OTCHŁAŃ","YUKA",null]
+```
+
+There is no `"NADIR"` key anywhere in the table (`AREA_VOID` is also the only `AREA_*` key).
+So `TryGetOfficialCampfireTitle` fell through its `table.ContainsKey` guard, returned null,
+and `CampfireLabel` fell back to the raw stored name. In English that is indistinguishable
+from working, which is why it survived every test so far; in Polish it should have read
+`OTCHŁAŃ`.
+
+**The fix.** One entry, `{ "NADIR", "AREA_VOID" }`, in `SaveArchive.CampfireLocKeys` — the
+table that already exists for exactly this (the `Roots`/`Mesa`/`Volcano` overrides). Chosen
+over changing what `AreaNameCompat` writes, because `campfireName` is persisted: every save
+already on disk holds `"NADIR"`, and they all localize correctly now with no migration.
+`AreaNameCompat`'s comment, which asserted the title was the key, is corrected too.
+
+Untested in game, but the failing half is now a plain dictionary hit rather than an
+inference about the table's contents.
 
 ### What was deliberately *not* changed
 

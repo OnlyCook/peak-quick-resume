@@ -21,8 +21,9 @@ namespace PEAKQuickResume
             // relationship to a slot - it's either out of range or, on a longer map, some
             // unrelated area. Vanilla dodges the same problem by refusing to index
             // progressPoints at all while the current segment is Void (CharacterSpawner's
-            // reconnect path). "NADIR" is the progress point's own title, i.e. the literal
-            // localization key SaveArchive later resolves for the picker label.
+            // reconnect path). "NADIR" is the progress point's own title. Unlike every other
+            // area's title it is not itself a localization key - the table files Nadir under
+            // "AREA_VOID" - so SaveArchive.CampfireLocKeys maps it explicitly for the picker.
             if (segment == Segment.Void) return "NADIR";
 
             try

@@ -539,6 +539,13 @@ namespace PEAKQuickResume
             { "TheKiln", "THE KILN" },
             { "Volcano", "THE KILN" }, // alias, see comment above
             { "Peak", "PEAK" },
+            // Nadir is the one area whose progress-point title is not itself a localization
+            // key: the table has no "NADIR" row, it stores the area under "AREA_VOID"
+            // (English "NADIR", e.g. Polish "OTCHŁAŃ"). AreaNameCompat writes "NADIR" into
+            // campfireName because that is the progress point's title, so the mapping has to
+            // happen here or the raw-key fallback below misses and the picker shows the
+            // untranslated internal name.
+            { "NADIR", "AREA_VOID" },
         };
 
         // Saves written since AreaNameCompat store the progress-point title directly as the
