@@ -1,7 +1,8 @@
 # Nadir save-point — implementation handoff
 
-**Status: feature complete. All four passes confirmed working in co-op in-game on
-2026-08-16, host and client logs both clean. Passes 3 and 4 are still uncommitted.**
+**Status: feature complete. Passes 1-4 confirmed working in co-op in-game on 2026-08-16,
+host and client logs both clean, all committed. Pass 5 (rising-field hardening, from a
+field-report of the hazard never starting) is uncommitted and untested.**
 
 This doc exists so a fresh session (or a different model) can pick this up without
 re-deriving the research. Read "Handoff: state of play" immediately below first, then
@@ -18,25 +19,20 @@ bottom is the record of what actually shipped, in three passes.
 | --- | --- | --- |
 | 1 | Save hook, `"NADIR"` area name, `Segment.Void` index/`targetSegment` fixes, missing-`VoidBiome` guard | `6d798d9` *nadir save/load scaffold* |
 | 2 | 80m capture radius anchored on the pillar, pre-commune on load | `fe27aa9` *increase save area in nadir to 80m; pre-commune with statue* |
-| 3 | Rising-field hold until everyone has control | **uncommitted** |
-| 4 | Commune ownership: anchor the save on the communing player, restore the ghost to them | **uncommitted** |
+| 3 | Rising-field hold until everyone has control | `0debc4f` *...hold the rising field until everyone has control* |
+| 4 | Commune ownership: anchor the save on the communing player, restore the ghost to them | `0debc4f` *nadir: anchor saves on the player who communed...* |
+| 5 | Rising field: 20s ceiling on stragglers, arming made failure-proof, field tuning logged | **uncommitted** |
 
-Uncommitted working tree at handoff:
+Uncommitted working tree (pass 5 only):
 
-- `src/PeakQuickResume/NadirRisingField.cs` (new, untracked — pass 3)
-- `src/PeakQuickResume/NadirCommuner.cs` (new, untracked — pass 4)
-- `src/PeakQuickResume/OwnTeleportSequence.cs` (modified: `HoldRisingFieldUntilEveryoneHasControl`,
-  `_risingFieldHold`, `RisingFieldHoldCeilingSeconds` and the `StartCoroutine` call in
-  `PreCommuneWithScoutmasterSoul` from pass 3; `PreCommuneWithScoutmasterSoul` taking `data`
-  and sending the saved interactor's view from pass 4)
-- `src/PeakQuickResume/OwnSaveCapture.cs`, `OwnSaveData.cs`,
-  `ScoutmasterSoulPillarAutoSavePatch.cs` (modified — pass 4)
-- `packaging/CHANGELOG.md` (added bullets under 2.3.0)
-- `docs/NADIR.md` (this file, untracked)
+- `src/PeakQuickResume/OwnTeleportSequence.cs` (rewritten
+  `HoldRisingFieldUntilEveryoneHasControl`, new `ConfirmRisingFieldStarted`,
+  `RisingFieldClientGraceSeconds`/`RisingFieldStartConfirmSeconds`, and the hold's
+  `StartCoroutine` moved out of `PreCommuneWithScoutmasterSoul` into `RunSequence`)
+- `src/PeakQuickResume/NadirRisingField.cs` (`Describe`, `IsArmed`)
+- `packaging/CHANGELOG.md`, `docs/NADIR.md`
 
-Left uncommitted deliberately: the maintainer wants passes 3 and 4 verified in game first.
-Everything builds clean (`dotnet build src/PeakQuickResume/PeakQuickResume.csproj`), and
-passes 1 and 2 were confirmed working in both solo and co-op without either of them.
+Builds clean (`dotnet build src/PeakQuickResume/PeakQuickResume.csproj`).
 
 ### What has actually been verified in game
 
@@ -89,6 +85,13 @@ passes 1 and 2 were confirmed working in both solo and co-op without either of t
   `LocalizedText` key in `MountainProgressHandler.GetRichPresenceState`, never seen on screen).
 
 ### Next session: what to do
+
+1. Pass 5 was tested in co-op on 2026-08-16 across five loads (three on ascent 0, two on
+   Tenderfoot): the release fired on `everyone has control` every time, and no `arming it
+   again` line ever appeared. The `Ascents.fogEnabled` bail added afterwards is the only part
+   still untested — one Tenderfoot load should now log `this run has fog off ...` instead of
+   parking and then erroring 15s later.
+2. Everything below is the pre-pass-5 handoff and still applies.
 
 **Deploy before testing.** The deploy is opt-in
 (`dotnet build src/PeakQuickResume/PeakQuickResume.csproj -p:DeployToProfile=true`), and the
@@ -452,15 +455,10 @@ for the expanded version of it.
 
 ## Open items / genuinely unverified
 
-- **Nadir's real `initialWaitTime` and `travelTime` on the `VoidGhosts` `LavaRising`.**
-  Both are scene-serialized, so the decompile only shows the class defaults (`1f` and `60f`),
-  which are almost certainly not the shipped values. These decide how much grace the rising
-  field actually gives and therefore how much the pass-3 hold is worth. Cheapest way to find
-  out: log them once from the live instance after a Nadir jump, e.g. off
-  `NadirRisingField.Find(...)`. Also worth confirming `waitForEvent` is set on that instance
-  (the implementation deliberately doesn't depend on it, but it would confirm the mental
-  model) and which `Lava` subclass is on the moving object, which is the other thing the
-  decompile can't answer.
+- ~~**Nadir's real `initialWaitTime` and `travelTime` on the `VoidGhosts` `LavaRising`.**~~ —
+  **answered in game 2026-08-16** via `NadirRisingField.Describe`: `requiredSegment=Void`,
+  `waitForEvent=True`, `initialWaitTime=0.00s`, `travelTime=620.0s`. See "Fifth pass". Still
+  unanswered by either route: which `Lava` subclass is on the moving object.
 - Exact count and placement of `ScoutmasterSoulPillar` instances in the live level asset
   (attempted via UnityPy this session, stalled on cross-file `MonoScript` PPtr
   resolution — see `docs/RESEARCH.md`'s "Nadir biome" section for what was tried; a
@@ -730,6 +728,104 @@ drawn there still holds (there's no achievement anywhere on the break path, so p
 gives nothing away); it just isn't true that the orbit target sorts itself out. Hence this
 pass. The same mechanism is why a communer who dies later needs no handling: the master client
 re-picks on its own.
+
+### Fifth pass, 2026-08-16 — the field that never rose
+
+**Uncommitted, and untested.** `OwnTeleportSequence.HoldRisingFieldUntilEveryoneHasControl`
+rewritten, `ConfirmRisingFieldStarted` added, plus `NadirRisingField.Describe`/`IsArmed`.
+
+The report: two loads out of roughly ten came up in Nadir with the rising field never
+starting at all, and every occurrence had a co-op player without the mod installed. **The
+cause turned out to be Tenderfoot, not the mod — see the end of this section.** The
+hardening below was written before that was known, and is kept because the arming really was
+a single point of failure with no fallback.
+
+**What the log proves about the field's own timing.** From the four clean loads
+(`~/.config/r2modmanPlus-local/PEAK/profiles/Default/BepInEx/LogOutput.log`), vanilla's
+`Lava rising started.` line appears *during* the hold, several lines before our
+`rising field released`. Since `Park` zeroes `started` every frame, that message can only
+have been logged if the host's `Update` flipped `started` true in the very same frame
+something armed the field. Reading `Update` back, that requires
+`secondsWaitedToStart + Time.deltaTime > initialWaitTime` one frame after `StartWaiting`
+set it to `0.02f` — i.e. Nadir's `initialWaitTime` is **effectively zero**, not the class
+default of `1f`. So there is no grace period baked into the field: the moment it is armed,
+it climbs. That is most of the answer to the first "Open item", and the rest of it
+(`travelTime`, `waitForEvent`, `requiredSegment`) is now logged outright by
+`NadirRisingField.Describe`, once per hold.
+
+**Why "never" was reachable at all.** The field's only trigger in a restored run is the
+pre-commune, and pass 3 hung the entire guarantee off a single `StartWaiting` call at the
+end of one coroutine. Four ways that call could never happen, all of them permanent:
+
+- `PreCommuneWithScoutmasterSoul` returning early — no resolvable interactor, no
+  `ScoutmasterSoulPillar` found, or a throw anywhere in it — took the `StartCoroutine` for
+  the hold with it, since the call sat at the bottom of that same method.
+- `NadirRisingField.Find` coming back null on the first frame after the jump ended the hold
+  outright (`yield break`), leaving nothing to arm the field later.
+- Vanilla's `BreakTriggeredRoutine` dereferences the interactor's `Character` on the master
+  client ~4s in, and throws there if that reference went stale — the `EnsureSoulFreed`
+  failsafe covers the invisible walls, but `SoulFreedStatus` is a static the game only
+  resets on winning via Nadir, so on the second Nadir load of a session it still reads `1`
+  from the first and the failsafe quietly passes.
+- Nothing verified that `StartWaiting` had actually taken.
+
+None of those needs an unmodded client, and none of them is *proven* to be the one that
+fired; an unmodded client changes co-op timing enough to make a race like the second one
+more likely, which fits "twice in ten, always with one in the lobby", but that is inference.
+
+**What changed.**
+
+- The hold is started from `RunSequence` itself, right after the pre-commune call, so no
+  early return inside the pre-commune can skip it. An unbroken pillar is exactly the case
+  where nothing else will ever arm the field, so that is the case the guarantee must
+  survive.
+- The hold no longer gives up when the field isn't found yet — it re-resolves every frame
+  and parks whatever it has, and only logs an error if the field never turned up by the
+  time it releases.
+- **New release ceiling: `RisingFieldClientGraceSeconds` = 20s, measured from the moment the
+  host itself has control** (`IsRunning` going false), rather than the old flat 90s from the
+  pre-commune. The normal path is unchanged — everybody acks, the field releases
+  immediately — but a client that never reports in now costs at most 20 seconds. The 90s
+  absolute is kept as a backstop for the host's own sequence hanging, which is the one case
+  where releasing early would be wrong anyway (nobody has control then either).
+- `ConfirmRisingFieldStarted` watches the release for 15s and re-arms while the field reads
+  as neither started nor counting. A field that *is* counting but never starts is left
+  alone and reported instead: vanilla gates that transition on `Ascents.fogEnabled`, so it
+  means fog is off for the run and the game itself has switched the hazard off.
+
+**The actual cause, found the same day: Tenderfoot.** Everything above stands as hardening,
+but the reported failure was never a bug. `Describe`'s new log line caught it on the first
+test run: five loads, three on ascent 0 with `fogEnabled=True` that climbed normally, two on
+**Tenderfoot (`Ascent set to -1`)** with `fogEnabled=False` that armed (`armed=True`, so our
+`StartWaiting` took) and then refused to climb.
+
+```csharp
+public static bool fogEnabled {          // Ascents
+    get {
+        if (RunSettings.IsCustomRun) return RunSettings.GetValue(SETTINGTYPE.Fog) > 0;
+        return currentAscent >= 0;       // Tenderfoot is -1
+    }
+}
+```
+
+`LavaRising.Update` gates the `started = true` transition on that flag (and the auto-start
+branch too), so Tenderfoot switches off the whole rising-hazard family — Nadir's ghosts, the
+Caldera's lava and the gloom alike. Vanilla behaviour, nothing mod-side. The hold now checks
+`Ascents.fogEnabled` right after finding the field and bails with an explanatory info line
+rather than parking, releasing and then reporting a false error 15s later. The unmodded
+client in every failing attempt was a coincidence of how those runs happened to be set up.
+
+**The field's real serialized tuning**, from that same log line, closing the last open item:
+`requiredSegment=Void`, `waitForEvent=True`, `initialWaitTime=0.00s`, `travelTime=620.0s`.
+`waitForEvent=True` confirms the commune is genuinely the field's only trigger, which is what
+makes the arming guarantee above worth having; `initialWaitTime=0` matches what was derived
+from the earlier log; `travelTime` is 620s, an order of magnitude off the class default of
+`60f`.
+
+**Still open.** The hardening itself is untested against a real failure, since there was
+never one to reproduce. If something ever does lose the field, the log says which stage:
+`Describe` proves it was found, the re-arm warning fires if something is actively clearing
+it, and the confirm error reports `armed=`/`fogEnabled=` for anything else.
 
 ### What was deliberately *not* changed
 

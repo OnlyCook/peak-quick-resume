@@ -36,6 +36,27 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
+        /// Logs the field's scene-serialized tuning once per hold. These values cannot be read
+        /// from the decompile (they are set on the prefab), and they decide both how much grace
+        /// the hold is really worth and, when the field never rises, which of the game's own
+        /// gates swallowed it. See docs/NADIR.md, "Open items".
+        /// </summary>
+        public static void Describe(LavaRising field, ManualLogSource log)
+        {
+            if (field == null || log == null) return;
+            try
+            {
+                log.LogInfo($"NadirRisingField: found Nadir's rising field - requiredSegment={field.requiredSegment}, "
+                    + $"waitForEvent={field.waitForEvent}, initialWaitTime={field.initialWaitTime:F2}s, "
+                    + $"travelTime={field.travelTime:F1}s, fogEnabled={Ascents.fogEnabled}.");
+            }
+            catch (Exception e)
+            {
+                log.LogWarning($"NadirRisingField.Describe failed (non-fatal): {e.Message}");
+            }
+        }
+
+        /// <summary>
         /// Rewinds the field to its un-started state and holds it there. Meant to be called
         /// every frame, so nothing else (a stray sync, a second soul-freed event) can quietly
         /// start the clock mid-hold. The field re-lerps its height from <c>timeTraveled</c>
@@ -70,6 +91,13 @@ namespace PEAKQuickResume
                     + $"parked state up on the host's next 15s sync instead): {e.Message}");
             }
         }
+
+        /// <summary>
+        /// True once the field is either climbing or counting down to it. The host's Update is
+        /// what turns the second into the first, so this is what "the release took" looks like.
+        /// </summary>
+        public static bool IsArmed(LavaRising field) =>
+            field != null && (field.started || field.secondsWaitedToStart > 0f);
 
         /// <summary>
         /// Starts the clock, exactly the way <c>TestSoul</c> would have. The host's own Update

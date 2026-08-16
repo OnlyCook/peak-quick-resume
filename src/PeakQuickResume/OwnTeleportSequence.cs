@@ -250,7 +250,18 @@ namespace PEAKQuickResume
             // the ~6s break cutscene plays out behind the loading screen rather than in the
             // player's face after the reveal. See PreCommuneWithScoutmasterSoul.
             if (finalSegment == Segment.Void && RunLauncher.IsHost)
+            {
                 PreCommuneWithScoutmasterSoul(data, savedPos);
+
+                // Started here rather than from inside the pre-commune: every early return in
+                // there (no interactor, no pillar, a throw) used to take the rising field with
+                // it, and an unbroken pillar is precisely the case where nothing else will ever
+                // arm it - the commune is the field's only trigger. A second load can also start
+                // while the previous hold is still inside its ceiling, and the older one would
+                // then release the field in the middle of this restore.
+                if (_risingFieldHold != null) StopCoroutine(_risingFieldHold);
+                _risingFieldHold = StartCoroutine(HoldRisingFieldUntilEveryoneHasControl());
+            }
 
             // Solo-only relight fix, folded in here - see class remarks
             if (offline)
@@ -678,11 +689,6 @@ namespace PEAKQuickResume
                     + $"checkpoint as {interactor.characterName}, restoring Nadir to its post-commune state.");
 
                 StartCoroutine(EnsureSoulFreed());
-
-                // A second load can start while the previous hold is still inside its ceiling,
-                // and the older one would then release the field in the middle of this restore.
-                if (_risingFieldHold != null) StopCoroutine(_risingFieldHold);
-                _risingFieldHold = StartCoroutine(HoldRisingFieldUntilEveryoneHasControl());
             }
             catch (Exception e)
             {
@@ -728,12 +734,24 @@ namespace PEAKQuickResume
         }
 
         /// <summary>
-        /// Absolute ceiling on the rising-field hold, measured from the pre-commune, so a stuck
-        /// or disconnected client can't cost Nadir its one mechanic. Comfortably past the host's
-        /// own worst case (a 32s client-warp hold plus fades) and past ResumeOrchestrator's 60s
-        /// tail timeout for the same client-presentation wait.
+        /// How long a straggling client may hold the field back once the host itself has
+        /// control. A client that never reports in - no mod, a dropped connection, a loading
+        /// screen that never cleared - costs Nadir at most this much of its one mechanic.
+        /// </summary>
+        private const float RisingFieldClientGraceSeconds = 20f;
+
+        /// <summary>
+        /// Absolute ceiling on the hold, measured from the pre-commune. Only reachable if the
+        /// host's own sequence never finishes, in which case nobody has control anyway; the
+        /// grace above is what covers every ordinary straggler.
         /// </summary>
         private const float RisingFieldHoldCeilingSeconds = 90f;
+
+        /// <summary>
+        /// How long to keep watching after the release that the field actually took it. See
+        /// <see cref="ConfirmRisingFieldStarted"/> for why one call isn't enough.
+        /// </summary>
+        private const float RisingFieldStartConfirmSeconds = 15f;
 
         private Coroutine _risingFieldHold;
 
@@ -747,44 +765,84 @@ namespace PEAKQuickResume
         /// <c>IsRunning</c> covers the host (false at the end of the sequence, and on a throw
         /// too, since RunSequenceWrapper resets it either way), and
         /// <c>AllClientsPresentationDone</c> covers the clients, each of which RPCs that after
-        /// its own wake-up animation finishes. Backstopped by
-        /// <see cref="RisingFieldHoldCeilingSeconds"/>.
+        /// its own wake-up animation finishes. Once the host has control, clients get
+        /// <see cref="RisingFieldClientGraceSeconds"/> and no longer.
+        ///
+        /// This coroutine is also the only thing guaranteed to arm the field at all. In an
+        /// organic run the commune is what starts it, so every way the pre-commune can come up
+        /// short - a lost RPC, vanilla's own break routine throwing before it fires
+        /// TriggerSoulFreed, the pillar not being found - otherwise ends with the biome
+        /// permanently missing its hazard. Hence: never give up on finding the field, and
+        /// confirm the release afterwards instead of assuming it took.
         /// </summary>
         private IEnumerator HoldRisingFieldUntilEveryoneHasControl()
         {
-            LavaRising field = NadirRisingField.Find(_log);
-            if (field == null)
-            {
-                _log?.LogWarning("OwnTeleportSequence: no Void-biome rising field found to hold, so Nadir's hazard "
-                    + "clock starts from the pre-commune. Anyone still loading may be revealed into it.");
-                yield break;
-            }
-
-            NadirRisingField.Park(field);
-            NadirRisingField.BroadcastParked(field, _log);
-            _log?.LogInfo("OwnTeleportSequence: Nadir's rising field parked until every player has control.");
-
             // Clients only report their presentation exit when the wake-up presentation is the
             // thing they were running; with it off they never send it, so waiting on it would
-            // just burn the ceiling. Solo has nobody to wait for either way.
+            // just burn the grace. Solo has nobody to wait for either way.
             bool waitForClients = !PhotonNetwork.OfflineMode && _cfg.OwnWakeUpAnimationEnabled.Value;
             OwnNetwork network = _entryPoints?.Network;
 
             float deadline = Time.realtimeSinceStartup + RisingFieldHoldCeilingSeconds;
-            bool timedOut = false;
+            float clientDeadline = -1f;
+
+            // Resolved in the loop rather than once up front: LavaRising registers itself from
+            // OnEnable, so a frame where the Void segment isn't fully awake yet used to end the
+            // hold outright - and with it the only thing that ever arms the field.
+            LavaRising field = null;
+            string timedOutBecause = null;
+            bool released = false;
 
             while (true)
             {
-                if (Time.realtimeSinceStartup >= deadline) { timedOut = true; break; }
+                if (field == null)
+                {
+                    field = NadirRisingField.Find(_log);
+                    if (field != null)
+                    {
+                        NadirRisingField.Describe(field, _log);
+
+                        // Tenderfoot (ascent -1) and a custom run with fog off both turn the
+                        // whole rising-hazard family off - LavaRising gates its own start
+                        // transition on Ascents.fogEnabled, exactly as it does for the Caldera's
+                        // lava and the gloom. Nothing to hold back, and nothing we could start.
+                        if (!Ascents.fogEnabled)
+                        {
+                            _log?.LogInfo("OwnTeleportSequence: this run has fog off (Tenderfoot, or a custom run "
+                                + "with it disabled), so Nadir's rising field stays down - the game's own rule, the "
+                                + "same one that keeps the Caldera's lava down. Leaving it alone.");
+                            yield break;
+                        }
+
+                        NadirRisingField.BroadcastParked(field, _log);
+                        _log?.LogInfo("OwnTeleportSequence: Nadir's rising field parked until every player has control.");
+                    }
+                }
+
+                if (Time.realtimeSinceStartup >= deadline)
+                {
+                    timedOutBecause = $"the restore never finished within {RisingFieldHoldCeilingSeconds:F0}s";
+                    break;
+                }
 
                 bool hostBusy = IsRunning;
+                if (hostBusy) clientDeadline = -1f;
+                else if (clientDeadline < 0f) clientDeadline = Time.realtimeSinceStartup + RisingFieldClientGraceSeconds;
+
                 bool clientsBusy = false;
                 if (!hostBusy && waitForClients && network != null)
                 {
                     try { clientsBusy = !network.AllClientsPresentationDone(); }
                     catch { clientsBusy = false; }
                 }
-                if (!hostBusy && !clientsBusy) break;
+
+                if (!hostBusy && !clientsBusy) { released = true; break; }
+                if (!hostBusy && Time.realtimeSinceStartup >= clientDeadline)
+                {
+                    timedOutBecause = $"somebody still hadn't finished loading {RisingFieldClientGraceSeconds:F0}s "
+                        + "after the host was back in control";
+                    break;
+                }
 
                 // Re-applied every frame rather than set once: the break routine's own
                 // TriggerSoulFreed(1) lands several seconds after we sent the RPC, and would
@@ -793,16 +851,72 @@ namespace PEAKQuickResume
                 yield return null;
             }
 
+            if (field == null) field = NadirRisingField.Find(_log);
+            if (field == null)
+            {
+                _log?.LogError("OwnTeleportSequence: Nadir's rising field never turned up in this scene, so the biome "
+                    + "is running without its hazard. Nothing else can start it - the commune, which already "
+                    + "happened, is its only trigger.");
+                yield break;
+            }
+
             // One last park, so the frame we release from is always a clean zero.
             NadirRisingField.Park(field);
             NadirRisingField.Release(field, _log);
 
-            if (timedOut)
-                _log?.LogWarning($"OwnTeleportSequence: gave up holding Nadir's rising field after "
-                    + $"{RisingFieldHoldCeilingSeconds:F0}s - somebody never finished loading, or the restore was "
-                    + "cut short. Starting the hazard anyway rather than leaving the biome without its one mechanic.");
-            else
+            if (released)
                 _log?.LogInfo("OwnTeleportSequence: everyone has control, Nadir's rising field released.");
+            else
+                _log?.LogWarning($"OwnTeleportSequence: gave up holding Nadir's rising field - {timedOutBecause}. "
+                    + "Starting the hazard anyway rather than leaving the biome without its one mechanic.");
+
+            yield return ConfirmRisingFieldStarted(field);
+        }
+
+        /// <summary>
+        /// Watches the release actually take. <c>StartWaiting</c> only sets the field's own wait
+        /// timer, and anything that zeroes it afterwards - a stray sync, a late
+        /// <c>TriggerSoulFreed</c> arriving into the wrong state, another mod - silently costs
+        /// Nadir the hazard for the rest of the run, with no second chance once the hold ends.
+        /// So re-arm until the host's Update has actually flipped <c>started</c>.
+        ///
+        /// A field that is counting (<c>secondsWaitedToStart &gt; 0</c>) but never starts is a
+        /// different problem and deliberately not re-armed - re-arming can't move a transition
+        /// vanilla is refusing to make. The known cause of that, fog being off, is caught
+        /// before the hold even parks.
+        /// </summary>
+        private IEnumerator ConfirmRisingFieldStarted(LavaRising field)
+        {
+            float deadline = Time.realtimeSinceStartup + RisingFieldStartConfirmSeconds;
+            int rearms = 0;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (field == null) yield break;
+                if (field.started)
+                {
+                    if (rearms > 0)
+                        _log?.LogInfo($"OwnTeleportSequence: Nadir's rising field is climbing (took {rearms} extra "
+                            + "attempt(s) to arm).");
+                    yield break;
+                }
+
+                if (!NadirRisingField.IsArmed(field))
+                {
+                    rearms++;
+                    _log?.LogWarning("OwnTeleportSequence: something cleared Nadir's rising field right after it was "
+                        + "started - arming it again.");
+                    NadirRisingField.Release(field, _log);
+                }
+
+                yield return null;
+            }
+
+            if (field != null && !field.started)
+                _log?.LogError($"OwnTeleportSequence: Nadir's rising field still isn't climbing "
+                    + $"{RisingFieldStartConfirmSeconds:F0}s after it was started (armed="
+                    + $"{NadirRisingField.IsArmed(field)}, fogEnabled={Ascents.fogEnabled}) - the biome is running "
+                    + "without its hazard.");
         }
 
         private void TryCloseLingeringEndScreen()

@@ -2,9 +2,9 @@
 
 - **Nadir can be saved now.** Communing with the scoutmaster's soul writes the save.
   - Nadir saves everything within 80m of the soul statue instead of the usual 30m.
-  - Loading a Nadir save communes with the statue for you, so the barrier is already down, and the scoutmaster's ghost goes back to circling whoever communed originally.
-  - Nadir saves where the player who communed was standing, not where the host was. There's no "everyone has to be close by" rule on the statue, so a far-away (or void-diving) host used to drag the whole party to their spot on load.
-  - Nadir's rising ground only starts once everyone actually loads in. It always starts eventually though, even if somebody never finishes loading or drops out mid-load.
+  - Loading a Nadir save communes with the statue for you, so the barrier is already down.
+  - Nadir saves where the player who communed was standing, not where the host was.
+  - Nadir's rising ground only starts once everyone actually loads in, but it always starts eventually as a safe fallback (max 20s after the host connected). On Tenderfoot it never starts as intended.
 
 ## 2.2.2
 
