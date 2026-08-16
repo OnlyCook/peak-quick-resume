@@ -4,7 +4,8 @@
   - Nadir saves everything within 80m of the soul statue instead of the usual 30m.
   - Loading a Nadir save communes with the statue for you, so the barrier is already down.
   - Nadir saves where the player who communed was standing, not where the host was.
-  - Nadir's rising ground only starts once everyone actually loads in, but it always starts eventually as a safe fallback (max 20s after the host connected). On Tenderfoot it never starts as intended.
+  - Nadir's rising ground only starts once everyone actually loads in, but it always starts eventually as a safety fallback (max 20s after the host connected). On Tenderfoot it never starts as intended.
+- Multi-use `INT` items are now being saved/restored properly.
 
 ## 2.2.2
 

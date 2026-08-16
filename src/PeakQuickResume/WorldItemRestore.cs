@@ -70,7 +70,7 @@ namespace PEAKQuickResume
                         rotZ = item.transform.rotation.z,
                         rotW = item.transform.rotation.w,
                     };
-                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(item.data, item.itemID))
+                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(item.data))
                         positioned.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
 
                     // A jetpack with no Fuel entry restores as a full tank unless written explicitly.
@@ -202,7 +202,7 @@ namespace PEAKQuickResume
                     if (slot == null || slot.IsEmpty() || slot.prefab == null || slot.data == null) continue;
 
                     var state = new OwnSavedBackpackItemState { slotIndex = slotIndex, itemId = slot.prefab.itemID };
-                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(slot.data, slot.prefab.itemID))
+                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(slot.data))
                         state.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
                     result.Add(state);
                 }

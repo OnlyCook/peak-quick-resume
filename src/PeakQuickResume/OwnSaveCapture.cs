@@ -27,8 +27,6 @@ namespace PEAKQuickResume
     /// </summary>
     public static class OwnSaveCapture
     {
-        private static readonly HashSet<string> ExcludableKeys = new HashSet<string> { "ItemUses", "UseRemainingPercentage" };
-
         /// <summary>
         /// Saves every connected player's own file in one pass. Only ever invoked on the
         /// master client at its call sites; no internal IsMasterClient check here.
@@ -401,7 +399,7 @@ namespace PEAKQuickResume
                 if (instanceData == null) continue;
 
                 var state = new OwnSavedItemState { itemId = slot.prefab.itemID, slotIndex = slotIndex };
-                CaptureItemStateValues(instanceData, slot.prefab.itemID, state.values, log);
+                CaptureItemStateValues(instanceData, state.values);
                 result.Add(state);
                 slotIndex++;
             }
@@ -422,8 +420,7 @@ namespace PEAKQuickResume
                 if (instanceData == null) return null;
 
                 var values = new Dictionary<string, OwnSavedEntry>();
-                // itemID 0 means "not an excluded consumable" - the exclusion carve-out can't apply to a backpack.
-                CaptureItemStateValues(instanceData, 0, values, log);
+                CaptureItemStateValues(instanceData, values);
 
                 // Only the prefab carries the JetpackItem component, while values live on the
                 // slot's instance data - hence the two separate arguments.
@@ -455,7 +452,7 @@ namespace PEAKQuickResume
                     if (instanceData == null) continue;
 
                     var state = new OwnSavedBackpackItemState { slotIndex = slotIndex, itemId = slot.prefab.itemID };
-                    CaptureItemStateValues(instanceData, slot.prefab.itemID, state.values, log);
+                    CaptureItemStateValues(instanceData, state.values);
                     result.Add(state);
                 }
             }
@@ -476,22 +473,14 @@ namespace PEAKQuickResume
             if (instanceData == null) return null;
 
             var state = new OwnSavedItemState { itemId = slot.prefab.itemID, slotIndex = 250 };
-            CaptureItemStateValues(instanceData, slot.prefab.itemID, state.values, log);
+            CaptureItemStateValues(instanceData, state.values);
             return state;
         }
 
-        private static void CaptureItemStateValues(ItemInstanceData instanceData, ushort itemId, Dictionary<string, OwnSavedEntry> values, ManualLogSource log)
+        private static void CaptureItemStateValues(ItemInstanceData instanceData, Dictionary<string, OwnSavedEntry> values)
         {
-            bool excluded = OwnItemStateIO.ExcludedItemIds.Contains(itemId);
-            foreach (string keyName in OwnItemStateIO.ItemStateKeyNames)
-            {
-                if (excluded && ExcludableKeys.Contains(keyName)) continue;
-                if (!OwnItemStateIO.TryGetKey(keyName, out DataEntryKey key)) continue;
-                if (!OwnItemStateIO.TryGetEntryObject(instanceData, key, out object entryObj)) continue;
-                if (!OwnItemStateIO.TryReadEntryNumeric(entryObj, out float value)) continue;
-
-                values[keyName] = new OwnSavedEntry { type = entryObj.GetType().AssemblyQualifiedName, value = value };
-            }
+            foreach (var kv in OwnItemStateIO.ReadItemStateValues(instanceData))
+                values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
         }
 
         private static Player _cachedLocalPlayer;

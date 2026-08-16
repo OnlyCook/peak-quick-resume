@@ -216,7 +216,7 @@ namespace PEAKQuickResume
                     if (itemSlot == null || itemSlot.IsEmpty() || itemSlot.prefab == null || itemSlot.data == null) continue;
 
                     var values = new JObject();
-                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(itemSlot.data, itemSlot.prefab.itemID))
+                    foreach (var kv in OwnItemStateIO.ReadItemStateValues(itemSlot.data))
                         values[kv.Key] = new JObject { ["type"] = kv.Value.TypeName, ["value"] = kv.Value.Value };
 
                     states.Add(new JObject
@@ -243,7 +243,7 @@ namespace PEAKQuickResume
                 if (backpack?.data == null) return null;
 
                 var values = new JObject();
-                foreach (var kv in OwnItemStateIO.ReadItemStateValues(backpack.data, backpack.itemID))
+                foreach (var kv in OwnItemStateIO.ReadItemStateValues(backpack.data))
                     values[kv.Key] = new JObject { ["type"] = kv.Value.TypeName, ["value"] = kv.Value.Value };
 
                 return values.Count > 0 ? values : null;

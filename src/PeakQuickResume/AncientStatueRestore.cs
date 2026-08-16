@@ -69,7 +69,7 @@ namespace PEAKQuickResume
                     rotZ = groundItem.transform.rotation.z,
                     rotW = groundItem.transform.rotation.w,
                 };
-                foreach (var kv in OwnItemStateIO.ReadItemStateValues(groundItem.data, groundItem.itemID))
+                foreach (var kv in OwnItemStateIO.ReadItemStateValues(groundItem.data))
                     item.values[kv.Key] = new OwnSavedEntry { type = kv.Value.TypeName, value = kv.Value.Value };
                 state.item = item;
 

@@ -28,27 +28,21 @@ namespace PEAKQuickResume
             "Color", "Scale", "value__", "Used", "SpawnedBees", "ScreamTime", "FlareActive", "InstanceID",
         };
 
-        // Item ids for which ItemUses/UseRemainingPercentage are skipped when capturing a
-        // save (consumables that shouldn't remember partial-use state).
-        public static readonly int[] ExcludedItemIds = { 100, 58, 66, 2, 24, 104, 115, 17, 63, 64 };
-
         private static readonly FieldInfo IidDataField =
             typeof(ItemInstanceData).GetField("data", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         /// <summary>
-        /// Reads a live item's "extra stats" (CookedAmount, Fuel, Color, ...) as key name ->
+        /// Reads a live item's "extra stats" (CookedAmount, Fuel, ItemUses, ...) as key name ->
         /// (runtime type name, numeric value). Used by <see cref="BackpackSaveMitigation"/>
         /// to build a phantom backpack save entry. Empty (never null) if unavailable.
         /// </summary>
-        public static Dictionary<string, OwnItemStateEntry> ReadItemStateValues(ItemInstanceData data, ushort itemId)
+        public static Dictionary<string, OwnItemStateEntry> ReadItemStateValues(ItemInstanceData data)
         {
             var result = new Dictionary<string, OwnItemStateEntry>();
             if (data == null) return result;
 
-            bool excluded = Array.IndexOf(ExcludedItemIds, itemId) >= 0;
             foreach (string name in ItemStateKeyNames)
             {
-                if (excluded && (name == "ItemUses" || name == "UseRemainingPercentage")) continue;
                 if (!TryGetKey(name, out DataEntryKey key)) continue;
                 if (!TryGetEntryObject(data, key, out object entryObj)) continue;
                 if (!TryReadEntryNumeric(entryObj, out float value)) continue;
@@ -123,7 +117,33 @@ namespace PEAKQuickResume
                 }
             }
 
-            return TryWriteEntryNumeric(entryObj, value);
+            bool wrote = TryWriteEntryNumeric(entryObj, value);
+            // Optionable*ItemData (e.g. ItemUses, Used) gate their Value behind a separate
+            // HasData flag - Item.CanUsePrimary() treats HasData=false as "unlimited",
+            // regardless of Value. A freshly created entry defaults to HasData=false, which
+            // silently made restored multi-use consumables (Scout Cookies, Rescue Claw, ...)
+            // infinitely usable even after their saved count hit 0. We're writing a real
+            // captured value, so it's always meaningful - mark it as such.
+            if (wrote) MarkHasData(entryObj);
+            return wrote;
+        }
+
+        private static void MarkHasData(object entryObj)
+        {
+            if (entryObj == null) return;
+            Type type = entryObj.GetType();
+
+            PropertyInfo property = type.GetProperty("HasData", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null && property.CanWrite && property.PropertyType == typeof(bool))
+            {
+                try { property.SetValue(entryObj, true); return; } catch { /* fall through to the field attempt below */ }
+            }
+
+            FieldInfo field = type.GetField("HasData", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null && field.FieldType == typeof(bool))
+            {
+                try { field.SetValue(entryObj, true); } catch { /* no HasData flag on this entry type - nothing to do */ }
+            }
         }
 
         public static bool TryConvertToFloat(object v, out float value)
