@@ -147,6 +147,14 @@ namespace PEAKQuickResume
                         // before 2.0.a appended three STATUSTYPEs. See AfflictionArrayCompat.
                         CharacterAfflictions afflictions = ch.refs.afflictions;
                         AfflictionArrayCompat.CopyOverlap(data.afflictions_current, afflictions.currentStatuses);
+
+                        // Bypasses currentStatuses entirely (see OwnSaveData.petrifyAmount) - restored
+                        // after extraStamina since SetPetrify reclamps it against the new petrify cap.
+                        if (cfg.RestorePetrify.Value)
+                        {
+                            try { ch.data.SetPetrify(data.petrifyAmount); }
+                            catch { /* matches the original's own swallow */ }
+                        }
                     }
                     catch { /* matches the original's own outer swallow */ }
                 }
@@ -162,8 +170,14 @@ namespace PEAKQuickResume
                         // saved values (and extraStamina, which vanilla can't set) on modded clients.
                         bool viaVanilla = entryPoints?.Network?.ApplyStatusesViaVanilla(ch, data.afflictions_current) ?? false;
 
+                        // Host-authoritative, like every other restore toggle here (RestoreAll
+                        // only ever runs on the host) - a disabled setting sends 0 rather than
+                        // skipping the RPC param entirely, which also clears any petrify a
+                        // client happened to already have live at the moment of load.
+                        int petrifyToApply = cfg.RestorePetrify.Value ? data.petrifyAmount : 0;
+
                         if (playerView != null)
-                            entryPoints?.Network?.ApplyAfflictionsTo(playerView, userId, data.afflictions_current, data.extraStamina);
+                            entryPoints?.Network?.ApplyAfflictionsTo(playerView, userId, data.afflictions_current, data.extraStamina, petrifyToApply);
                         else if (!viaVanilla)
                             log?.LogWarning("OwnInventoryRestore: Player has no PhotonView, cannot send afflictions RPC.");
                     }

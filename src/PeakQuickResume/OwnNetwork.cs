@@ -459,12 +459,12 @@ namespace PEAKQuickResume
             }
         }
 
-        public void ApplyAfflictionsTo(PhotonView playerView, string userId, float[] statuses, float extraStamina)
+        public void ApplyAfflictionsTo(PhotonView playerView, string userId, float[] statuses, float extraStamina, int petrifyAmount)
         {
             try
             {
                 if (playerView == null || playerView.Owner == null) return;
-                _pv?.RPC(nameof(OwnNetworkRpc.RPC_ApplyAfflictions), playerView.Owner, userId, statuses, extraStamina);
+                _pv?.RPC(nameof(OwnNetworkRpc.RPC_ApplyAfflictions), playerView.Owner, userId, statuses, extraStamina, petrifyAmount);
             }
             catch (Exception e) { _log?.LogWarning($"OwnNetwork.ApplyAfflictionsTo failed: {e.Message}"); }
         }
@@ -744,7 +744,7 @@ namespace PEAKQuickResume
         }
 
         [PunRPC]
-        public void RPC_ApplyAfflictions(string userId, float[] statuses, float extraStamina)
+        public void RPC_ApplyAfflictions(string userId, float[] statuses, float extraStamina, int petrifyAmount)
         {
             try
             {
@@ -757,6 +757,13 @@ namespace PEAKQuickResume
                 AfflictionArrayCompat.CopyOverlap(statuses, afflictions.currentStatuses);
 
                 try { localCharacter.SetExtraStamina(extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f); }
+                catch { }
+
+                // Bypasses currentStatuses entirely (see OwnSaveData.petrifyAmount) - restored
+                // after extraStamina since SetPetrify reclamps it against the new petrify cap.
+                // Runs on the owning client (photonView.IsMine here), matching how vanilla's
+                // SetPetrify itself requires ownership to sync to other clients.
+                try { localCharacter.data.SetPetrify(petrifyAmount); }
                 catch { }
             }
             catch (Exception e)

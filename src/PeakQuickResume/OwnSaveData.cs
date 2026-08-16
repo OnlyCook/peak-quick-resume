@@ -45,6 +45,13 @@ namespace PEAKQuickResume
         public float[] afflictions_current;
         public float extraStamina;
 
+        // CharacterData.petrifyAmount (0-100, PEAK 2.0.a's Petrify status). Bypasses
+        // CharacterAfflictions.currentStatuses entirely - SetStatus/AddStatus redirect
+        // STATUSTYPE.Petrify straight to CharacterData.SetPetrify instead of the array, so
+        // afflictions_current never carries it and this needs its own field. 0 on any save
+        // predating this field, which is "not petrified" - the correct default.
+        public int petrifyAmount;
+
         // The game's 4th-item "held in hands" slot (Player.tempFullSlot, slot ID 250) -
         // carried but blocks climbing until dropped. Null when nothing was held. See
         // OwnInventoryRestore for why restoring it is safe to bolt on.

@@ -13,6 +13,10 @@ namespace PEAKQuickResume
     /// reach the host regardless of who lit it. updateSegment distinguishes a real
     /// ignition from late-joiner state-sync calls, which pass false and shouldn't save.
     /// PEAKapalooza's branches are not ported (see ROADMAP.md).
+    ///
+    /// __instance is threaded through to OwnSaveCapture as the ignite-buff source, since
+    /// this postfix runs before Campfire.Update()'s own next tick grants the ignition
+    /// bonus stamina/petrify reduction - see CampfireIgniteBuffCompat.
     /// </summary>
     public static class CampfireAutoSavePatch
     {
@@ -66,12 +70,12 @@ namespace PEAKQuickResume
 
                 if (PhotonNetwork.OfflineMode)
                 {
-                    OwnSaveCapture.SavePlayerOffline(_cfg, _log, _network?.MessageOverlay);
+                    OwnSaveCapture.SavePlayerOffline(_cfg, _log, _network?.MessageOverlay, __instance);
                 }
                 else
                 {
                     _network?.RecentlyLitCampfireOthers();
-                    OwnSaveCapture.SavePlayerCoop(_cfg, _log, _network);
+                    OwnSaveCapture.SavePlayerCoop(_cfg, _log, _network, __instance);
                 }
             }
             catch (Exception e)

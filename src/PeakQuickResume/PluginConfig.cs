@@ -47,6 +47,19 @@ namespace PEAKQuickResume
         public readonly ConfigEntry<bool> RestoreItemStats;
         public readonly ConfigEntry<bool> RestoreAfflictions;
 
+        // Independent of RestoreAfflictions - lets Petrify specifically be excluded from
+        // restore while every other affliction still comes back. See OwnInventoryRestore
+        // (offline) and OwnNetwork.RPC_ApplyAfflictions (coop), the only two places
+        // CharacterData.SetPetrify is ever called from a load.
+        public readonly ConfigEntry<bool> RestorePetrify;
+
+        // Campfire ignition grants a fixed +bonus-stamina/-petrify/-injury buff a moment after
+        // Light_Rpc fires - after our autosave capture already ran. If enabled, the capture
+        // predicts that buff for everyone in range and saves the post-buff numbers instead
+        // (see CampfireAutoSavePatch/OwnSaveCapture/CampfireIgniteBuffCompat). Disable to save
+        // the raw pre-buff state.
+        public readonly ConfigEntry<bool> CaptureCampfireIgniteBuff;
+
         // Per-mechanic restore toggles - each independently gates just its own mechanic's
         // restore step (capture always still runs).
         public readonly ConfigEntry<bool> RestoreGroundedItems;
@@ -265,6 +278,17 @@ namespace PEAKQuickResume
 
             RestoreAfflictions = cfg.Bind("Teleport", "restore-afflictions", true,
                 "If enabled, restores your saved afflictions (hunger, poison, cold, sleep, skeleton...).");
+
+            RestorePetrify = cfg.Bind("Teleport", "restore-petrify", true,
+                "If disabled, a loaded save never applies the Petrify status effect to any player, "
+                + "regardless of what was saved. Every other affliction (including bonus stamina) still "
+                + "restores normally - this only excludes Petrify.");
+
+            CaptureCampfireIgniteBuff = cfg.Bind("Teleport", "capture-campfire-ignite-buff", true,
+                "If enabled, the autosave triggered by lighting a campfire accounts for the bonus stamina, "
+                + "petrify reduction, and injury heal the game grants a moment later, to everyone in range, "
+                + "so a load doesn't restore you without it. If disabled, the save captures your state "
+                + "exactly as it was the instant the fire lit (the buff is not yet applied).");
 
             RestoreGroundedItems = cfg.Bind("Teleport", "restore-grounded-items", true,
                 "If enabled, restores loose items (berries, coconuts, campfire food, and anything else "

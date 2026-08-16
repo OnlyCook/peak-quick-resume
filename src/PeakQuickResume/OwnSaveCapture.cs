@@ -33,7 +33,7 @@ namespace PEAKQuickResume
         /// No stale-file cleanup: the store is append-only, so a player who left simply
         /// has no file in later events.
         /// </summary>
-        public static void SavePlayerCoop(PluginConfig cfg, ManualLogSource log, OwnNetwork network)
+        public static void SavePlayerCoop(PluginConfig cfg, ManualLogSource log, OwnNetwork network, Campfire igniteBuffSource = null)
         {
             try
             {
@@ -119,7 +119,21 @@ namespace PEAKQuickResume
 
                     CharacterAfflictions afflictions = character.refs.afflictions;
                     float[] currentStatuses = afflictions.currentStatuses.ToArray();
-                    float extraStamina = character.GetTotalStamina() - (1f - currentStatuses.Sum());
+
+                    // Read CharacterData.extraStamina directly rather than back-deriving it via
+                    // GetTotalStamina() - (1 - statusSum). That derivation (the original
+                    // checkpoint mod's own formula) assumes currentStamina always sits at its
+                    // statusSum-only cap, which Petrify breaks: currentStamina's own cap
+                    // (GetMaxStamina) never accounts for petrifyAmount, so a petrified player
+                    // with zero real bonus stamina was getting most of the petrify amount
+                    // captured as fake extraStamina instead. The field is public and synced
+                    // like petrifyAmount, so it's just as safe to read directly for remote players.
+                    float extraStamina = character.data.extraStamina;
+                    int petrifyAmount = character.data.petrifyAmount;
+
+                    if (cfg.CaptureCampfireIgniteBuff.Value && igniteBuffSource != null)
+                        (extraStamina, petrifyAmount) = CampfireIgniteBuffCompat.Apply(igniteBuffSource, character, extraStamina, petrifyAmount, currentStatuses);
+
                     extraStamina = Mathf.Clamp(extraStamina, 0f, 1f);
                     extraStamina = (float)Math.Round(extraStamina, 2);
 
@@ -151,6 +165,7 @@ namespace PEAKQuickResume
                         hasTick = hasTick,
                         afflictions_current = currentStatuses,
                         extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                        petrifyAmount = petrifyAmount,
                         achievementProgress = achievementProgress,
                         gameVersion = GameVersionCompat.Current,
                     };
@@ -261,7 +276,7 @@ namespace PEAKQuickResume
         }
 
         /// <summary>Also shows the "Saved game progress" message here, matching SavePlayerCoop's confirmation.</summary>
-        public static void SavePlayerOffline(PluginConfig cfg, ManualLogSource log, OwnMessageOverlay messageOverlay = null)
+        public static void SavePlayerOffline(PluginConfig cfg, ManualLogSource log, OwnMessageOverlay messageOverlay = null, Campfire igniteBuffSource = null)
         {
             try
             {
@@ -298,7 +313,15 @@ namespace PEAKQuickResume
 
                 CharacterAfflictions afflictions = Character.localCharacter.refs.afflictions;
                 float[] currentStatuses = afflictions.currentStatuses.ToArray();
-                float extraStamina = Character.localCharacter.GetTotalStamina() - (1f - currentStatuses.Sum());
+
+                // See the coop capture path above for why this reads CharacterData.extraStamina
+                // directly instead of deriving it from GetTotalStamina() - (1 - statusSum).
+                float extraStamina = Character.localCharacter.data.extraStamina;
+                int petrifyAmount = Character.localCharacter.data.petrifyAmount;
+
+                if (cfg.CaptureCampfireIgniteBuff.Value && igniteBuffSource != null)
+                    (extraStamina, petrifyAmount) = CampfireIgniteBuffCompat.Apply(igniteBuffSource, localCharacter, extraStamina, petrifyAmount, currentStatuses);
+
                 extraStamina = Mathf.Clamp(extraStamina, 0f, 1f);
                 extraStamina = (float)Math.Round(extraStamina, 2);
 
@@ -358,6 +381,7 @@ namespace PEAKQuickResume
                     hasTick = hasTick,
                     afflictions_current = currentStatuses,
                     extraStamina = extraStamina > 0f && extraStamina <= 1f ? extraStamina : 0f,
+                    petrifyAmount = petrifyAmount,
                     ancientStatue = statueState,
                     luggageStates = luggageStates,
                     worldItemStates = worldItemStates,
