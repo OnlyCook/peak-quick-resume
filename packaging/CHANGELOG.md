@@ -5,9 +5,9 @@
   - Loading a Nadir save communes with the statue for you, so the barrier is already down.
   - Nadir saves where the player who communed was standing, so not necessarily where the host was.
   - Nadir's rising ground only starts once everyone actually loads in, but it always starts eventually as a safety fallback (max 20s after the host connected). On Tenderfoot it never starts as intended.
-- Multi-use `INT` items are now being saved/restored properly.
+- Fixed certain multi-use items not being restored properly.
 - The Petrify status effect is now being saved/restored. Thanks to Jeremiah for pointing this out!
-- All campfire moral boost buffs (bonus stamina, remove some petrify/injury) are now being added to each player's save to not lose those after loading it the next time.
+- All campfire moral boost buffs (bonus stamina, remove some injury/petrify) are now being added to each player's save to not lose those after loading it the next time.
 
 Known issue: in The Citadel biome there may be some flares floating in the sky (Ascent 3 or lower). I know about this but I cannot verify currently whether my fix will also definitely work in The Kiln, so for the next week or so until The Kiln makes its way into the regular map pool again this will persist.
 

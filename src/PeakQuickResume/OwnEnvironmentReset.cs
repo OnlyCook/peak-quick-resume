@@ -54,6 +54,8 @@ namespace PEAKQuickResume
             lava.ended = false;
             lava.secondsWaitedToStart = 0f;
             lava.timeTraveled = 0f;
+            // Known issue, fix deferred: this hardcoded height is Kiln-specific and untested
+            // against Citadel/Gloom. See docs/GLOOM_RISING.md before touching this.
             if (lava.lava != null)
             {
                 Vector3 position = lava.lava.position;
