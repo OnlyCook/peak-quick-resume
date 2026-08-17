@@ -22,7 +22,7 @@ Works **after you die**, **from the Airport**, or **mid-run** (so no need to die
 
 1. Play as normal. Lighting a campfire saves automatically. Each save is added to your history.
 2. Press **F7** to open the save picker.
-3. Use **↑/↓** to highlight a checkpoint, then press **Enter** to load it. Just want the latest? Press **F7** and then **Enter**.  
+3. Use **↑/↓** to highlight a checkpoint, then press **Enter** to load it.
   
 - Press **Del** to delete the highlighted save (press it twice to confirm).  
 - Press **B** to star the highlighted save (press **B** again to unstar it). Starred saves are moved to the top and can't be deleted until unstarred again.
@@ -32,7 +32,7 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 
 ## What will be saved/restored?
 
-- **Everything within 30m** of the campfire when lit will be saved, and restored upon loading the save (excluding most deployables that won't be of help anyways). This includes: all players and their inventories as well as all their status effects/states, everything on trees/bushes or the ground, the state/items of luggage and the Ancient Statue, the in-game time and day, and the playtime. *Note:* A temporary (held) 4th item, bonus stamina, and physical status effects **cannot be restored** for clients without this mod.
+- **Everything within 30m** of the campfire when lit will be saved, and restored upon loading the save (excluding most deployables that won't be of help anyways). This includes: all players and their inventories as well as all their status effects/states, everything on trees/bushes or the ground, the state/items of luggage and the Ancient Statue, the in-game time and day, and the playtime. *Note:* A temporary (held) 4th item, bonus stamina / petrify and physical status effects **cannot be restored** for clients without this mod.
 - The **whole island/map** with all its biomes and levels/seeds will be saved exactly as is. Which means you are even able to replay islands multiple weeks after they've already been rotated, but when the game rotates the whole map pool your saves **will load incorrect islands** (more details under *Notes*).
 - **Achievement progress** is saved and restored when you load a checkpoint. This only applies per-player to **whoever has PEAK Quick Resume installed themselves**. A co-op player without it keeps the vanilla behavior for their own achievements, which may falsely unlock some Steam achievements, but also not restore the progress/state of other achievements.
 
