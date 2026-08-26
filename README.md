@@ -72,7 +72,7 @@ If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/Mod
 
 </details>
 
-Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split into `Offline/` and `Coop/`), back this up if you don't want to lose your saves. Note: the **host** saves for all clients and thus holds all saves.
+Your saved checkpoints live in `BepInEx/plugins/QuickResume/Archive/` (split into `Offline/` and `Coop/`), back this up if you don't want to lose your saves. Note: the **host** saves for all clients, therefore holds all saves.
 
 ## Credit where it's due
 
