@@ -12,12 +12,6 @@ No other mods are required. [PEAK Checkpoint Save](https://thunderstore.io/c/pea
 
 ## For developers
 
-- [`docs/INSTALL.md`](docs/INSTALL.md): reproducible dev setup + build.
-- [`docs/TESTING.md`](docs/TESTING.md): build → deploy → test loop.
-- [`docs/RESEARCH.md`](docs/RESEARCH.md): how PEAK's run-start / death flows and the
-  checkpoint mod internals work (decompilation notes).
-- [`ROADMAP.md`](ROADMAP.md): plan, status, deferred issues, handoff notes.
-
 Build:
 ```bash
 cd src/PeakQuickResume

@@ -45,11 +45,37 @@ namespace PEAKQuickResume
             {
                 if (!TryGetKey(name, out DataEntryKey key)) continue;
                 if (!TryGetEntryObject(data, key, out object entryObj)) continue;
+                if (!TryReadEntryHasData(entryObj, out bool hasData) || !hasData) continue;
                 if (!TryReadEntryNumeric(entryObj, out float value)) continue;
 
                 result[name] = new OwnItemStateEntry(entryObj.GetType().AssemblyQualifiedName, value);
             }
             return result;
+        }
+
+        // returns whether the item has meaningful data (to not restore garbage)
+        public static bool TryReadEntryHasData(object entryObj, out bool hasData)
+        {
+            hasData = true;
+            if (entryObj == null) return false;
+
+            Type type = entryObj.GetType();
+
+            PropertyInfo property = type.GetProperty("HasData", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null && property.PropertyType == typeof(bool))
+            {
+                try { hasData = (bool)property.GetValue(entryObj); return true; }
+                catch { return false; }
+            }
+
+            FieldInfo field = type.GetField("HasData", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null && field.FieldType == typeof(bool))
+            {
+                try { hasData = (bool)field.GetValue(entryObj); return true; }
+                catch { return false; }
+            }
+
+            return true;
         }
 
         public static bool TryGetEntryObject(ItemInstanceData inst, DataEntryKey key, out object entryObj)

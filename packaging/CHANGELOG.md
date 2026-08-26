@@ -1,3 +1,7 @@
+## 2.3.1
+
+- Fixed single-use consumables sometimes becoming permanently unusable after loading a save in rare cases.
+
 ## 2.3.0
 
 - **Nadir can be saved now.** Communing with the scoutmaster's soul writes the save.
