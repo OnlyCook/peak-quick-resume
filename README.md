@@ -39,7 +39,7 @@ In co-op, only the **host** can use F7 and everyone is restored together.
 ## Notes
 
 - **Host-only** in co-op. For the most part it works fine if only the host has PEAK Quick Resume installed, but it's recommended that everyone has it installed for compatibility reasons (see above).
-- When the game updates (version *number* increases), the map pool is (probably) also rotated which will make **all your save files load incorrect islands** (which may rarely cause everyone to fall through the map). This happens once every ~6 weeks.
+- When the game updates (version *number* increases), the map pool is (probably) also rotated which will make **all your save files load incorrect islands** (which may rarely cause everyone to fall through the map). This normally happens once every ~6 weeks.
 - Custom runs are resumed with your *current* custom settings (the checkpoint file doesn't store the run's original settings).
 - Translations were done by AI, so if something is off in your language you are free to contact me (see below).
 
@@ -65,7 +65,7 @@ If you have [PEAKLib.ModConfig](https://thunderstore.io/c/peak/p/PEAKModding/Mod
 - **minimal-picker-ui**: show save picker (and help screen) in a UI without effects or animations, opens faster.
 - **Pause-Menu**: disable/re-enable any of the 3 added QoL pause menu buttons, and optionally enable `move-rebind-controls-to-settings` to move the 'Rebind Controls' button away from the pause menu.
 - **Timing**: advanced settle/timeout values; raise `coop-airport-settle` if a client occasionally gets left behind on a slow connection.
-- **Teleport**: advanced settings for the restore itself (inventory/afflictions/campfire/... reset/time of day toggles, retry timing). Rarely needs touching.
+- **Teleport**: advanced settings for the restore itself (inventory/afflictions/campfire/... reset/time of day toggles, retry timing). Can be used to stop something from restoring.
 - **Network**: advanced co-op networking settings, currently just the readiness-check toggle used before a co-op load starts.
 - **Teleport-Mitigation**: detects and helps recover from occasional teleport glitching after a load (brief up/down snapping, or rarely falling through the world). Everything here is on by default and rarely needs touching; thresholds and delays are all individually configurable if you want to tune them.
 - **Debug**: verbose logging of every step of the resume sequence, on by default. Please keep this on when reporting issues.
