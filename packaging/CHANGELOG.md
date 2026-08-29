@@ -1,6 +1,6 @@
 ## 2.3.2
 
-- Fixed biome gated achievements not being able to unlock after loading a save into said biome (such as the Medieval History Badge).
+- Fixed not being able to unlock biome gated achievements after loading a save into said biome (such as the Medieval History Badge).
 
 ## 2.3.1
 
