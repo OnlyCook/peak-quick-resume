@@ -1,3 +1,7 @@
+## 2.3.2
+
+- Fixed biome gated achievements not being able to unlock after loading a save into said biome (such as the Medieval History Badge).
+
 ## 2.3.1
 
 - Fixed single-use consumables sometimes becoming permanently unusable after loading a save in rare cases.

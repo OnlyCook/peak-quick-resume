@@ -108,6 +108,9 @@ namespace PEAKQuickResume
 
             OwnFallDamageProtection.Apply(harmony, Logger);
             MapBakerLevelOverridePatch.Apply(harmony, Logger);
+            // fixes biome gated achievements never unlocking
+            // after a segment jump lands in a biome shared with an earlier, skipped point
+            BiomeSkipResumeFix.Apply(harmony, Logger);
 
             // Third-party mod compat, no-op if not installed: stops Snosz's TerrainRandomiser
             // from re-randomizing the terrain on an F7 load.
