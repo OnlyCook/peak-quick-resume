@@ -1,3 +1,9 @@
+## 2.3.3
+
+- Rebuilt the mod to work on the latest game version (`2.4.b`) since the `2.4.x` update broke some things.
+- Reverted the mod's original flare fix (which would spawn too many flares and make them float in the sky) since it's easier to let the game itself handle this.
+- Removed the mod's original *The Kiln* custom lava rising code to let the game handle it naturally.
+
 ## 2.3.2
 
 - Fixed not being able to unlock biome gated achievements after loading a save into said biome (such as the Medieval History Badge).

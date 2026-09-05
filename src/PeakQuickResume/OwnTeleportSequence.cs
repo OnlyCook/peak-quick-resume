@@ -423,8 +423,6 @@ namespace PEAKQuickResume
             if (RunLauncher.IsHost)
             {
                 yield return StartCoroutine(TeleportToPosition(spawnPos));
-                if ((int)finalSegment == 4 && Ascents.currentAscent < 4)
-                    StartCoroutine(OwnEnvironmentReset.SpawnFlaresAtPeak());
 
                 // Deliberately this late: the statue's gem spawns a frame after the segment jump
                 // activates it, and ResetWorldLoot/DestroyStaleWorldObjects/WorldItemRestore above
